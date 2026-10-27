@@ -5,7 +5,7 @@
 [[repos]]
 repo = "builtin"
 hooks = [
-    # Preserve the approved design baseline without automatic formatting.
+    # Preserve the imported reference document without automatic formatting.
     { id = "trailing-whitespace", exclude = '^references/PROJECT_OVERVIEW_V22\.md$' },
     { id = "end-of-file-fixer", exclude = '^references/PROJECT_OVERVIEW_V22\.md$' },
     { id = "check-added-large-files" },

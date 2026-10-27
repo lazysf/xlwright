@@ -7,3 +7,18 @@ Desktop.ini
 *.swp
 *.swo
 *~
+
+# .NET build and test output
+**/bin/
+**/obj/
+**/TestResults/
+
+# IDE local state
+.vs/
+*.user
+*.suo
+
+# xlwright runtime state and distribution output
+.xlwright/
+.xlwright.lock
+dist/

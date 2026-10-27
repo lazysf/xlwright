@@ -10,7 +10,8 @@ Windows上の実Excelを操作し、VBAソースの反映、マクロ実行、�
 本体コード、Spike-0、PoCは未実装・未実施です。
 技術的な成立性や実運用の安全性は、まだ確認されていません。
 
-次の工程は[Spike-0の準備と実機確認](docs/spike-0.md)です。
+開発の順序は [ROADMAP.md](ROADMAP.md)、直近の作業は [TODO.md](TODO.md) で管理しています。
+具体的な実験と判定基準は [Spike-0](docs/spike-0.md) を参照してください。
 
 ## 開発環境
 

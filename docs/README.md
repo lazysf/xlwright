@@ -7,6 +7,8 @@
 - [architecture.md](architecture.md): 構成、正本、実行制御、安全性、未確定の設計事項。
 - [api.md](api.md): P0-coreの操作契約と共通規約。
 - [development.md](development.md): セットアップ、配置方針、開発と検証の手順。
+- [../ROADMAP.md](../ROADMAP.md): 開発段階の進捗と完了条件への参照。
+- [../TODO.md](../TODO.md): 直近の作業、未解決事項、完了の根拠。
 - [spike-0.md](spike-0.md): 最初の実機検証の仮説、実施計画、結果記録、PoCへの移行条件。
 
 調査記録は仕様の正本とは区別します。

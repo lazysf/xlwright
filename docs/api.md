@@ -6,7 +6,29 @@ MCPのJSON Schemaと応答全体のスキーマは、各操作の実装前に確
 実行制御と安全条件は [設計文書](architecture.md) に従います。
 本書の全操作を初期PoCで一括実装する必要はありません。提供する範囲は [Spike-0](spike-0.md#実施順序と着手条件) で段階化します。
 初期は残存Excelの自動後始末・force・保留中COM呼出しを伴う制御用破棄終了を必須とせず、手動復旧を使います。
-未対応の操作・引数を黙って無視しません。PoCの提供範囲と拒否応答は実装前に確定し、本書の最終契約と区別して示します。
+未対応の操作・引数を黙って無視しません。初期ライフサイクルの提供範囲は以下に示します。残りのPoCの提供範囲は各操作の実装前に確定します。
+
+## 初期ライフサイクルの提供範囲
+
+R1〜R5の採用契約です。実装・実機検証の完了を示しません。後述のP0-core最終契約に対する初期の制限です。
+記録形式と遷移は[設計](architecture.md#initial-lifecycle)を正本とします。
+
+- `session_end`の`discard`と、`session_start`・`session_end`の`force`は省略時をfalseとします。明示的なfalseも通常経路です。trueは副作用の前に `INVALID_REQUEST`、`detail: NOT_IMPLEMENTED` で拒否します。
+- 通常実行中の競合は `CONFLICT`、`detail: OPERATION_BUSY` です。isolatedでの公開終了は `CONFLICT`、`detail: SESSION_ISOLATED` とします。未対応のtrueは先に拒否し、対応する要求ではbusyの競合判定を先に行います。
+- 開始中の状態照会は `closed`、終了中は開始元の状態を返し、いずれも `busy: true` とします。COMを使わず保持情報から応答します。
+- 結果不明は `STATE_UNKNOWN` とisolatedを返します。期限後の成功で応答を成功へ変更しません。後続工程のジョブも同じ規則に従います。
+- EOFはAPI応答先がなければ診断に結果を残します。公開の破棄終了を内部的に呼べると仮定しません。
+
+| 条件 | 共通コード / detail | 状態・診断 |
+| --- | --- | --- |
+| 所有記録の形式不正 | CONFLICT / SESSION_RECORD_INVALID | 生成前はclosed。開始拒否 |
+| 記録の読取り・更新・確認のI/O失敗 | INTERNAL_ERROR / SESSION_RECORD_IO_ERROR | 生成前はclosed、生成着手後はisolated。失敗段階とExcel終了確認の成否を分ける |
+| 終了安全確認による拒否 | CONFLICT / EXCEL_NEEDS_REVIEW | 元がreadyの場合だけ確定した管理外ブック等の拒否でreadyを維持。元がisolatedなら隔離維持。同一性不一致・確認不能はisolated |
+| 終了安全確認や操作の結果不明 | STATE_UNKNOWN / EXCEL_NEEDS_REVIEW（安全確認時） | isolated。期限切れ・残存可能性を示す |
+
+共有違反による排他取得失敗はCONFLICTです。権限・読取り等のI/O失敗を競合にまとめません。
+診断には対象ブック、取得できたプロセス同一性、失敗段階、結果不明の操作、残存可能性、ログ参照先を含めます。
+公開応答全体のJSON SchemaとenvelopeはPoC-1の前に確定します。共通コード6種類は増やしません。
 
 ## 共通規約
 
@@ -157,9 +179,9 @@ IDは `<モジュール名>.<プロシージャ名>` です。名前から推測
 ## 実装前に確定する詳細
 
 - 各操作のJSON Schema、出力のenvelope、`detail` の具体的な構造。
-- 初期PoCで提供する操作・引数の範囲と、未対応要求の拒否応答。特にforceと隔離中の終了はT2で確定します。
+- 初期PoCで提供する操作・引数の範囲と、未対応要求の拒否応答。forceと隔離中の終了の初期制限は本書で確定済みです。
 - 省略可能引数の既定値と型、`startup_events` の指定方法。
-- `isolated` と保留中呼出しが同時に存在する場合の `session_end` の受付条件。[安全条件の承認](architecture.md#承認待ちの安全条件)後に反映します。
+- `isolated` と保留中呼出しが同時に存在する場合の `session_end` の受付条件。初期は上記のとおり拒否し、後続の受付条件は[安全条件の承認](architecture.md#承認待ちの安全条件)後に反映します。
 - ラッパー経由のマクロ引数の有効上限と、戻り値の対応範囲。
 - ダイアログ応答、テスト結果、実行結果JSONの具体的なスキーマ。
 - `xw_Runtime` の版表現と対応確認。

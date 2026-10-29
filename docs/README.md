@@ -11,10 +11,12 @@
 - [../TODO.md](../TODO.md): 直近の作業、未解決事項、完了の根拠。
 - [spike-0.md](spike-0.md): 最初の実機検証の仮説、実施計画、結果記録、PoCへの移行条件。
 
+- [adr/0001-initial-lifecycle.md](adr/0001-initial-lifecycle.md): 初期ライフサイクルと所有記録の採用判断。
+
 調査記録は仕様の正本とは区別します。
 
 - [notes/plan-review.md](notes/plan-review.md): 最小反復を先行する方針の根拠、実装手段の比較候補、計画の確認事項。
-- [notes/lifecycle-proposal.md](notes/lifecycle-proposal.md): T1の比較案、所有記録の更新順、T2で確定する初期経路と後続の未承認事項。実機検証の結果ではありません。
+- [notes/lifecycle-proposal.md](notes/lifecycle-proposal.md): T1の比較案、所有記録の更新順、T2の採用判断への参照と後続の未承認事項。実機検証の結果ではありません。
 
 [PROJECT_OVERVIEW_V22.md](../references/PROJECT_OVERVIEW_V22.md) は初期の参考資料です。
 正式文書に未移行の記述を、自動的に現行仕様として採用しないでください。

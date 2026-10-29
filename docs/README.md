@@ -17,6 +17,7 @@
 
 - [notes/plan-review.md](notes/plan-review.md): 最小反復を先行する方針の根拠、実装手段の比較候補、計画の確認事項。
 - [notes/lifecycle-proposal.md](notes/lifecycle-proposal.md): T1の比較案、所有記録の更新順、T2の採用判断への参照と後続の未承認事項。実機検証の結果ではありません。
+- [notes/verification-environment.md](notes/verification-environment.md): T3の環境確認、初回コンソール用PIAの版・承認範囲、未検証事項。
 
 [PROJECT_OVERVIEW_V22.md](../references/PROJECT_OVERVIEW_V22.md) は初期の参考資料です。
 正式文書に未移行の記述を、自動的に現行仕様として採用しないでください。

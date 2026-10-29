@@ -15,7 +15,7 @@ API契約と実機検証の仮説は、それぞれの正式文書で管理し�
 プレビュー版は選択しません。
 選択規則は [Microsoftのglobal.jsonリファレンス](https://learn.microsoft.com/en-us/dotnet/core/tools/global-json) に従います。
 
-現在のC#プロジェクトは`spikes/Spike0/Spike0.csproj`だけです。ソリューションと本体コードはありません。
+現在のC#プロジェクトはSpike0、MCP接続基盤、MCP非COMチェックです。製品のExcel操作APIとCoreは未実装です。
 初回コンソールは.NET 10のWindows Desktop共有フレームワークを使います。
 確認スクリプトにはPowerShell 7以降が必要です。パッケージのインストールは行いません。
 
@@ -86,6 +86,16 @@ SDKの開発証明書生成を抑止します。呼出し元の環境変数を�
 ```powershell
 dotnet spikes/Spike0/bin/Release/net10.0-windows/Spike0.dll --self-check
 ```
+
+L2・L3の追加自己チェックは、合成した所有記録と終了安全確認の観測値を使います。
+記録I/Oの各境界の失敗、部分書込み、読戻し不一致、管理外ブック等の拒否と後続処理の抑止が対象です。
+実機の所有記録・ガード・復旧証拠は使用しません。Excelも起動しません。
+証拠は`.xlwright/spike0-checks/<run-id>/`に保持します。
+記録I/Oケースの`.failure.json`は失敗境界と状態、`.retained`はハンドル解放後の残存バイト列です。
+終了拒否ケースの`.observation.json`は呼出し順と状態です。
+チェック失敗時はこのディレクトリとコマンド出力を保持し、自動再送せず引き継ぎます。
+合成ファイルの排他解放を、実Excelの終了や実機所有記録の完了とは扱いません。
+追加コードのビルド・実行状況は[結果記録](notes/spike-0-results.md#l2l3の非com検証準備)を参照してください。
 
 ## 初回コンソールの実機実行
 

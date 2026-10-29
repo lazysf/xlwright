@@ -67,12 +67,11 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
             try { return existing.Select(item => item.Id).ToHashSet(); }
             finally { foreach (var item in existing) item.Dispose(); }
         });
-        gate.Step("record-starting", () => record.Write(new(1, "starting", workbookPath)));
-        gate.Step("generate-excel", () =>
+        RecordTransition.Run(gate, record, new(1, "starting", workbookPath), () => gate.Step("generate-excel", () =>
         {
             generationStarted = true;
             application = Track(new Excel.Application());
-        });
+        }));
         int hwnd = gate.Step("excel-hwnd", () => application!.Hwnd);
         gate.Step("identify-excel", () =>
         {
@@ -85,7 +84,11 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
                 !StringComparer.OrdinalIgnoreCase.Equals(identity.Name, "EXCEL"))
                 throw new InvalidOperationException("New Excel ownership could not be established.");
         });
-        gate.Step("record-owned", () => record.Write(new(1, "owned", workbookPath, identity)));
+        RecordTransition.Run(gate, record, new(1, "owned", workbookPath, identity), OpenCopy);
+    }
+
+    private void OpenCopy()
+    {
         log.Write("ownership.confirmed", gate, new { workbook_path = workbookPath, process = identity });
         gate.Step("excel-visible", () => application!.Visible =
             Environment.GetEnvironmentVariable("XLWRIGHT_EXCEL_VISIBLE") == "1");
@@ -153,8 +156,7 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
     {
         if (!quitReturned)
         {
-            VerifyEndSafety();
-            WithEventsSuppressed(() =>
+            EndSafety.CloseAndQuit(VerifyEndSafety, () => WithEventsSuppressed(() =>
             {
                 bool originalAlerts = gate.Step("read-alerts", () => application!.DisplayAlerts);
                 gate.Step("suppress-close-alerts", () => application!.DisplayAlerts = false);
@@ -166,14 +168,11 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
                         workbook = null;
                     });
                 gate.Step("restore-close-alerts", () => application!.DisplayAlerts = originalAlerts);
-            });
-            // Recheck after Close: Quit must not close a newly introduced workbook.
-            VerifyEndSafety(requireEmpty: true);
-            gate.Step("quit", () =>
+            }), () => gate.Step("quit", () =>
             {
                 application!.Quit();
                 quitReturned = true;
-            });
+            }));
         }
         gate.Step("release-owned-references", () =>
         {
@@ -190,12 +189,11 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
         if (!exited) throw new WorkStoppedException();
         if (!recordReleased)
         {
-            gate.Step("record-completed", () => record.Write(new(1, "completed")));
-            gate.Step("release-record-lock", () =>
+            RecordTransition.Run(gate, record, new(1, "completed"), () => gate.Step("release-record-lock", () =>
             {
                 record.Dispose();
                 recordReleased = true;
-            });
+            }));
         }
         gate.Complete("closed");
     }
@@ -205,8 +203,7 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
         gate.Step("verify-process-identity", () =>
         {
             using var current = Process.GetProcessById(identity!.Pid);
-            if (!identity.Matches(ProcessIdentity.Read(current)))
-                throw new InvalidOperationException("EXCEL_NEEDS_REVIEW: process identity changed.");
+            EndSafety.RequireIdentity(identity.Matches(ProcessIdentity.Read(current)));
         });
         int hwnd = gate.Step("verify-owned-hwnd", () => application!.Hwnd);
         gate.Step("verify-window-pid", () =>
@@ -219,15 +216,15 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
         var protectedViews = gate.Step("get-protected-views", () => Track(application!.ProtectedViewWindows));
         int protectedCount = gate.Step("count-protected-views", () => protectedViews.Count);
         int count = gate.Step("count-workbooks", () => workbooks!.Count);
-        bool unmanagedBook = requireEmpty && count != 0;
-        for (int index = 1; index <= count && !unmanagedBook; index++)
+        IEnumerable<string> ReadPaths()
         {
-            var item = gate.Step("get-open-workbook", () => Track(workbooks![index]));
-            string path = gate.Step("get-open-workbook-path", () => item.FullName);
-            unmanagedBook = !SamePath(path, workbookPath);
+            for (int index = 1; index <= count; index++)
+            {
+                var item = gate.Step("get-open-workbook", () => Track(workbooks![index]));
+                yield return gate.Step("get-open-workbook-path", () => item.FullName);
+            }
         }
-        if (protectedCount != 0 || unmanagedBook)
-            throw new EndRefusedException();
+        EndSafety.RequireBooks(workbookPath, ReadPaths(), protectedCount, count, requireEmpty);
     }
 
     private void WithEventsSuppressed(Action action)
@@ -247,7 +244,7 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
 
     private void Fail(Exception error)
     {
-        gate.Fault(generationStarted, !closeStarted && (error is EndRefusedException or SaveFailedException));
+        EndSafety.Fault(gate, generationStarted, closeStarted, error);
         log.Write("operation.failed", gate, new
         {
             error = error.GetType().Name,

@@ -77,6 +77,8 @@ internal sealed record OwnershipRecord(int Version, string Kind,
 internal sealed class OwnershipRecordFile : IDisposable
 {
     private readonly FileStream stream;
+    // Only self-checks install this hook; the exclusive production handle stays in use.
+    internal Action<string, FileStream>? BeforeIo { get; set; }
     internal bool CreatedNew { get; }
 
     private OwnershipRecordFile(FileStream stream, bool createdNew)
@@ -99,21 +101,62 @@ internal sealed class OwnershipRecordFile : IDisposable
     }
 
     internal OwnershipRecord Read()
+        => Read("existing");
+
+    private OwnershipRecord Read(string boundary)
     {
-        stream.Position = 0;
-        using var reader = new StreamReader(stream, System.Text.Encoding.UTF8,
-            detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-        return OwnershipRecord.Parse(reader.ReadToEnd());
+        string text = Io(boundary, boundary == "existing" ? "read" : "read-back", () =>
+        {
+            stream.Position = 0;
+            BeforeIo?.Invoke(boundary == "existing" ? "read" : "read-back", stream);
+            using var reader = new StreamReader(stream, System.Text.Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+            return reader.ReadToEnd();
+        });
+        return OwnershipRecord.Parse(text);
     }
 
     internal void Write(OwnershipRecord record)
     {
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(record, OwnershipRecord.JsonOptions);
-        stream.Position = 0;
-        stream.Write(bytes);
-        stream.SetLength(bytes.Length);
-        stream.Flush(flushToDisk: true);
-        if (Read() != record) throw new IOException("Ownership record read-back did not match.");
+        Io(record.Kind, "write", () =>
+        {
+            stream.Position = 0;
+            BeforeIo?.Invoke("write", stream);
+            stream.Write(bytes);
+            return true;
+        });
+        Io(record.Kind, "set-length", () =>
+        {
+            BeforeIo?.Invoke("set-length", stream);
+            stream.SetLength(bytes.Length);
+            return true;
+        });
+        Io(record.Kind, "flush", () =>
+        {
+            BeforeIo?.Invoke("flush", stream);
+            stream.Flush(flushToDisk: true);
+            return true;
+        });
+        Io(record.Kind, "read-back", () =>
+        {
+            if (Read(record.Kind) != record) throw new IOException("Ownership record read-back did not match.");
+            return true;
+        });
+    }
+
+    private static T Io<T>(string boundary, string operation, Func<T> action)
+    {
+        try { return action(); }
+        catch (RecordIoException) { throw; }
+        catch (SessionRecordInvalidException error) when (operation == "read-back")
+        {
+            throw new RecordIoException(boundary, operation, error);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            throw new RecordIoException(boundary, operation, error);
+        }
     }
 
     internal void CheckPrevious()
@@ -140,6 +183,13 @@ internal sealed class OwnershipRecordFile : IDisposable
     }
 
     public void Dispose() => stream.Dispose();
+}
+
+internal sealed class RecordIoException(string boundary, string operation, Exception inner)
+    : IOException($"SESSION_RECORD_IO_ERROR: {boundary}/{operation}", inner)
+{
+    internal string Boundary { get; } = boundary;
+    internal string Operation { get; } = operation;
 }
 
 internal sealed class SessionRecordInvalidException(Exception? inner = null)

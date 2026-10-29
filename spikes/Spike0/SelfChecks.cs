@@ -169,6 +169,7 @@ internal static class SelfChecks
             Expect<WorkStoppedException>(() => gate.Step("late-cleanup", () => { }));
         });
 
+        LifecycleChecks.Run(directory, Check);
         Console.WriteLine($"{passed} self-checks passed. Excel was not activated.");
         return 0;
     }

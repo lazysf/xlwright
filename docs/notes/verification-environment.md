@@ -8,21 +8,21 @@
 T3は環境の静的確認と依存の選定までを対象とします。
 既存設計のC#/.NET 10・Office Interop直接利用と、[T2の初期契約](../adr/0001-initial-lifecycle.md)を前提とします。
 最初のコンソール検証は、既知のマクロなしブックの検証用コピーで起動・所有確認・保存・通常終了を確認する範囲です。
-この範囲のT4準備へ進めると判断します。ビルドとExcel操作の成立性は未検証です。
+この範囲のT4準備へ進めると判断します。後続の[準備記録](spike-0-preparation.md)にビルド・非COM確認結果、[実機結果](spike-0-results.md)にユーザーの初回正常系とエージェントのCOM生成失敗を記載しています。
 
 ## 環境の確認結果
 
 | 対象 | 観測・確認手段 | 判定と限界 |
 | --- | --- | --- |
 | .NET SDK | `dotnet --list-sdks`で10.0.402・10.0.403。リポジトリ内の`dotnet --version`は10.0.403 | SDKの選択を確認。[global.json](../../global.json)の既存規則を維持します |
-| .NETのビット数 | `dotnet --info`のHostはx64、RIDはwin-x64 | x64ホストを確認。コンソールのビルドは未実施です |
+| .NETのビット数 | `dotnet --info`のHostはx64、RIDはwin-x64 | x64ホストを確認。後続のビルド結果は準備記録を参照してください |
 | SDK診断 | `dotnet --info`でService Control Managerへのアクセス拒否が発生 | 診断全体の成功とは扱いません。権限追加やworkloadの変更はしていません |
 | Excel | ClickToRunのPlatformはx64、VersionToReportは16.0.20527.20088、ProductReleaseIdsはO365HomePremRetail。登録先EXCEL.EXEのProductVersionも一致 | ユーザーの了承に基づきMicrosoft 365 Excel 64-bitの登録情報を環境記録に使います。起動・接続による確認はしていません |
-| Excel COM登録 | Excel.ApplicationのCLSIDとLocalServer32の登録を確認 | 登録の存在だけを確認。COM生成の成功や専用インスタンスの成立は未検証です |
+| Excel COM登録 | Excel.ApplicationのCLSIDとLocalServer32の登録を確認 | T3では登録の存在だけを確認。生成・終了の観測は実機結果を参照してください |
 
 環境確認時のコマンドはリポジトリルートから実行しました。
 登録情報は`HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration`と、ExcelのApp Paths・COM登録を読み取りました。
-Excelの起動・接続・終了、設定変更は行っていません。
+T3の環境確認ではExcelの起動・接続・終了、設定変更は行っていません。
 
 ## 設定の状態と必要になる工程
 
@@ -30,8 +30,8 @@ Excelの起動・接続・終了、設定変更は行っていません。
 | --- | --- | --- |
 | ユーザー側のExcel Security設定 | `HKCU\Software\Microsoft\Office\16.0\Excel\Security`の読取りが拒否されました。AccessVBOM・VBAWarnings等の値は未確認です | マクロなしブックの通常操作ではVBIDEにアクセスしません。マクロ許可・VBIDEアクセスを初回準備の条件にしません |
 | Excel Securityのポリシー | 調べたHKCU・HKLMの`Software\Policies\Microsoft\Office\16.0\Excel\Security`キーは見つかりませんでした | 他の管理経路を含む制限の不存在は証明していません。組織設定を変更・迂回しません |
-| AutomationSecurity・イベント抑止・DisplayAlerts | 専用Excelを生成していないため、インスタンスの値と効果は未確認です | [起動とコード実行の境界](../architecture.md#起動とコード実行の境界)に従いT4で準備します。効果はT5以降の該当検証で確認します |
-| Protected Viewと終了安全確認 | 未実施です | 設定を緩和せず、T2の拒否条件を実装・検証します |
+| AutomationSecurity・イベント抑止・DisplayAlerts | T3では専用Excelを生成せず、インスタンスの値と効果を確認していません | [起動とコード実行の境界](../architecture.md#起動とコード実行の境界)に従うコードはT4で準備しています。効果はT5以降の該当検証で確認します |
+| Protected Viewと終了安全確認 | T4の通常終了は実機結果を参照してください。混入・照会不能時の拒否は未確認です | 設定を緩和せず、T2の拒否条件を検証します |
 
 VBIDE設定はVBA操作の前に確認します。マクロの実行や起動設定の効果はS10等で評価します。
 読取り拒否を解除する操作やExcel画面での確認が必要になれば、対象と操作範囲を示して承認を得ます。
@@ -40,7 +40,7 @@ VBIDE設定はVBA操作の前に確認します。マクロの実行や起動設
 ## 選定した依存と承認
 
 2026-10-29に提示したT3プランへの「プランを実行して」というユーザー指示を、既存PIA直接参照の選定と、T4で次の2アセンブリを参照することへの承認として記録します。
-今回、参照の追加やDLLのコピーは行っていません。
+T3では参照の追加やDLLのコピーを行っていません。T4では準備記録のとおり参照を追加しています。
 
 | 参照対象 | AssemblyVersion / FileVersion | 用途 |
 | --- | --- | --- |
@@ -76,7 +76,7 @@ Office共通PIAのAssemblyRefはmscorlib 2.0.0.0、stdole 7.0.3300.0です。
 推移参照先のVBIDE PIAはAssemblyVersion 15.0.0.0、FileVersion 15.0.4561.1000でした。
 stdoleはAssemblyVersion 7.0.3300.0、FileVersion 7.00.9466でした。
 これらの参照情報は、初回経路で全アセンブリの明示参照が必要なことを証明しません。
-VBIDE PIA・stdoleは所在の確認までとし、追加の明示参照が必要ならT4で根拠と影響を示して承認を得ます。
+VBIDE PIA・stdoleの明示参照は、初回コンソールのビルドには不要でした。後続で追加が必要なら根拠と影響を示して承認を得ます。
 mscorlibの旧版を追加導入する判断ではありません。.NET 10での参照解決はビルドで確認します。
 
 確認には`AssemblyName.GetAssemblyName`、`FileVersionInfo`、`Get-FileHash -Algorithm SHA256`を使いました。
@@ -85,10 +85,10 @@ mscorlibの旧版を追加導入する判断ではありません。.NET 10で�
 
 ## 未確認事項とT4への引継ぎ
 
-- T4では上記2アセンブリの明示参照から始め、ビルド時の依存解決を確認します。未確認のビルドコマンドを成功手順として記載しません。
+- 上記2アセンブリの明示参照によるビルド結果は準備記録を参照してください。
 - ビルドが追加依存や版の変更を要求する場合は、T3の選定を再評価します。新しい依存を無断で追加しません。
-- .NET 10との互換性、実行時のアセンブリ読込み、COM生成、STA・メッセージポンプ、所有確認・終了は未検証です。古いmscorlib参照を含むPIAの存在だけで動作保証しません。
-- 検証用資産とコードはT4で準備します。Excelを扱う実行は対象と操作範囲の承認後に行います。
+- Excel操作時の互換性、COM生成、所有確認・終了の確認範囲は実機結果を参照してください。古いmscorlib参照を含むPIAの存在やビルド成功だけで動作保証しません。
+- 検証用資産とコードはT4で準備しています。Excelを扱う実行は対象と操作範囲の承認後に行います。
 - T5の正常系と故障注入前の確認、R1の完了は、この環境調査では達成していません。
 
 既存PIAの参照は初回検証に限定した、変更し直せる選択です。配布構成の確定ではありません。

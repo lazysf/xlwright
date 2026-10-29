@@ -2,6 +2,7 @@
 
 - Date: 2026-10-29
 - Outdated: 初期経路はT2で採用済みです。[採用判断](../adr/0001-initial-lifecycle.md)と正式設計・APIを参照してください。本文の未承認案を現行契約として使わないでください。後続経路は未承認・未検証です。
+- Outdated: 本文のMCP接続時期は、[R1への前倒し判断](../adr/0002-development-mcp-foundation.md)で更新されています。現在の作業順序は[Spike-0](../spike-0.md#実施順序と着手条件)を参照してください。
 - 出典: [要件](../requirements.md)、[設計](../architecture.md)、[API契約](../api.md)、[実機検証計画](../spike-0.md)、本文中のMicrosoft公式資料。
 
 本記録は、文書間の整合性と計画の成立性を確認した結果です。

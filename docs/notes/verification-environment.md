@@ -54,7 +54,7 @@ GACから.NET 10が自動解決するとは仮定しません。
 ビルド時の型ライブラリ生成を伴うCOMReferenceは採用しません。[ResolveCOMReferenceの公式説明](https://learn.microsoft.com/en-us/visualstudio/msbuild/resolvecomreference-task?view=visualstudio)には、dotnet CLIからの利用制約があります。
 
 ファイル・JSON・時間計測・診断は.NET標準機能を出発点とします。
-MCP SDKはR3の接続実装前に選定します。VBIDE操作用の依存、ラッパー、汎用検証基盤は先行追加しません。
+MCP SDKの確認はR1の接続基盤整備へ前倒しします。状態は下記の追加確認を参照してください。VBIDE操作用の依存、ラッパー、汎用検証基盤は先行追加しません。
 NuGetの[Microsoft.Office.Interop.Excel 16.0.18925.20022](https://www.nuget.org/packages/Microsoft.Office.Interop.Excel/16.0.18925.20022)は今回採用しません。
 公開説明では第三者によるOfficeアセンブリの再梱包で、サポート対象外とされています。
 このパッケージや別の版への変更は、配布元・利用条件・必要性を確認して改めて承認を得る対象です。
@@ -92,4 +92,45 @@ mscorlibの旧版を追加導入する判断ではありません。.NET 10で�
 - T5の正常系と故障注入前の確認、R1の完了は、この環境調査では達成していません。
 
 既存PIAの参照は初回検証に限定した、変更し直せる選択です。配布構成の確定ではありません。
-公開契約・永続化・ライフサイクル設計を変更しないため、新しいADRは作成しません。
+初回PIAの採用では公開契約・永続化・ライフサイクル設計を変更しないため、ADRは作成していません。
+
+## MCP接続基盤の依存確認
+
+2026-10-29に、R1で接続基盤を前倒しする実行プランが承認されました。[採用判断](../adr/0002-development-mcp-foundation.md)を参照してください。
+固定対象は`ModelContextProtocol.Core` 2.3.0です。[公式リリース](https://github.com/modelcontextprotocol/csharp-sdk/releases/tag/v2.3.0)と、公式NuGetから取得したnupkgのnuspecを確認しました。
+nuspecのrepository commitは`9a327829ef066c44a0d737c58bf3c7617d7c701c`でした。
+
+### 取得経路と確認範囲
+
+通常のエージェント実行からNuGetの版一覧を照会すると、名前解決が「そのようなホストは不明です」で失敗しました。
+ユーザーの通常シェルでは指定版の存在を確認できたとの報告を得ました。
+ユーザーはツールの昇格による照会・取得を明示承認しました。同じ照会は昇格した実行経路で成功し、指定版と推移依存のrestoreも成功しました。
+実行経路による差を確認した結果です。名前解決を拒否した具体的な層・仕組みは未特定です。管理者権限や設定緩和が必要だったことを示しません。
+
+復元にはサーバー直下の`NuGet.Config`を使い、配布元を公式NuGetだけに限定しました。
+初回復元ではCLIホーム、APPDATA、global-packagesを`.xlwright/mcp-build/`配下に固定しました。HTTP・プラグインキャッシュの初回の保存先は未確認です。
+継続利用するチェック入口ではHTTP・プラグインキャッシュも同じ作業領域へ明示的に固定します。証明書生成、ツールPATH追加、テレメトリは子プロセスの設定で抑止します。
+依存取得以外のビルド・非COM検証は通常のエージェント実行で確認しています。実Excel操作の権限を変更したものではありません。
+
+### 固定した依存
+
+| パッケージ | 版 | nuspecのライセンス式 |
+| --- | --- | --- |
+| ModelContextProtocol.Core | 2.3.0 | Apache-2.0 |
+| Microsoft.Extensions.AI.Abstractions | 10.11.0 | MIT |
+| Microsoft.Extensions.Logging.Abstractions | 10.0.13 | MIT |
+| Microsoft.Extensions.DependencyInjection.Abstractions | 10.0.13 | MIT |
+
+SDKは.NET 10向けアセットを使用します。直接依存と推移依存の版・content hashはサーバーとチェックプロジェクトの`packages.lock.json`に記録しています。
+初回のネットワークrestore後は、通常のビルドでrestoreを行いません。依存変更時には版・利用条件・影響を確認します。
+配布方式と第三者ライセンスの同梱方法は配布工程で確定します。ビルド成功を配布準備完了とは扱いません。
+
+### 現在の検証範囲
+
+接続基盤と開発用ツールのDebug・Releaseビルド、非COMチェックを確認しました。[結果記録](spike-0-results.md#mcp接続基盤の非com検証)を参照してください。
+プロジェクト設定からのアプリ接続・診断と、固定コンソールによるMCP経由のExcel正常系2回を確認しました。受付ID形式の修正後の非COM17項目、アプリ再接続時の新しい起動識別子・ビルド一致、旧サーバー終了まで確認しました。開発ループの最小確認は完了しましたが、T5・R1全体の合格ではありません。
+今回のstartingは根拠と対象を提示した承認後に復旧しました。今後も未完了記録の整理には同じ手動復旧の判断が必要です。
+
+着手時のstartingのSHA-256は`9ACD9C6DD59C448899B0E2DF3930E5C9863EAAF982474A1397E1471F6C47EDE6`でした。
+基準ブックのSHA-256は`E87C630F4B14250700A40359FD1788875D145AE2019974D8C5264D591BEBBDA2`でした。
+事前のプロセス名照会でExcelは0件でした。これらの事前観測は、復旧根拠全体の確認や承認の代わりにはしません。

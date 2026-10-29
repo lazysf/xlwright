@@ -22,3 +22,6 @@ Desktop.ini
 .xlwright/
 .xlwright.lock
 dist/
+
+# Machine-specific project MCP configuration
+/.codex/config.toml

@@ -12,14 +12,15 @@
 - [spike-0.md](spike-0.md): 最初の実機検証の仮説、実施計画、結果記録、PoCへの移行条件。
 
 - [adr/0001-initial-lifecycle.md](adr/0001-initial-lifecycle.md): 初期ライフサイクルと所有記録の採用判断。
+- [adr/0002-development-mcp-foundation.md](adr/0002-development-mcp-foundation.md): R1でのMCP接続基盤の前倒し、開発用機能と製品配布の境界。
 
 調査記録は仕様の正本とは区別します。
 
 - [notes/plan-review.md](notes/plan-review.md): 最小反復を先行する方針の根拠、実装手段の比較候補、計画の確認事項。
 - [notes/lifecycle-proposal.md](notes/lifecycle-proposal.md): T1の比較案、所有記録の更新順、T2の採用判断への参照と後続の未承認事項。実機検証の結果ではありません。
-- [notes/verification-environment.md](notes/verification-environment.md): T3の環境確認、初回コンソール用PIAの版・承認範囲、未検証事項。
+- [notes/verification-environment.md](notes/verification-environment.md): T3の環境確認、PIAとMCP SDKの版・依存・承認範囲、取得経路と未検証事項。
 - [notes/spike-0-preparation.md](notes/spike-0-preparation.md): T4の初回コンソール・基準ブックの準備、ビルドと非COM自己チェック、実機未確認事項。
-- [notes/spike-0-results.md](notes/spike-0-results.md): ユーザーによる正常系と次回開始、未完了記録の手動復旧、エージェントのCOM生成失敗と原因調査、確認範囲、再開条件。
+- [notes/spike-0-results.md](notes/spike-0-results.md): ユーザー実行とMCP経由の正常系・次回開始、手動復旧、COM生成失敗の調査、接続基盤の検証・設定・更新、確認範囲と再開条件。
 
 [PROJECT_OVERVIEW_V22.md](../references/PROJECT_OVERVIEW_V22.md) は初期の参考資料です。
 正式文書に未移行の記述を、自動的に現行仕様として採用しないでください。

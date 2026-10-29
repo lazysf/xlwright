@@ -11,7 +11,7 @@
 R1の準備としてT2の初期ライフサイクル契約を確定しました。[採用判断](docs/adr/0001-initial-lifecycle.md)を参照してください。
 T3の[環境と依存の確認](docs/notes/verification-environment.md)、T4の[ビルド・非COM確認](docs/notes/spike-0-preparation.md)と[実機結果](docs/notes/spike-0-results.md)を記録済みです。
 開発順序は、P0-coreの前に最小反復を成立させる方針です。[計画レビュー](docs/notes/plan-review.md)に根拠と比較候補を記載しています。
-R1・T5は未完了です。エージェント実行のアクセス拒否と未完了記録の復旧判断が残っています。再開条件は実機結果を参照してください。
+R1・T5は未完了です。手動復旧後のユーザー実行で次回開始を含むL1を確認しました。エージェントの比較実行は再びCOM生成で失敗し、startingを保持しています。同時刻・同じExcel CLSIDのDCOM拒否イベントを観測しましたが、失敗プロセスとの直接対応と対策は未確認です。L2・L3も未確認です。再開条件は実機結果を参照してください。
 
 ## ロードマップ
 

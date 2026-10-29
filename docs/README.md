@@ -19,7 +19,7 @@
 - [notes/lifecycle-proposal.md](notes/lifecycle-proposal.md): T1の比較案、所有記録の更新順、T2の採用判断への参照と後続の未承認事項。実機検証の結果ではありません。
 - [notes/verification-environment.md](notes/verification-environment.md): T3の環境確認、初回コンソール用PIAの版・承認範囲、未検証事項。
 - [notes/spike-0-preparation.md](notes/spike-0-preparation.md): T4の初回コンソール・基準ブックの準備、ビルドと非COM自己チェック、実機未確認事項。
-- [notes/spike-0-results.md](notes/spike-0-results.md): ユーザーによる初回正常系とエージェントのCOM生成失敗、確認範囲、再開条件。
+- [notes/spike-0-results.md](notes/spike-0-results.md): ユーザーによる正常系と次回開始、未完了記録の手動復旧、エージェントのCOM生成失敗と原因調査、確認範囲、再開条件。
 
 [PROJECT_OVERVIEW_V22.md](../references/PROJECT_OVERVIEW_V22.md) は初期の参考資料です。
 正式文書に未移行の記述を、自動的に現行仕様として採用しないでください。

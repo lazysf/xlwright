@@ -48,4 +48,4 @@ foreach ($configuration in @('Debug', 'Release')) {
 }
 Invoke-DevelopmentDotnet @('tests/XlWright.McpServer.Checks/bin/Release/net10.0-windows/XlWright.McpServer.Checks.dll')
 
-Write-Output 'First-time project registration: ./src/XlWright.McpServer/setup-development.ps1'
+Write-Output 'Open the trusted repository root in Codex and verify dev_status using .codex/config.toml.'

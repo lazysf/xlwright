@@ -1,0 +1,4 @@
+# Development registration. Uses the Codex chat working directory.
+[mcp_servers.xlwright-dev]
+command = "C:/Program Files/dotnet/dotnet.exe"
+args = ["src/XlWright.McpServer/bin/Release/net10.0-windows/XlWright.McpServer.dll", "--development"]

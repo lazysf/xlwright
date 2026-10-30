@@ -1,0 +1,9 @@
+Option Explicit
+
+Private Sub Workbook_Open()
+    S10Trace "open"
+End Sub
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    S10Trace "before-close"
+End Sub

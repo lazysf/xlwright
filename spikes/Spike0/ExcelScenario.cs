@@ -6,8 +6,9 @@ using Office = Microsoft.Office.Core;
 namespace Spike0;
 
 // This is one lifecycle experiment, not the Core or a reusable session service.
-internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile record,
-    ExecutionGate gate, DiagnosticLog log, string? unmanagedPath = null, string? recordFault = null)
+internal sealed partial class ExcelScenario(string workbookPath, OwnershipRecordFile record,
+    ExecutionGate gate, DiagnosticLog log, string? unmanagedPath = null, string? recordFault = null,
+    string? startupCase = null)
 {
     private static readonly TimeSpan SessionTimeout = TimeSpan.FromSeconds(120);
     private readonly List<object> references = [];
@@ -34,7 +35,8 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
         try
         {
             Start();
-            EditKnownCell();
+            if (startupCase is null) EditKnownCell();
+            else ProbeStartup();
             if (unmanagedPath is not null) OpenUnmanagedCopy();
             End(save: true);
             if (unmanagedPath is not null)
@@ -230,11 +232,16 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
             Environment.GetEnvironmentVariable("XLWRIGHT_EXCEL_VISIBLE") == "1");
         gate.Step("excel-caption", () => application!.Caption = unmanagedPath is null ? "xlwright Spike0" :
             "xlwright L3 " + Path.GetFileName(Path.GetDirectoryName(workbookPath)));
+        if (startupCase is not null) ObserveSettings("generated");
+        var originalSecurity = startupCase is null ? Office.MsoAutomationSecurity.msoAutomationSecurityLow :
+            gate.Step("read-automation-security", () => application!.AutomationSecurity);
         gate.Step("automation-security", () => application!.AutomationSecurity =
+            startupCase == "C" ? Office.MsoAutomationSecurity.msoAutomationSecurityForceDisable :
             Office.MsoAutomationSecurity.msoAutomationSecurityLow);
         workbooks = gate.Step("get-workbooks", () => Track(application!.Workbooks));
-        WithEventsSuppressed(() =>
+        WithStartupEvents(() =>
         {
+            if (startupCase is not null) ObserveSettings("before-open");
             workbook = gate.Step("open-copy", () => Track(workbooks.Open(workbookPath,
                 UpdateLinks: 0, ReadOnly: false, IgnoreReadOnlyRecommended: true,
                 Notify: false, AddToMru: false)));
@@ -243,7 +250,16 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
             string openedPath = gate.Step("check-open-path", () => workbook.FullName);
             if (!SamePath(openedPath, workbookPath))
                 throw new InvalidOperationException("Opened workbook path does not match the copy.");
+            if (startupCase is not null)
+            {
+                ObserveSettings("after-open");
+                gate.Step("restore-automation-security", () => application!.AutomationSecurity = originalSecurity);
+                ObserveSettings("after-security-restoration");
+                ObserveTrace("after-open");
+                StartupProbe.RequireTrace(startupCase, "open", ReadTrace());
+            }
         });
+        if (startupCase is not null) ObserveSettings("after-open-events-restoration");
         gate.Complete("ready");
         log.Write("start.ready", gate);
     }
@@ -294,8 +310,9 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
     {
         if (!quitReturned)
         {
-            EndSafety.CloseAndQuit(VerifyEndSafety, () => WithEventsSuppressed(() =>
+            EndSafety.CloseAndQuit(VerifyEndSafety, () => WithStartupEvents(() =>
             {
+                if (startupCase is not null) ObserveSettings("before-close");
                 bool originalAlerts = gate.Step("read-alerts", () => application!.DisplayAlerts);
                 gate.Step("suppress-close-alerts", () => application!.DisplayAlerts = false);
                 if (workbook is not null)
@@ -307,6 +324,12 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
                         workbook = null;
                     });
                 gate.Step("restore-close-alerts", () => application!.DisplayAlerts = originalAlerts);
+                if (startupCase is not null)
+                {
+                    ObserveSettings("after-close");
+                    ObserveTrace("after-close");
+                    StartupProbe.RequireTrace(startupCase, "closed", ReadTrace());
+                }
             }), () => gate.Step("quit", () =>
             {
                 log.Write("quit.started", gate);

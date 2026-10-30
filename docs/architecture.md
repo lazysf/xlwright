@@ -199,7 +199,8 @@ Openの遅延成功でreadyにせず、保存の遅延成功でCloseへ進みま
 外部ブックを取り込む `project_init` では、コピーを事前にOOXMLとして確認し、XLMマクロシートを拒否します。
 取り込み時は `ForceDisable` で開いて抽出し、保存せず終了します。
 抽出したVBAは、通常のセッションを開始する前に人またはエージェントが確認します。
-これらの実機挙動はS10で確認します。
+既知のVBAフィクスチャによるLow・イベント抑止・ForceDisableの起動比較は、[T7の評価](notes/spike-0-results.md#t7の評価と残る確認)に記録しています。
+ForceDisableによるVBA抽出は未実施で、`project_init`の実装前に確認します。ActiveXは非対応です。
 
 xlwright自身のOpen・Close・編集はイベント抑止の下で行い、終了後に元へ戻します。
 イベント抑止は、VBA全体の実行防止を保証するものとして扱いません。

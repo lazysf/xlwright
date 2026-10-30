@@ -16,9 +16,73 @@ internal static class SelfChecks
         }
         RuntimeAssets.VerifyPias();
         RuntimeAssets.VerifyFixture(repository);
+        Check("S10 fixed case selection", () =>
+        {
+            Assert(StartupProbe.Parse(["--excel-s10-a2"]) == "A2");
+            Assert(StartupProbe.Parse(["--excel-s10-a"]) is null);
+            Assert(StartupProbe.Parse(["--excel-s10-b"]) == "B");
+            Assert(StartupProbe.Parse(["--excel-s10-c"]) == "C");
+            Assert(StartupProbe.Parse(["--excel-s10-d"]) is null);
+            Assert(StartupProbe.Parse(["--excel-s10-a", "other.xlsm"]) is null);
+            Assert(StartupProbe.Parse(["--excel-s10-z"]) is null);
+        });
+        Check("S10 positive and negative evidence", () =>
+        {
+            StartupProbe.RequireTrace("A2", "open", ["open"]);
+            StartupProbe.RequireTrace("A2", "closed", ["open", "before-close"]);
+            StartupProbe.RequireTrace("B", "open", []);
+            StartupProbe.RequireTrace("B", "closed", ["auto-open"]);
+            StartupProbe.RequireTrace("C", "closed", []);
+            Expect<InvalidDataException>(() => StartupProbe.RequireTrace("A2", "open", []));
+            Expect<InvalidDataException>(() => StartupProbe.RequireTrace("B", "closed", ["auto-open", "before-close"]));
+            Expect<InvalidDataException>(() => StartupProbe.RequireTrace("C", "open", ["open"]));
+            Expect<InvalidDataException>(() => StartupProbe.RequireTrace("D", "closed", []));
+        });
+        Check("S10 revised case ordering", () =>
+        {
+            Assert(StartupProbe.PreviousCase("A2") is null);
+            Assert(StartupProbe.PreviousCase("B") == "A2");
+            Assert(StartupProbe.PreviousCase("C") == "B");
+            Expect<InvalidDataException>(() => StartupProbe.PreviousCase("A"));
+        });
+        Check("S10 unopened calculation never calls the getter", () =>
+        {
+            bool called = false;
+            int? observed = StartupProbe.ReadCalculation(false, () => { called = true; throw new InvalidOperationException(); });
+            Assert(observed is null && !called);
+        });
+        Check("S10 open calculation reads once and propagates failure", () =>
+        {
+            int calls = 0;
+            Assert(StartupProbe.ReadCalculation(true, () => { calls++; return -4105; }) == -4105 && calls == 1);
+            Expect<InvalidOperationException>(() => StartupProbe.ReadCalculation(true, () => throw new InvalidOperationException()));
+        });
         string directory = RuntimeAssets.CreateLocalDirectory(repository,
             Path.Combine(".xlwright", "spike0-checks", Guid.NewGuid().ToString("N")));
         string workbook = Path.Combine(directory, "lifecycle.xlsx");
+        Check("S10 repeated case is rejected before creating a guard", () =>
+        {
+            string attemptPath = Path.Combine(directory, "repeat.attempt");
+            string guardPath = Path.Combine(directory, "repeat.guard");
+            StartupProbe.RequireNewAttempt(attemptPath);
+            File.WriteAllText(attemptPath, "original evidence");
+            Expect<IOException>(() =>
+            {
+                StartupProbe.RequireNewAttempt(attemptPath);
+                File.WriteAllText(guardPath, "must not be created");
+            });
+            Assert(File.ReadAllText(attemptPath) == "original evidence" && !File.Exists(guardPath));
+            Expect<IOException>(() => StartupProbe.RequireNewAttempt(directory));
+        });
+        Check("S10 fixed hash rejects a modified copy", () =>
+        {
+            string probe = Path.Combine(directory, "s10-hash-check.bin");
+            File.WriteAllText(probe, "reviewed fixture");
+            string hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(probe)));
+            StartupProbe.VerifyHash(probe, hash);
+            File.WriteAllText(probe, "modified fixture");
+            Expect<InvalidDataException>(() => StartupProbe.VerifyHash(probe, hash));
+        });
         var owner = new ProcessIdentity(12345, new DateTime(2026, 10, 29, 0, 0, 0, DateTimeKind.Utc), "EXCEL");
         var owned = new OwnershipRecord(1, "owned", workbook, owner);
         string ownedJson = JsonSerializer.Serialize(owned, OwnershipRecord.JsonOptions);

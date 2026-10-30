@@ -7,7 +7,7 @@ namespace Spike0;
 
 // This is one lifecycle experiment, not the Core or a reusable session service.
 internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile record,
-    ExecutionGate gate, DiagnosticLog log, string? unmanagedPath = null)
+    ExecutionGate gate, DiagnosticLog log, string? unmanagedPath = null, string? recordFault = null)
 {
     private static readonly TimeSpan SessionTimeout = TimeSpan.FromSeconds(120);
     private readonly List<object> references = [];
@@ -21,6 +21,8 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
     private bool closeStarted;
     private bool quitReturned;
     private bool recordReleased;
+    private bool exitConfirmed;
+    private HashSet<int>? existingExcelPids;
     private bool saveConfirmed;
     private bool refusalExpected;
     private int observedProtectedCount;
@@ -37,6 +39,8 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
             End(save: true);
             if (unmanagedPath is not null)
                 throw new InvalidOperationException("L3 unexpectedly allowed termination; do not retry.");
+            if (recordFault is not null)
+                throw new InvalidOperationException("L2 record fault was not injected; do not retry.");
             log.Write("smoke.closed", gate, new { workbook_path = workbookPath, process = identity });
             return true;
         }
@@ -64,6 +68,15 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
             if (unmanagedPath is not null && error is EndRefusedException)
             {
                 try { VerifyRefusalEvidence(); }
+                catch (Exception evidenceError)
+                {
+                    Fail(evidenceError);
+                    throw;
+                }
+            }
+            if (recordFault is not null && error is RecordIoException fault)
+            {
+                try { VerifyRecordFault(fault); }
                 catch (Exception evidenceError)
                 {
                     Fail(evidenceError);
@@ -111,6 +124,47 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
         });
     }
 
+    private void VerifyRecordFault(RecordIoException fault)
+    {
+        // Only retained data and OS/file reads are allowed after the injected failure. No COM calls.
+        var snapshot = gate.Snapshot;
+        if (fault.Boundary != recordFault || fault.Operation != "write" || snapshot.Busy || recordReleased)
+            throw new InvalidOperationException("L2 fault evidence is incomplete; preserve all records.");
+        OwnershipRecord retained;
+        int[]? newExcelPids = null;
+        if (recordFault == "starting")
+        {
+            if (generationStarted || identity is not null || snapshot.State != "closed" || existingExcelPids is null)
+                throw new InvalidOperationException("L2 starting fault evidence is incomplete; preserve all records.");
+            var current = Process.GetProcessesByName("EXCEL");
+            try { newExcelPids = current.Select(item => item.Id).Where(pid => !existingExcelPids.Contains(pid)).ToArray(); }
+            finally { foreach (var item in current) item.Dispose(); }
+            // A new PID may belong to the user; stop for review without choosing it for termination.
+            if (newExcelPids.Length != 0)
+                throw new InvalidOperationException("A new Excel process appeared during the L2 starting fault: PID " +
+                    string.Join(", ", newExcelPids));
+            RuntimeAssets.VerifyCell(workbookPath, 0);
+            retained = new(1, "completed");
+        }
+        else
+        {
+            if (!saveConfirmed || !closeStarted || !quitReturned || !exitConfirmed || identity is null ||
+                process is not { HasExited: true } || snapshot.State != "isolated")
+                throw new InvalidOperationException("L2 completed fault evidence is incomplete; preserve all records.");
+            RuntimeAssets.VerifyCell(workbookPath, 1);
+            retained = new(1, "owned", workbookPath, identity);
+        }
+        // Before this process exits its own handle still holds the lock, including for starting (released on exit).
+        record.VerifyRetained(retained);
+        log.Write("record-fault.verified", gate, new
+        {
+            boundary = fault.Boundary, operation = fault.Operation, process = identity, record = retained,
+            generation_started = generationStarted, excel_exit_confirmed = exitConfirmed, new_excel_pids = newExcelPids,
+            close_started = closeStarted, quit_returned = quitReturned, record_released = recordReleased,
+            sharing_violation_observed = true, manual_recovery = generationStarted
+        });
+    }
+
     private void Start()
     {
         gate.Begin("start", SessionTimeout);
@@ -120,8 +174,11 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
             try { return existing.Select(item => item.Id).ToHashSet(); }
             finally { foreach (var item in existing) item.Dispose(); }
         });
+        existingExcelPids = existingPids;
         RecordTransition.Run(gate, record, new(1, "starting", workbookPath), () => gate.Step("generate-excel", () =>
         {
+            if (recordFault == "starting")
+                throw new InvalidOperationException("L2 starting fault was not injected; Excel was not created.");
             generationStarted = true;
             application = Track(new Excel.Application());
         }));
@@ -244,6 +301,7 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
         bool exited = gate.Step("wait-process-exit", () => process!.WaitForExit(
             Math.Max(1, (int)Math.Ceiling(gate.Remaining.TotalMilliseconds))));
         if (!exited) throw new WorkStoppedException();
+        exitConfirmed = true;
         if (!recordReleased)
         {
             log.Write("record-completed.started", gate);
@@ -326,7 +384,8 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
             hresult = error.HResult,
             process = identity,
             workbook_path = workbookPath,
-            excel_may_remain = generationStarted,
+            excel_may_remain = generationStarted && !exitConfirmed,
+            excel_exit_confirmed = exitConfirmed,
             manual_recovery = generationStarted
         });
     }

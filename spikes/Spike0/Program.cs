@@ -11,12 +11,20 @@ internal static class Program
             string repository = RuntimeAssets.FindRepository();
             if (args.Length == 0 || args is ["--self-check"])
                 return await SelfChecks.Run(repository);
-            if (args is not ["--excel"] and not ["--excel-end-refusal"])
+            if (args is not ["--excel"] and not ["--excel-end-refusal"] and not ["--excel-record-fault-starting"]
+                and not ["--excel-record-fault-completed"])
             {
-                Console.Error.WriteLine("Usage: Spike0 [--self-check | --excel | --excel-end-refusal]. Excel experiments require prior approval.");
+                Console.Error.WriteLine("Usage: Spike0 [--self-check | --excel | --excel-end-refusal | " +
+                    "--excel-record-fault-starting | --excel-record-fault-completed]. Excel experiments require prior approval.");
                 return 1;
             }
-            return await RunExcel(repository, args[0] == "--excel-end-refusal");
+            string? recordFault = args[0] switch
+            {
+                "--excel-record-fault-starting" => "starting",
+                "--excel-record-fault-completed" => "completed",
+                _ => null
+            };
+            return await RunExcel(repository, args[0] == "--excel-end-refusal", recordFault);
         }
         catch (Exception error)
         {
@@ -25,7 +33,7 @@ internal static class Program
         }
     }
 
-    private static async Task<int> RunExcel(string repository, bool endRefusal)
+    private static async Task<int> RunExcel(string repository, bool endRefusal, string? recordFault)
     {
         RuntimeAssets.VerifyPias();
         RuntimeAssets.VerifyFixture(repository);
@@ -34,6 +42,8 @@ internal static class Program
         RuntimeAssets.RejectReparsePoints(repository, recordPath);
         using var record = OwnershipRecordFile.Acquire(recordPath);
         record.CheckPrevious();
+        // Installed after the previous record check so only the run's own transition can fail.
+        if (recordFault is not null) record.InjectWriteFailure(recordFault);
         string run = RuntimeAssets.CreateLocalDirectory(repository,
             Path.Combine(".xlwright", "spike0", "runs", Guid.NewGuid().ToString("N")));
         string workbook = Path.Combine(run, "lifecycle.xlsx");
@@ -76,7 +86,7 @@ internal static class Program
                     Console.Error.WriteLine("Console monitor failed: " + error.GetType().Name);
                 }
             });
-            var scenario = new ExcelScenario(workbook, record, gate, log, unmanaged);
+            var scenario = new ExcelScenario(workbook, record, gate, log, unmanaged, recordFault);
             Task<bool> work = StaRunner.Start(scenario.Run);
             while (!work.IsCompleted)
             {

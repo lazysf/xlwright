@@ -5,9 +5,16 @@ using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using XlWright.McpServer;
 
-if (args is ["--excel"] or ["--excel-end-refusal"])
+if (args is ["--excel"] or ["--excel-end-refusal"] or ["--excel-record-fault-starting"] or ["--excel-record-fault-completed"])
 {
     string behavior = File.ReadAllText("fake-behavior.txt");
+    if (behavior.StartsWith("fault-", StringComparison.Ordinal))
+    {
+        if (args[0] != "--excel-record-" + behavior) return 3;
+        Console.WriteLine("{\"observation\":\"record-fault.verified\"}");
+        Console.WriteLine("{\"observation\":\"run.failed\"}");
+        return 1;
+    }
     if (behavior.StartsWith("refusal", StringComparison.Ordinal))
     {
         if (args[0] != "--excel-end-refusal") return 3;
@@ -69,13 +76,20 @@ foreach (bool development in new[] { false, true })
     if (development)
     {
         var tools = await client.ListToolsAsync(cancellationToken: deadline.Token);
-        Require(tools.Count == 4 && tools.Any(tool => tool.Name == "dev_excel_end_refusal_start"), "Development tool list");
+        Require(tools.Count == 6 && tools.Any(tool => tool.Name == "dev_excel_end_refusal_start") &&
+            tools.Any(tool => tool.Name == "dev_excel_record_fault_starting_start") &&
+            tools.Any(tool => tool.Name == "dev_excel_record_fault_completed_start"), "Development tool list");
         var status = await client.CallToolAsync("dev_status", cancellationToken: deadline.Token);
         Require(status.IsError != true, "Status tool responds");
         var blocked = await client.CallToolAsync("dev_excel_smoke_start", cancellationToken: deadline.Token);
         Require(blocked.IsError == true, "Synthetic starting blocks Excel before launch");
         var refusalBlocked = await client.CallToolAsync("dev_excel_end_refusal_start", cancellationToken: deadline.Token);
         Require(refusalBlocked.IsError == true, "Synthetic starting blocks end-refusal before launch");
+        foreach (string name in new[] { "dev_excel_record_fault_starting_start", "dev_excel_record_fault_completed_start" })
+        {
+            var faultBlocked = await client.CallToolAsync(name, cancellationToken: deadline.Token);
+            Require(faultBlocked.IsError == true, "Synthetic starting blocks L2 before launch: " + name);
+        }
     }
 }
 
@@ -96,7 +110,8 @@ await using (var client = await McpClient.CreateAsync(receiptLaunch, cancellatio
     Require(observed.IsError != true, "Returned receipt is accepted unchanged by the status tool");
 }
 
-foreach (string behavior in new[] { "success", "fail", "eof", "result-io", "refusal", "refusal-zero", "refusal-eof", "refusal-result-io" })
+foreach (string behavior in new[] { "success", "fail", "eof", "result-io", "refusal", "refusal-zero", "refusal-eof", "refusal-result-io",
+    "fault-starting", "fault-completed" })
 {
     string fake = PrepareFake(behavior);
     Environment.CurrentDirectory = fake;
@@ -104,12 +119,24 @@ foreach (string behavior in new[] { "success", "fail", "eof", "result-io", "refu
     await using (adapter)
     {
         bool refusal = behavior.StartsWith("refusal", StringComparison.Ordinal);
-        using var accepted = JsonDocument.Parse(refusal ? adapter.StartEndRefusal() : adapter.Start());
+        bool fault = behavior.StartsWith("fault-", StringComparison.Ordinal);
+        using var accepted = JsonDocument.Parse(behavior switch
+        {
+            "fault-starting" => adapter.StartRecordFaultStarting(),
+            "fault-completed" => adapter.StartRecordFaultCompleted(),
+            _ => refusal ? adapter.StartEndRefusal() : adapter.Start()
+        });
         if (refusal)
         {
             string receipt = accepted.RootElement.GetProperty("receipt").GetString()!;
             using var observed = JsonDocument.Parse(adapter.SmokeStatus(Guid.Parse(receipt)));
             Require(observed.RootElement.GetProperty("scenario").GetString() == "end-refusal", "End-refusal receipt and scenario");
+        }
+        if (fault)
+        {
+            string receipt = accepted.RootElement.GetProperty("receipt").GetString()!;
+            using var observed = JsonDocument.Parse(adapter.SmokeStatus(Guid.Parse(receipt)));
+            Require(observed.RootElement.GetProperty("scenario").GetString() == "record-" + behavior, "L2 receipt and scenario: " + behavior);
         }
         if (behavior is "result-io" or "refusal-result-io")
         {
@@ -141,6 +168,19 @@ foreach (string behavior in new[] { "success", "fail", "eof", "result-io", "refu
                 try { adapter.Start(); } catch (InvalidOperationException) { rejected = true; }
                 Require(rejected, "Smoke rejected after end-refusal");
             }
+            if (fault)
+            {
+                using var status = JsonDocument.Parse(adapter.Status());
+                Require(status.RootElement.GetProperty("latestObservation").GetString() == "run.failed" &&
+                    status.RootElement.GetProperty("manualReviewRequired").GetBoolean(), "L2 fault requires review: " + behavior);
+                string stdoutPath = Path.Combine(fake, status.RootElement.GetProperty("logDirectory").GetString()!,
+                    status.RootElement.GetProperty("receipt").GetString()! + ".stdout.jsonl");
+                Require(File.ReadLines(stdoutPath).Any(line => line.Contains("record-fault.verified", StringComparison.Ordinal)),
+                    "L2 fault evidence survives the terminal failure event: " + behavior);
+                bool rejected = false;
+                try { adapter.StartRecordFaultCompleted(); } catch (InvalidOperationException) { rejected = true; }
+                Require(rejected, "L2 start rejected after a failed run: " + behavior);
+            }
         }
     }
     if (behavior is "refusal-eof" or "refusal-result-io")
@@ -151,7 +191,8 @@ foreach (string behavior in new[] { "success", "fail", "eof", "result-io", "refu
             "Refusal shutdown or result I/O failure requires review: " + behavior);
     }
     bool guarded = File.Exists(Path.Combine(fake, ".xlwright", "mcp-development", "active-smoke.json"));
-    Require(guarded == (behavior is "fail" or "result-io" or "refusal" or "refusal-zero" or "refusal-eof" or "refusal-result-io"), "Guard retained only on failure: " + behavior);
+    Require(guarded == (behavior is "fail" or "result-io" or "refusal" or "refusal-zero" or "refusal-eof" or "refusal-result-io" or
+        "fault-starting" or "fault-completed"), "Guard retained only on failure: " + behavior);
     Environment.CurrentDirectory = repository;
 }
 Console.WriteLine($"Passed {passed} non-COM checks.");

@@ -77,8 +77,8 @@ internal sealed record OwnershipRecord(int Version, string Kind,
 internal sealed class OwnershipRecordFile : IDisposable
 {
     private readonly FileStream stream;
-    // Only self-checks install this hook; the exclusive production handle stays in use.
-    internal Action<string, FileStream>? BeforeIo { get; set; }
+    // Self-checks and the fixed L2 runs install this hook; the exclusive production handle stays in use.
+    internal Action<string, string, FileStream>? BeforeIo { get; set; }
     internal bool CreatedNew { get; }
 
     private OwnershipRecordFile(FileStream stream, bool createdNew)
@@ -108,7 +108,7 @@ internal sealed class OwnershipRecordFile : IDisposable
         string text = Io(boundary, boundary == "existing" ? "read" : "read-back", () =>
         {
             stream.Position = 0;
-            BeforeIo?.Invoke(boundary == "existing" ? "read" : "read-back", stream);
+            BeforeIo?.Invoke(boundary, boundary == "existing" ? "read" : "read-back", stream);
             using var reader = new StreamReader(stream, System.Text.Encoding.UTF8,
                 detectEncodingFromByteOrderMarks: false, leaveOpen: true);
             return reader.ReadToEnd();
@@ -122,19 +122,19 @@ internal sealed class OwnershipRecordFile : IDisposable
         Io(record.Kind, "write", () =>
         {
             stream.Position = 0;
-            BeforeIo?.Invoke("write", stream);
+            BeforeIo?.Invoke(record.Kind, "write", stream);
             stream.Write(bytes);
             return true;
         });
         Io(record.Kind, "set-length", () =>
         {
-            BeforeIo?.Invoke("set-length", stream);
+            BeforeIo?.Invoke(record.Kind, "set-length", stream);
             stream.SetLength(bytes.Length);
             return true;
         });
         Io(record.Kind, "flush", () =>
         {
-            BeforeIo?.Invoke("flush", stream);
+            BeforeIo?.Invoke(record.Kind, "flush", stream);
             stream.Flush(flushToDisk: true);
             return true;
         });
@@ -158,6 +158,12 @@ internal sealed class OwnershipRecordFile : IDisposable
             throw new RecordIoException(boundary, operation, error);
         }
     }
+
+    // Fixed L2 runs fail before any byte of the target record is written, so the previous record is retained.
+    internal void InjectWriteFailure(string kind) => BeforeIo = (boundary, operation, _) =>
+    {
+        if (boundary == kind && operation == "write") throw new IOException("Injected L2 record write failure.");
+    };
 
     internal void CheckPrevious()
     {

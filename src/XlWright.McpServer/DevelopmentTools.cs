@@ -61,6 +61,14 @@ internal sealed class DevelopmentTools : IAsyncDisposable
     internal string StartEndRefusal()
         => StartFixed("end-refusal", "--excel-end-refusal");
 
+    [Description("Start the fixed L2 experiment once: the starting record write fails before Excel is created. Requires explicit approval. Leaves the guard for manual recovery even when the failure is expected. Do not retry.")]
+    internal string StartRecordFaultStarting()
+        => StartFixed("record-fault-starting", "--excel-record-fault-starting");
+
+    [Description("Start the fixed L2 experiment once: the completed record write fails after the owned Excel has exited. Requires explicit approval. Leaves ownership and guard for manual recovery even when the failure is expected. Do not retry.")]
+    internal string StartRecordFaultCompleted()
+        => StartFixed("record-fault-completed", "--excel-record-fault-completed");
+
     private string StartFixed(string experiment, string argument)
     {
         lock (sync)

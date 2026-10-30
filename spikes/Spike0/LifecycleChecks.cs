@@ -28,7 +28,7 @@ internal static class LifecycleChecks
                     var gate = new ExecutionGate();
                     gate.Begin("record-" + kind, TimeSpan.FromSeconds(120));
                     var calls = new List<string>();
-                    file.BeforeIo = (operation, stream) =>
+                    file.BeforeIo = (_, operation, stream) =>
                     {
                         calls.Add(operation);
                         if (failure is "mismatch" or "corrupt" && operation == "read-back")
@@ -92,13 +92,41 @@ internal static class LifecycleChecks
             byte[] original = File.ReadAllBytes(path);
             using (var file = OwnershipRecordFile.Acquire(path))
             {
-                file.BeforeIo = (_, _) => throw new IOException("Injected previous read.");
+                file.BeforeIo = (_, _, _) => throw new IOException("Injected previous read.");
                 try { file.CheckPrevious(); throw new InvalidOperationException("Expected read failure."); }
                 catch (RecordIoException error) { Require(error.Boundary == "existing" && error.Operation == "read"); }
                 Expect<IOException>(() => { using var competing = OwnershipRecordFile.Acquire(path); });
             }
             Require(File.ReadAllBytes(path).SequenceEqual(original));
         });
+
+        foreach (string target in new[] { "starting", "completed" })
+        {
+            check("L2 fixed injection targets only " + target, () =>
+            {
+                using var file = OwnershipRecordFile.Acquire(Path.Combine(directory, "fixed-" + target + ".lock"));
+                var previous = new OwnershipRecord(1, "completed");
+                file.Write(previous);
+                file.InjectWriteFailure(target);
+                Require(file.Read() == previous);
+                int failures = 0;
+                foreach (var record in new OwnershipRecord[]
+                    { new(1, "starting", workbook), new(1, "owned", workbook, identity), new(1, "completed") })
+                {
+                    try { file.Write(record); }
+                    catch (RecordIoException error)
+                    {
+                        Require(record.Kind == target && error.Boundary == target && error.Operation == "write");
+                        Require(file.Read() == previous);
+                        failures++;
+                        continue;
+                    }
+                    Require(record.Kind != target && file.Read() == record);
+                    previous = record;
+                }
+                Require(failures == 1);
+            });
+        }
 
         foreach (string condition in new[] { "safe", "unmanaged", "protected", "identity", "books-unknown",
             "protected-unknown", "late-book", "late-protected", "isolated" })

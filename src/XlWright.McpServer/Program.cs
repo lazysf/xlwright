@@ -31,6 +31,10 @@ internal static class Program
                     new() { Name = "dev_excel_smoke_start", ReadOnly = false }));
                 options.ToolCollection.Add(McpServerTool.Create(development.StartEndRefusal,
                     new() { Name = "dev_excel_end_refusal_start", ReadOnly = false }));
+                options.ToolCollection.Add(McpServerTool.Create(development.StartRecordFaultStarting,
+                    new() { Name = "dev_excel_record_fault_starting_start", ReadOnly = false }));
+                options.ToolCollection.Add(McpServerTool.Create(development.StartRecordFaultCompleted,
+                    new() { Name = "dev_excel_record_fault_completed_start", ReadOnly = false }));
                 options.ToolCollection.Add(McpServerTool.Create(development.SmokeStatus,
                     new() { Name = "dev_excel_smoke_status", ReadOnly = true }));
             }

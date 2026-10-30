@@ -10,3 +10,10 @@ hooks = [
     { id = "end-of-file-fixer", exclude = '^references/PROJECT_OVERVIEW_V22\.md$' },
     { id = "check-added-large-files" },
 ]
+
+[[repos]]
+repo = "local"
+hooks = [
+    # Uses the markdownlint-cli2 installed by `npm ci` with the Node.js version in .nvmrc.
+    { id = "markdownlint", name = "markdownlint", entry = "npx --no-install markdownlint-cli2", language = "system", types = ["markdown"] },
+]

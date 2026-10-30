@@ -25,3 +25,6 @@ dist/
 
 # Machine-specific project MCP configuration
 /.codex/config.toml
+
+# Node.js development tools
+node_modules/

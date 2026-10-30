@@ -23,6 +23,7 @@ P0-coreの完成前に、小さなブックでソース編集・自動反映・�
 - .NET 10 SDK（選択規則は [global.json](global.json)）
 - Git
 - prek（動作確認済み: 0.5.4）
+- nvm-windows（動作確認済み: 2.0.1）とNode.js（版は [.nvmrc](.nvmrc)）
 
 Excelを使う実機検証の対象は Microsoft 365 Excel 64-bit のデスクトップ版です。
 Excelの設定変更や実機検証は、初期セットアップには含みません。
@@ -32,6 +33,15 @@ Excelの設定変更や実機検証は、初期セットアップには含みま
 ```powershell
 dotnet --version
 prek install
+```
+
+Markdownのチェックに使うNode.jsは、nvm-windowsで `.nvmrc` の版を選択します。
+その後、[package-lock.json](package-lock.json) に固定した開発用パッケージをインストールします。
+
+```powershell
+nvm install (Get-Content .nvmrc)
+nvm use (Get-Content .nvmrc)
+npm ci
 ```
 
 構成と作業手順は[開発ガイド](docs/development.md)に記載しています。
@@ -44,7 +54,7 @@ AIエージェント向けのリポジトリ固有ルールは [AGENTS.md](AGENT
 
 ## 開発時のチェック
 
-commit 時に、行末空白、末尾改行、大きな追加ファイルをチェックします。
+commit 時に、行末空白、末尾改行、大きな追加ファイル、Markdownの記法をチェックします。
 全件チェックは次のコマンドで実行します。
 
 ```powershell
@@ -52,7 +62,16 @@ prek run --all-files
 ```
 
 設定は [prek.toml](prek.toml) にあります。
-取り込んだ参考文書 `references/PROJECT_OVERVIEW_V22.md` は、自動整形の対象から除外しています。
+取り込んだ参考文書 `references/PROJECT_OVERVIEW_V22.md` は、自動整形とMarkdownのチェックの対象から除外しています。
+
+Markdownのチェックはmarkdownlint-cli2で行います。
+`npm ci` の後、Markdownだけを全件チェックする場合は次のコマンドを実行します。
+
+```powershell
+npm run lint:md
+```
+
+ルールの設定は [.markdownlint-cli2.jsonc](.markdownlint-cli2.jsonc) にあります。
 
 ## ライセンス
 

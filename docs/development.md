@@ -38,6 +38,9 @@ T4で参照を追加し、Debug・Releaseビルドと非COM自己チェックを
 | `global.json` | .NET SDKの選択 |
 | `.editorconfig` | C#と設定ファイルの編集形式 |
 | `prek.toml` | commit前のチェック |
+| `.nvmrc` | Node.jsの版の選択 |
+| `package.json`・`package-lock.json` | Markdownのチェックに使う開発用パッケージの固定 |
+| `.markdownlint-cli2.jsonc` | Markdownのチェックのルールと対象 |
 
 コードと検証資産は、次の位置へ配置します。
 空ディレクトリや仮実装を先に追加する必要はありません。

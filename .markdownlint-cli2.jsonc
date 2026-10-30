@@ -1,0 +1,13 @@
+{
+  "config": {
+    // Japanese prose is written one sentence per line, so line length is not meaningful.
+    "MD013": false,
+    // Explicit anchors keep existing links stable.
+    "MD033": { "allowed_elements": ["a"] },
+    // Allow the same heading text under different parents.
+    "MD024": { "siblings_only": true }
+  },
+  "gitignore": true,
+  // Preserve the imported reference document without automatic formatting.
+  "ignores": ["references/PROJECT_OVERVIEW_V22.md"]
+}

@@ -213,16 +213,11 @@ Codexの[プロジェクト単位MCP設定](https://learn.chatgpt.com/docs/exten
 reparse pointのある対象パスでは停止します。保護された設定への書込みが拒否された場合、別の場所へ設定を置いて回避しません。
 実機パスを含む生成設定はGit管理外です。Gitにはスクリプトとテンプレートを残します。
 
-Claude Codeでは、同じスクリプトでプロジェクトの`.mcp.json`を生成します。Claude Codeの[プロジェクト単位MCP設定](https://code.claude.com/docs/en/mcp)を使用します。
-
-```powershell
-./src/XlWright.McpServer/setup-development.ps1 -Client Claude
-```
-
-作成対象はこのリポジトリの`.mcp.json`だけで、ホーム設定は変更しません。生成設定は`mcpServers.xlwright-dev`の`type`・`command`・`args`だけです。既存設定・reparse pointでの停止とGit管理外の扱いはCodexと同じです。
-Claude Codeは`command`・`args`の`${VAR}`を展開するため、パスに`$`を含む場合は生成を拒否します。
-Claude Codeの公式文書には作業ディレクトリの指定項目がありません。サーバーは作業ディレクトリに`spikes/Spike0/Spike0.csproj`がなければ開始を拒否します。接続後は`dev_status`の起動識別子と、このリポジトリの`server.json`を照合して作業ディレクトリを確認します。
-プロジェクト単位の設定は既定では対話セッションでの利用前にユーザーの承認を求めますが、これを安全の層には数えません。`.mcp.json`はGit管理外のため、変更は`git status`に出ません。接続先はビルドハッシュの照合で確認します。
+Claude Codeでは、Git管理する[.mcp.json](../.mcp.json)で同じ専用名を設定します。Claude Codeの[プロジェクト単位MCP設定](https://code.claude.com/docs/en/mcp)を使用し、生成手順はありません。
+設定は`mcpServers.xlwright-dev`の`type`・`command`・`args`だけです。`command`は.NETの標準インストール先の`dotnet.exe`です。別の場所に.NETがある環境では動きません。
+サーバーDLLは公式文書の例に従い`${CLAUDE_PROJECT_DIR:-.}`からの相対パスで指定します。変数が未設定なら起動時の作業ディレクトリからの相対パスになります。
+Claude Codeの公式文書には作業ディレクトリの指定項目と既定値の記載がありません。サーバーは作業ディレクトリに`spikes/Spike0/Spike0.csproj`がなければ開始を拒否します。接続後は`dev_status`の起動識別子と、このリポジトリの`server.json`を照合して作業ディレクトリを確認します。
+プロジェクト単位の設定は既定では対話セッションでの利用前にユーザーの承認を求めますが、これを安全の層には数えません。承認すると、Excelを操作する固定の開発ツールが使えるようになります。接続先はビルドハッシュの照合で確認します。
 CodexとClaude Codeの両方を開いている場合は、それぞれが別のサーバーを起動します。開始の競合は共有のガードで拒否されますが、更新時は両方の旧サーバーの終了を確認します。
 
 生成後、ユーザーがプロジェクトを開き直し、設定の読込みを確認します。信頼されていないプロジェクトでは読み込まれません。

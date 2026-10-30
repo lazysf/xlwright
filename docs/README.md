@@ -21,6 +21,7 @@
 - [notes/verification-environment.md](notes/verification-environment.md): T3の環境確認、PIAとMCP SDKの版・依存・承認範囲、取得経路と未検証事項。
 - [notes/spike-0-preparation.md](notes/spike-0-preparation.md): T4の初回コンソール・基準ブックの準備、ビルドと非COM自己チェック、実機未確認事項。
 - [notes/spike-0-results.md](notes/spike-0-results.md): ユーザー実行とMCP経由の正常系・次回開始、手動復旧、COM生成失敗の調査、接続基盤の検証・設定・更新、確認範囲と再開条件。
+- [notes/mcp-reload-study.md](notes/mcp-reload-study.md): 標準再読込みの利用経路とKitsune MCP 0.21.0の静的検査、評価を停止した理由、未確認範囲。
 
 [PROJECT_OVERVIEW_V22.md](../references/PROJECT_OVERVIEW_V22.md) は初期の参考資料です。
 正式文書に未移行の記述を、自動的に現行仕様として採用しないでください。

@@ -11,12 +11,12 @@ internal static class Program
             string repository = RuntimeAssets.FindRepository();
             if (args.Length == 0 || args is ["--self-check"])
                 return await SelfChecks.Run(repository);
-            if (args is not ["--excel"])
+            if (args is not ["--excel"] and not ["--excel-end-refusal"])
             {
-                Console.Error.WriteLine("Usage: Spike0 [--self-check | --excel]. --excel requires prior approval.");
+                Console.Error.WriteLine("Usage: Spike0 [--self-check | --excel | --excel-end-refusal]. Excel experiments require prior approval.");
                 return 1;
             }
-            return await RunExcel(repository);
+            return await RunExcel(repository, args[0] == "--excel-end-refusal");
         }
         catch (Exception error)
         {
@@ -25,7 +25,7 @@ internal static class Program
         }
     }
 
-    private static async Task<int> RunExcel(string repository)
+    private static async Task<int> RunExcel(string repository, bool endRefusal)
     {
         RuntimeAssets.VerifyPias();
         RuntimeAssets.VerifyFixture(repository);
@@ -38,6 +38,9 @@ internal static class Program
             Path.Combine(".xlwright", "spike0", "runs", Guid.NewGuid().ToString("N")));
         string workbook = Path.Combine(run, "lifecycle.xlsx");
         File.Copy(Path.Combine(repository, "tests", "fixtures", "lifecycle.xlsx"), workbook, overwrite: false);
+        string? unmanaged = endRefusal ? Path.Combine(run, "unmanaged.xlsx") : null;
+        if (unmanaged is not null)
+            File.Copy(Path.Combine(repository, "tests", "fixtures", "lifecycle.xlsx"), unmanaged, overwrite: false);
         string diagnosticPath = Path.Combine(run, "diagnostics.jsonl");
         using var log = new DiagnosticLog(diagnosticPath);
         var gate = new ExecutionGate();
@@ -73,7 +76,7 @@ internal static class Program
                     Console.Error.WriteLine("Console monitor failed: " + error.GetType().Name);
                 }
             });
-            var scenario = new ExcelScenario(workbook, record, gate, log);
+            var scenario = new ExcelScenario(workbook, record, gate, log, unmanaged);
             Task<bool> work = StaRunner.Start(scenario.Run);
             while (!work.IsCompleted)
             {

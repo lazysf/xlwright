@@ -29,6 +29,8 @@ internal static class Program
                     new() { Name = "dev_status", ReadOnly = true }));
                 options.ToolCollection.Add(McpServerTool.Create(development.Start,
                     new() { Name = "dev_excel_smoke_start", ReadOnly = false }));
+                options.ToolCollection.Add(McpServerTool.Create(development.StartEndRefusal,
+                    new() { Name = "dev_excel_end_refusal_start", ReadOnly = false }));
                 options.ToolCollection.Add(McpServerTool.Create(development.SmokeStatus,
                     new() { Name = "dev_excel_smoke_status", ReadOnly = true }));
             }

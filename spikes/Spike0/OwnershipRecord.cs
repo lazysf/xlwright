@@ -182,6 +182,17 @@ internal sealed class OwnershipRecordFile : IDisposable
         }
     }
 
+    internal void VerifyRetained(OwnershipRecord expected)
+    {
+        if (Read() != expected) throw new IOException("Retained ownership record changed.");
+        try
+        {
+            using var competing = new FileStream(stream.Name, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (IOException error) when (error.HResult == unchecked((int)0x80070020)) { return; }
+        throw new IOException("Expected ownership sharing violation was not observed.");
+    }
+
     public void Dispose() => stream.Dispose();
 }
 

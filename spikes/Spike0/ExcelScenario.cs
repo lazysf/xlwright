@@ -7,7 +7,7 @@ namespace Spike0;
 
 // This is one lifecycle experiment, not the Core or a reusable session service.
 internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile record,
-    ExecutionGate gate, DiagnosticLog log)
+    ExecutionGate gate, DiagnosticLog log, string? unmanagedPath = null)
 {
     private static readonly TimeSpan SessionTimeout = TimeSpan.FromSeconds(120);
     private readonly List<object> references = [];
@@ -21,6 +21,11 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
     private bool closeStarted;
     private bool quitReturned;
     private bool recordReleased;
+    private bool saveConfirmed;
+    private bool refusalExpected;
+    private int observedProtectedCount;
+    private int observedBookCount;
+    private readonly List<string> observedPaths = [];
 
     internal bool Run()
     {
@@ -28,7 +33,10 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
         {
             Start();
             EditKnownCell();
+            if (unmanagedPath is not null) OpenUnmanagedCopy();
             End(save: true);
+            if (unmanagedPath is not null)
+                throw new InvalidOperationException("L3 unexpectedly allowed termination; do not retry.");
             log.Write("smoke.closed", gate, new { workbook_path = workbookPath, process = identity });
             return true;
         }
@@ -53,9 +61,54 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
         {
             // Start failure never triggers automatic discard/quit.
             Fail(error);
+            if (unmanagedPath is not null && error is EndRefusedException)
+            {
+                try { VerifyRefusalEvidence(); }
+                catch (Exception evidenceError)
+                {
+                    Fail(evidenceError);
+                    throw;
+                }
+            }
             throw;
         }
         finally { process?.Dispose(); }
+    }
+
+    private void OpenUnmanagedCopy()
+    {
+        gate.Begin("introduce-unmanaged-copy", TimeSpan.FromSeconds(120));
+        WithEventsSuppressed(() =>
+        {
+            var other = gate.Step("open-unmanaged-copy", () => Track(workbooks!.Open(unmanagedPath!,
+                UpdateLinks: 0, ReadOnly: false, IgnoreReadOnlyRecommended: true, Notify: false, AddToMru: false)));
+            if (gate.Step("unmanaged-read-only", () => other.ReadOnly) ||
+                !SamePath(gate.Step("unmanaged-full-name", () => other.FullName), unmanagedPath!))
+                throw new InvalidOperationException("The unmanaged copy could not be verified.");
+        });
+        gate.Complete("ready");
+    }
+
+    private void VerifyRefusalEvidence()
+    {
+        // Only retained data and OS/file reads are allowed after the refusal. No COM calls.
+        if (!refusalExpected || !saveConfirmed || closeStarted || quitReturned || recordReleased ||
+            identity is null || process is null || process.HasExited ||
+            gate.Snapshot is not { State: "ready", Busy: false })
+            throw new InvalidOperationException("L3 refusal evidence is incomplete; preserve all records.");
+        using var current = Process.GetProcessById(identity.Pid);
+        if (!identity.Matches(ProcessIdentity.Read(current)))
+            throw new InvalidOperationException("L3 process identity could not be reverified.");
+        var owned = new OwnershipRecord(1, "owned", workbookPath, identity);
+        record.VerifyRetained(owned);
+        log.Write("end-refusal.verified", gate, new
+        {
+            process = identity, record = owned, observed_paths = observedPaths,
+            protected_view_count = observedProtectedCount, workbook_count = observedBookCount,
+            identity_matched = true, excel_alive = true, sharing_violation_observed = true,
+            close_started = closeStarted, quit_returned = quitReturned, record_released = recordReleased,
+            manual_recovery = true
+        });
     }
 
     private void Start()
@@ -90,9 +143,10 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
     private void OpenCopy()
     {
         log.Write("ownership.confirmed", gate, new { workbook_path = workbookPath, process = identity });
-        gate.Step("excel-visible", () => application!.Visible =
+        gate.Step("excel-visible", () => application!.Visible = unmanagedPath is not null ||
             Environment.GetEnvironmentVariable("XLWRIGHT_EXCEL_VISIBLE") == "1");
-        gate.Step("excel-caption", () => application!.Caption = "xlwright Spike0");
+        gate.Step("excel-caption", () => application!.Caption = unmanagedPath is null ? "xlwright Spike0" :
+            "xlwright L3 " + Path.GetFileName(Path.GetDirectoryName(workbookPath)));
         gate.Step("automation-security", () => application!.AutomationSecurity =
             Office.MsoAutomationSecurity.msoAutomationSecurityLow);
         workbooks = gate.Step("get-workbooks", () => Track(application!.Workbooks));
@@ -148,6 +202,7 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
                     throw new SaveFailedException();
             });
             log.Write("save.confirmed", gate);
+            saveConfirmed = true;
         }
         CloseAndQuit();
     }
@@ -164,12 +219,14 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
                     gate.Step("close-without-save", () =>
                     {
                         closeStarted = true;
+                        log.Write("close.started", gate);
                         workbook.Close(SaveChanges: false);
                         workbook = null;
                     });
                 gate.Step("restore-close-alerts", () => application!.DisplayAlerts = originalAlerts);
             }), () => gate.Step("quit", () =>
             {
+                log.Write("quit.started", gate);
                 application!.Quit();
                 quitReturned = true;
             }));
@@ -189,6 +246,7 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
         if (!exited) throw new WorkStoppedException();
         if (!recordReleased)
         {
+            log.Write("record-completed.started", gate);
             RecordTransition.Run(gate, record, new(1, "completed"), () => gate.Step("release-record-lock", () =>
             {
                 record.Dispose();
@@ -216,15 +274,31 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
         var protectedViews = gate.Step("get-protected-views", () => Track(application!.ProtectedViewWindows));
         int protectedCount = gate.Step("count-protected-views", () => protectedViews.Count);
         int count = gate.Step("count-workbooks", () => workbooks!.Count);
+        observedPaths.Clear();
+        observedProtectedCount = protectedCount;
+        observedBookCount = count;
+        refusalExpected = false;
         IEnumerable<string> ReadPaths()
         {
             for (int index = 1; index <= count; index++)
             {
                 var item = gate.Step("get-open-workbook", () => Track(workbooks![index]));
-                yield return gate.Step("get-open-workbook-path", () => item.FullName);
+                string path = gate.Step("get-open-workbook-path", () => item.FullName);
+                observedPaths.Add(path);
+                yield return path;
             }
         }
-        EndSafety.RequireBooks(workbookPath, ReadPaths(), protectedCount, count, requireEmpty);
+        IEnumerable<string> paths = ReadPaths();
+        // The fixed experiment records both known copies before asking the shared policy to decide.
+        if (unmanagedPath is not null) paths = paths.ToArray();
+        try { EndSafety.RequireBooks(workbookPath, paths, protectedCount, count, requireEmpty); }
+        catch (EndRefusedException)
+        {
+            refusalExpected = !requireEmpty && unmanagedPath is not null && protectedCount == 0 && count == 2 &&
+                observedPaths.Any(path => SamePath(path, unmanagedPath)) &&
+                observedPaths.Any(path => SamePath(path, workbookPath));
+            throw;
+        }
     }
 
     private void WithEventsSuppressed(Action action)

@@ -19,6 +19,7 @@ internal sealed class DevelopmentTools : IAsyncDisposable
     private Task? running;
     private Process? child;
     private string? receipt;
+    private string? scenario;
     private string state = "idle";
     private int? exitCode;
     private string? latestObservation;
@@ -54,6 +55,13 @@ internal sealed class DevelopmentTools : IAsyncDisposable
 
     [Description("Start the fixed Spike0 Excel smoke once. Requires explicit approval of this run. Do not retry after a lost response; use dev_status. Changes only a generated fixture copy and normally closes its owned Excel.")]
     internal string Start()
+        => StartFixed("smoke", "--excel");
+
+    [Description("Start the fixed L3 end-refusal experiment once. Requires explicit approval. Leaves ownership and guard for manual recovery even when refusal is expected. Do not retry.")]
+    internal string StartEndRefusal()
+        => StartFixed("end-refusal", "--excel-end-refusal");
+
+    private string StartFixed(string experiment, string argument)
     {
         lock (sync)
         {
@@ -76,10 +84,11 @@ internal sealed class DevelopmentTools : IAsyncDisposable
                 throw new InvalidOperationException("Development mode must be launched with dotnet.exe.");
 
             receipt = Guid.NewGuid().ToString("D");
+            scenario = experiment;
             // CreateNew prevents simultaneous or forgotten experiments across server restarts.
             using (var guard = new FileStream(guardPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
             {
-                JsonSerializer.Serialize(guard, new { invocation, receipt, atUtc = DateTime.UtcNow });
+                JsonSerializer.Serialize(guard, new { invocation, receipt, scenario, atUtc = DateTime.UtcNow });
                 guard.Flush(true);
             }
             state = "running";
@@ -92,7 +101,7 @@ internal sealed class DevelopmentTools : IAsyncDisposable
                 RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
             };
             info.ArgumentList.Add(spike);
-            info.ArgumentList.Add("--excel");
+            info.ArgumentList.Add(argument);
             try
             {
                 child?.Dispose();
@@ -114,7 +123,7 @@ internal sealed class DevelopmentTools : IAsyncDisposable
         }
     }
 
-    [Description("Read a previously accepted smoke invocation. This never resends the Excel operation.")]
+    [Description("Read a previously accepted fixed experiment by receipt. This never resends the Excel operation.")]
     internal string SmokeStatus(Guid receiptId)
     {
         lock (sync)
@@ -126,7 +135,7 @@ internal sealed class DevelopmentTools : IAsyncDisposable
 
     private string Snapshot() => JsonSerializer.Serialize(new
     {
-        invocation, build, spikeHash, receipt, state, exitCode, latestObservation, errorType,
+        invocation, build, spikeHash, receipt, scenario, state, exitCode, latestObservation, errorType,
         logDirectory = Path.GetRelativePath(repository, directory).Replace('\\', '/'),
         manualReviewRequired = state is "failed" or "unknown" || File.Exists(guardPath) && state == "idle"
     });
@@ -141,7 +150,7 @@ internal sealed class DevelopmentTools : IAsyncDisposable
             lock (sync)
             {
                 exitCode = process.ExitCode;
-                state = exitCode == 0 && latestObservation == "saved-file.verified" ? "completed" :
+                state = scenario == "smoke" && exitCode == 0 && latestObservation == "saved-file.verified" ? "completed" :
                     exitCode == 2 ? "unknown" : "failed";
                 WriteResult();
                 if (state == "completed") File.Delete(guardPath);

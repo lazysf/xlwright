@@ -170,6 +170,13 @@ internal static class SelfChecks
         });
 
         LifecycleChecks.Run(directory, Check);
+        Check("retained record verifies exact sharing violation", () =>
+        {
+            using var file = OwnershipRecordFile.Acquire(Path.Combine(directory, "retained-proof.lock"));
+            file.Write(owned);
+            file.VerifyRetained(owned);
+            Expect<IOException>(() => file.VerifyRetained(new(1, "completed")));
+        });
         Console.WriteLine($"{passed} self-checks passed. Excel was not activated.");
         return 0;
     }

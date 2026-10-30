@@ -20,10 +20,15 @@ P0-coreの完成前に、小さなブックでソース編集・自動反映・�
 ## 開発環境
 
 - Windows 11 x64
+- Windows PowerShell 5.1（OS標準）
 - .NET 10 SDK（選択規則は [global.json](global.json)）
 - Git
 - prek（動作確認済み: 0.5.4）
 - nvm-windows（動作確認済み: 2.0.1）とNode.js（版は [.nvmrc](.nvmrc)）
+
+Windows向けのスクリプトとコマンドはWindows PowerShell 5.1を前提とします。
+PowerShell 7や`pwsh`の追加導入は必要条件にしません。
+Codex内蔵シェルのPowerShellの版は、ユーザーの通常シェルの版を示しません。
 
 Excelを使う実機検証の対象は Microsoft 365 Excel 64-bit のデスクトップ版です。
 Excelの設定変更や実機検証は、初期セットアップには含みません。

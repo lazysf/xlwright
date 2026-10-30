@@ -5,7 +5,8 @@ using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using XlWright.McpServer;
 
-if (args is ["--excel"] or ["--excel-end-refusal"] or ["--excel-record-fault-starting"] or ["--excel-record-fault-completed"])
+if (args is ["--excel"] or ["--excel-end-refusal"] or ["--excel-record-fault-starting"] or ["--excel-record-fault-owned"]
+    or ["--excel-record-fault-completed"])
 {
     string behavior = File.ReadAllText("fake-behavior.txt");
     if (behavior.StartsWith("fault-", StringComparison.Ordinal))
@@ -76,8 +77,9 @@ foreach (bool development in new[] { false, true })
     if (development)
     {
         var tools = await client.ListToolsAsync(cancellationToken: deadline.Token);
-        Require(tools.Count == 6 && tools.Any(tool => tool.Name == "dev_excel_end_refusal_start") &&
+        Require(tools.Count == 7 && tools.Any(tool => tool.Name == "dev_excel_end_refusal_start") &&
             tools.Any(tool => tool.Name == "dev_excel_record_fault_starting_start") &&
+            tools.Any(tool => tool.Name == "dev_excel_record_fault_owned_start") &&
             tools.Any(tool => tool.Name == "dev_excel_record_fault_completed_start"), "Development tool list");
         var status = await client.CallToolAsync("dev_status", cancellationToken: deadline.Token);
         Require(status.IsError != true, "Status tool responds");
@@ -85,7 +87,8 @@ foreach (bool development in new[] { false, true })
         Require(blocked.IsError == true, "Synthetic starting blocks Excel before launch");
         var refusalBlocked = await client.CallToolAsync("dev_excel_end_refusal_start", cancellationToken: deadline.Token);
         Require(refusalBlocked.IsError == true, "Synthetic starting blocks end-refusal before launch");
-        foreach (string name in new[] { "dev_excel_record_fault_starting_start", "dev_excel_record_fault_completed_start" })
+        foreach (string name in new[] { "dev_excel_record_fault_starting_start", "dev_excel_record_fault_owned_start",
+            "dev_excel_record_fault_completed_start" })
         {
             var faultBlocked = await client.CallToolAsync(name, cancellationToken: deadline.Token);
             Require(faultBlocked.IsError == true, "Synthetic starting blocks L2 before launch: " + name);
@@ -111,7 +114,7 @@ await using (var client = await McpClient.CreateAsync(receiptLaunch, cancellatio
 }
 
 foreach (string behavior in new[] { "success", "fail", "eof", "result-io", "refusal", "refusal-zero", "refusal-eof", "refusal-result-io",
-    "fault-starting", "fault-completed" })
+    "fault-starting", "fault-owned", "fault-completed" })
 {
     string fake = PrepareFake(behavior);
     Environment.CurrentDirectory = fake;
@@ -123,6 +126,7 @@ foreach (string behavior in new[] { "success", "fail", "eof", "result-io", "refu
         using var accepted = JsonDocument.Parse(behavior switch
         {
             "fault-starting" => adapter.StartRecordFaultStarting(),
+            "fault-owned" => adapter.StartRecordFaultOwned(),
             "fault-completed" => adapter.StartRecordFaultCompleted(),
             _ => refusal ? adapter.StartEndRefusal() : adapter.Start()
         });
@@ -192,7 +196,7 @@ foreach (string behavior in new[] { "success", "fail", "eof", "result-io", "refu
     }
     bool guarded = File.Exists(Path.Combine(fake, ".xlwright", "mcp-development", "active-smoke.json"));
     Require(guarded == (behavior is "fail" or "result-io" or "refusal" or "refusal-zero" or "refusal-eof" or "refusal-result-io" or
-        "fault-starting" or "fault-completed"), "Guard retained only on failure: " + behavior);
+        "fault-starting" or "fault-owned" or "fault-completed"), "Guard retained only on failure: " + behavior);
     Environment.CurrentDirectory = repository;
 }
 Console.WriteLine($"Passed {passed} non-COM checks.");

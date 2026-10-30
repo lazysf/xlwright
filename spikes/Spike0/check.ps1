@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -13,7 +13,8 @@ if ((Test-Path -LiteralPath $buildParent) -and
     throw 'The build workspace may not use a reparse point.'
 }
 # A new directory avoids consuming existing config/cache child paths or their links.
-$buildRoot = Join-Path $buildParent ([Guid]::NewGuid().ToString('N'))
+$buildId = [Guid]::NewGuid().ToString('N')
+$buildRoot = Join-Path $buildParent $buildId
 if (Test-Path -LiteralPath $buildRoot) { throw 'The build directory must be new.' }
 [IO.Directory]::CreateDirectory($buildRoot) | Out-Null
 $configPath = Join-Path $buildRoot 'NuGet.Config'
@@ -21,19 +22,20 @@ $configPath = Join-Path $buildRoot 'NuGet.Config'
     '<configuration><packageSources><clear /></packageSources></configuration>')
 $dotnetPath = (Get-Command dotnet -CommandType Application).Source
 
-function Invoke-SpikeDotnet([string[]] $DotnetArguments) {
+function Invoke-SpikeDotnet([ValidatePattern('^[A-Za-z0-9_./:=\-]+$')][string[]] $DotnetArguments) {
     $processInfo = [Diagnostics.ProcessStartInfo]::new($dotnetPath)
     $processInfo.UseShellExecute = $false
     $processInfo.WorkingDirectory = $repositoryRoot
-    foreach ($argument in $DotnetArguments) { $processInfo.ArgumentList.Add($argument) }
+    # All callers use fixed tokens; reject values needing quoting on .NET Framework.
+    $processInfo.Arguments = $DotnetArguments -join ' '
     # Child-process settings keep SDK initialization and NuGet away from personal config.
-    $processInfo.Environment['DOTNET_CLI_HOME'] = Join-Path $buildRoot 'dotnet-home'
-    $processInfo.Environment['APPDATA'] = Join-Path $buildRoot 'appdata'
-    $processInfo.Environment['NUGET_PACKAGES'] = Join-Path $buildRoot 'packages'
-    $processInfo.Environment['DOTNET_GENERATE_ASPNET_CERTIFICATE'] = 'false'
-    $processInfo.Environment['DOTNET_ADD_GLOBAL_TOOLS_TO_PATH'] = 'false'
-    $processInfo.Environment['DOTNET_CLI_TELEMETRY_OPTOUT'] = '1'
-    $processInfo.Environment['DOTNET_NOLOGO'] = '1'
+    $processInfo.EnvironmentVariables['DOTNET_CLI_HOME'] = Join-Path $buildRoot 'dotnet-home'
+    $processInfo.EnvironmentVariables['APPDATA'] = Join-Path $buildRoot 'appdata'
+    $processInfo.EnvironmentVariables['NUGET_PACKAGES'] = Join-Path $buildRoot 'packages'
+    $processInfo.EnvironmentVariables['DOTNET_GENERATE_ASPNET_CERTIFICATE'] = 'false'
+    $processInfo.EnvironmentVariables['DOTNET_ADD_GLOBAL_TOOLS_TO_PATH'] = 'false'
+    $processInfo.EnvironmentVariables['DOTNET_CLI_TELEMETRY_OPTOUT'] = '1'
+    $processInfo.EnvironmentVariables['DOTNET_NOLOGO'] = '1'
     $childProcess = [Diagnostics.Process]::Start($processInfo)
     try {
         $childProcess.WaitForExit()
@@ -44,7 +46,9 @@ function Invoke-SpikeDotnet([string[]] $DotnetArguments) {
     finally { $childProcess.Dispose() }
 }
 
-Invoke-SpikeDotnet @('restore', 'spikes/Spike0/Spike0.csproj', '--configfile', $configPath, '-p:NuGetAudit=false')
+# Use the repository-relative path so checkout names never enter the argument string.
+Invoke-SpikeDotnet @('restore', 'spikes/Spike0/Spike0.csproj', '--configfile',
+    ".xlwright/spike0-build/$buildId/NuGet.Config", '-p:NuGetAudit=false')
 foreach ($configuration in @('Debug', 'Release')) {
     Invoke-SpikeDotnet @('build', 'spikes/Spike0/Spike0.csproj', '--configuration', $configuration, '--no-restore')
 }

@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 [CmdletBinding()]
 param([switch] $Restore)
 $ErrorActionPreference = 'Stop'
@@ -17,19 +17,20 @@ foreach ($entry in Get-ChildItem -LiteralPath $buildRoot -Recurse -Force) {
 }
 $dotnet = (Get-Command dotnet -CommandType Application).Source
 
-function Invoke-DevelopmentDotnet([string[]] $Arguments) {
+function Invoke-DevelopmentDotnet([ValidatePattern('^[A-Za-z0-9_./:=\-]+$')][string[]] $Arguments) {
     $info = [Diagnostics.ProcessStartInfo]::new($dotnet)
     $info.UseShellExecute = $false
     $info.WorkingDirectory = $repository
-    foreach ($argument in $Arguments) { $info.ArgumentList.Add($argument) }
-    $info.Environment['DOTNET_CLI_HOME'] = Join-Path $buildRoot 'dotnet-home'
-    $info.Environment['APPDATA'] = Join-Path $buildRoot 'appdata'
-    $info.Environment['NUGET_PACKAGES'] = Join-Path $buildRoot 'packages'
-    $info.Environment['NUGET_HTTP_CACHE_PATH'] = Join-Path $buildRoot 'http-cache'
-    $info.Environment['NUGET_PLUGINS_CACHE_PATH'] = Join-Path $buildRoot 'plugins-cache'
-    $info.Environment['DOTNET_GENERATE_ASPNET_CERTIFICATE'] = 'false'
-    $info.Environment['DOTNET_ADD_GLOBAL_TOOLS_TO_PATH'] = 'false'
-    $info.Environment['DOTNET_CLI_TELEMETRY_OPTOUT'] = '1'
+    # All callers use fixed tokens; reject values needing quoting on .NET Framework.
+    $info.Arguments = $Arguments -join ' '
+    $info.EnvironmentVariables['DOTNET_CLI_HOME'] = Join-Path $buildRoot 'dotnet-home'
+    $info.EnvironmentVariables['APPDATA'] = Join-Path $buildRoot 'appdata'
+    $info.EnvironmentVariables['NUGET_PACKAGES'] = Join-Path $buildRoot 'packages'
+    $info.EnvironmentVariables['NUGET_HTTP_CACHE_PATH'] = Join-Path $buildRoot 'http-cache'
+    $info.EnvironmentVariables['NUGET_PLUGINS_CACHE_PATH'] = Join-Path $buildRoot 'plugins-cache'
+    $info.EnvironmentVariables['DOTNET_GENERATE_ASPNET_CERTIFICATE'] = 'false'
+    $info.EnvironmentVariables['DOTNET_ADD_GLOBAL_TOOLS_TO_PATH'] = 'false'
+    $info.EnvironmentVariables['DOTNET_CLI_TELEMETRY_OPTOUT'] = '1'
     $process = [Diagnostics.Process]::Start($info)
     try {
         $process.WaitForExit()

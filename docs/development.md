@@ -17,7 +17,8 @@ API契約と実機検証の仮説は、それぞれの正式文書で管理し�
 
 現在のC#プロジェクトはSpike0、MCP接続基盤、MCP非COMチェックです。製品のExcel操作APIとCoreは未実装です。
 初回コンソールは.NET 10のWindows Desktop共有フレームワークを使います。
-確認スクリプトにはPowerShell 7以降が必要です。パッケージのインストールは行いません。
+通常チェックの2本の`check.ps1`は[開発環境](../README.md#開発環境)のWindows PowerShell 5.1を対象とします。
+ユーザーから5.1で両チェックが通過したとの報告を得ています。確認範囲は[ケースOの準備と結果](notes/spike-0-results.md#l2固定ケースoownedの書込み失敗と手動復旧)を参照してください。
 
 T3の[環境・依存の確認結果](notes/verification-environment.md)に、初回コンソールで参照する既存PIAの固定版・ハッシュと承認範囲を記載しています。
 T4で参照を追加し、Debug・Releaseビルドと非COM自己チェックを確認しました。
@@ -139,12 +140,11 @@ ExcelのPID等の所有情報と失敗段階を確認します。セル内容を
 
 ## MCP起動機構の権限診断
 
-`spikes/Spike0/InspectMcpLaunch.ps1`はPowerShell 7の一回限りの診断です。
+`spikes/Spike0/InspectMcpLaunch.ps1`はPowerShell 7の一回限りの診断です。通常チェックとサーバー更新には使いません。
 Excel・MCP初期化・ツール呼出しは行いません。MCP接続失敗は想定内です。
 `-ExperimentId`にGUID、`-Route`に`user-shell`・`agent-shell`・`mcp-launcher`を指定します。
 同じスクリプトと実験識別子で3経路を比較します。
-ユーザーのPATHに`pwsh`がない場合は、確認済みの既存PowerShell 7の絶対パスを使います。
-Windows PowerShell 5への置換や実行ポリシーの迂回はしません。
+この診断を再実施する場合は、利用できるシェルと実行経路を別途確認します。実行ポリシーは迂回しません。
 
 記録は`.xlwright/mcp-launch-probe/<実験識別子>/<起動識別子>.json`に保存します。
 整合性は標準`whoami.exe`の子プロセスから取得します。全グループは保存しません。
@@ -167,7 +167,7 @@ Windows PowerShell 5への置換や実行ポリシーの迂回はしません。
 
 [採用判断](adr/0002-development-mcp-foundation.md)に基づくstdio接続基盤です。
 引数なしでは開発用ツールを公開せず、リポジトリ探索やExcel操作を行いません。製品のExcel操作APIは未実装です。
-`--development`で起動すると、下記の6ツールだけを公開します。作業ディレクトリはリポジトリ直下、起動は確認済み`dotnet.exe`とビルド済みDLLを使います。
+`--development`で起動すると、下記の7ツールだけを公開します。作業ディレクトリはリポジトリ直下、起動は確認済み`dotnet.exe`とビルド済みDLLを使います。
 アプリからの接続・更新・再接続と実Excelの成立性は、ローカルの非COM検証とは別に確認します。
 
 | ツール | 入力と結果 |
@@ -176,19 +176,21 @@ Windows PowerShell 5への置換や実行ポリシーの迂回はしません。
 | `dev_excel_smoke_start` | 入力なし。既存Spike0の固定`--excel`を1回開始し、受付識別子を含む状態を返す。実行範囲の事前承認が必要 |
 | `dev_excel_end_refusal_start` | 入力なし。固定L3ケースを1回開始する。主コピーと管理外コピーを同じ専用Excelで開き、終了拒否を観測する。事前承認が必要 |
 | `dev_excel_record_fault_starting_start` | 入力なし。固定L2ケースSを1回開始する。startingの書込み前に失敗を注入し、Excelを生成しないことを観測する。事前承認が必要 |
+| `dev_excel_record_fault_owned_start` | 入力なし。固定L2ケースOを1回開始する。Excelの同一性取得と表示の後、Open前のownedの書込みに失敗を注入する。事前承認が必要 |
 | `dev_excel_record_fault_completed_start` | 入力なし。固定L2ケースCを1回開始する。主コピーの保存と専用Excelの終了確認後、completedの書込み前に失敗を注入する。事前承認が必要 |
 | `dev_excel_smoke_status` | `receiptId`（GUID）。そのサーバーが受け付けた実行の状態を返す |
 
 開発用状態は`idle`・`running`・`completed`・`failed`・`unknown`です。製品のセッション状態とは異なります。
 `manualReviewRequired`は開発アダプターの状態とガードに関する値です。falseでも、所有記録の復旧完了や実Excel操作の承認を意味しません。
-応答の`scenario`は未受付時null、受付後は`smoke`・`end-refusal`・`record-fault-starting`・`record-fault-completed`のいずれかです。状態照会は全ケースの受付IDを受け付けます。
+応答の`scenario`は未受付時null、受付後は`smoke`・`end-refusal`・`record-fault-starting`・`record-fault-owned`・`record-fault-completed`のいずれかです。状態照会は全ケースの受付IDを受け付けます。
 `completed`には、正常系（`smoke`）の子プロセスの終了コード0と最後の`saved-file.verified`が必要です。MCPの受付成功は実験成功ではありません。
 開始応答を失ったら`dev_status`を呼び、開始を再送しません。並行開始、失敗・結果不明後の開始は拒否します。
 Spike DLLが起動時のハッシュから変わった場合は、停止・再接続を要求します。
 
 ### ビルドと非COM検証
 
-既存Spikeのビルドを先に行います。`pwsh`がPATHにない場合は確認済みPowerShell 7の実行ファイルから起動してください。Windows PowerShell 5への置換はしません。
+既存Spikeのビルドを先に行います。通常のWindows PowerShellから実行します。
+実行が拒否された場合は停止します。実行ポリシーを緩和して続行しません。
 
 ```powershell
 ./spikes/Spike0/check.ps1
@@ -250,7 +252,7 @@ MCPのEOF・終了時にも子の入力を閉じ、最大125秒待ちます。�
 
 `dev_excel_end_refusal_start`はSpike0の固定`--excel-end-refusal`だけを呼びます。
 主コピーのA2を1に変更し、別の管理外コピーを同じ専用Excelで開いてから、主コピーを保存して通常終了を試みます。
-このケースだけ専用Excelを表示し、Captionに実行識別子を示します。基準ブックを直接開きません。
+このケースでは専用Excelを表示し、Captionに実行識別子を示します。基準ブックを直接開きません。
 拒否後はCOMを照会せず、保持情報・OS照会・保持ハンドルからの読取りで証拠を記録します。
 `end-refusal.verified`は子コンソール終了前の状態・所有記録・排他・プロセス生存を確認した診断です。
 期待する拒否でも終了コード1、アダプターはfailedでガードを保持します。completedへの整理を意味しません。
@@ -264,21 +266,41 @@ MCPのEOF・終了時にも子の入力を閉じ、最大125秒待ちます。�
 復旧手順が途中で止まった場合は、既に終えた操作と記録の現在値を照合してから再開します。
 対象Excelを既に閉じた場合、元のプロセスを再現するために開き直しません。終了済みの確認と、再接続後のMCPを含む終了確認へ手順を合わせます。
 アプリの停止・更新・再接続は既存の登録を継続し、確認済みのアプリ通常終了手順を使います。
+この手動引継ぎ手順は、Protected Viewの存在や照会不能で自動終了を拒否した場合にも適用します。
 
 ### L2固定ケースと手動引継ぎ
 
-2つの開始ツールは、Spike0の固定`--excel-record-fault-starting`・`--excel-record-fault-completed`だけを呼びます。
+3つの開始ツールは、Spike0の固定`--excel-record-fault-starting`・`--excel-record-fault-owned`・`--excel-record-fault-completed`だけを呼びます。
 既存記録の確認後に、通常経路と同じ記録I/Oの`write`直前へ1回の失敗を注入します。対象の種別以外の書込みと読取りには注入しません。
 実ストレージの障害や電源断を起こすものではありません。ACL・属性・作業領域の変更で失敗を作りません。
 
 ケースSはstartingの書込み失敗です。Excelを生成せずclosedとなり、記録は実行前のcompletedのままです。主コピーは開きません。
 Spike0は排他をプロセス終了時に解放します。ケースSの`record-fault.verified`は終了前の保持を記録するもので、解放は子コンソールの終了後にロックファイルを排他で開けることで確認します。
+ケースOはExcel生成・同一性取得後、Open前のownedの書込み失敗です。isolatedとなり、記録は主コピーのパスを含むstartingのまま保持します。
+この固定ケースだけ、人が対象を識別して通常操作で閉じられるよう、ownedの書込み前にVisible=TrueとCaption「xlwright L2 owned <実行ID>」を設定します。
+これは承認済みの順序の例外です。通常経路の契約は[初期ライフサイクル契約](architecture.md#initial-lifecycle)に従います。
+段階名は表示が`l2-owned-visible`、Caption設定が`l2-owned-caption`です。
+ケースOの`record-fault.verified`は、同一性の再照合とプロセス生存、Close未着手、Workbooks・Workbook未取得、主コピーのA2=0、startingの保持を確認します。
+表示設定だけで子コンソール終了後のExcel残存を保証しません。ケースOの1回の実測では、診断時点で生存していたExcelが終了後のユーザー照会では不在でした。
+終了後の存否は、人によるPID・生成時刻の照会で別に確認します。原因と未確認範囲は[実機結果](notes/spike-0-results.md#l2固定ケースoownedの書込み失敗と手動復旧)を参照してください。
 ケースCは通常の保存・Close・Quit・対象プロセスの終了確認の後、completedの書込み失敗です。isolatedとなり、記録はownedのまま保持します。
 失敗後はCOMを照会せず、保持情報・OS照会・保持ハンドルからの読取り・Excelなしの保存ファイル検査で`record-fault.verified`を記録します。
 ケースSでは開始時に記録したEXCEL以外のプロセスが現れていないことも確認します。新しいプロセスがあれば証拠不足とし、終了対象には選びません。
 期待どおりでも終了コード1、最終イベントはrun.failed、アダプターはfailedでガードを保持します。期待との一致はログ内の`record-fault.verified`と終了コード・保持記録で判定します。
 各ケースの後はアダプターがfailedでガードも残るため、再接続と後始末が済むまで次の開始を拒否します。ケースSで期待と異なればケースCへ進みません。
 
+ケースOで期待と異なる場合も再送しません。次の分岐では診断と記録を保持して人へ引き継ぎます。
+
+- Visibleの設定に失敗した場合、所有記録に同一性のない非表示Excelが残る可能性があります。表示状態や推測だけで終了対象を選びません。
+- Captionの設定に失敗した場合、表示されていても実行IDによる識別は未完了です。診断の同一性と人の対象確認が揃わなければ復旧を保留します。
+- 注入が効かなかった場合、ownedの書込み後に`l2-owned-not-injected`で例外にします。Openには進みません。同一性付きのowned記録とExcelの残存可能性を引き継ぎます。
+- 同一性取得からownedの書込みまでの間にEOFや`stop`を受けた場合、既存のshutdown経路が安全確認付きのQuitを試みます。対象プロセスの終了とcompletedの更新・確認が成功した場合だけ完了とします。EOFや`stop`だけで完了したとはみなしません。
+
 ケースSの後始末は、子コンソールの終了と排他の解放を確認した後の証拠保全と、対象・ハッシュを示した個別承認後のガード除去だけです。所有記録は変更しません。
+ケースOの後始末は、旧MCPと子コンソールの終了確認後、診断のPID・生成時刻で対象Excelの存否を確認します。
+残っている場合は、人がCaptionと診断の同一性を照合して対象を確認します。期待どおりOpen前で止まった場合、ブックの保存・破棄判断は不要です。
+人が対象ウィンドウを通常操作で閉じた後、PID・生成時刻による終了確認へ進みます。強制終了は使いません。
+既に終了している場合は、照会失敗を不在扱いせず終了確認の根拠を残します。対象Excelは開き直しません。
+その後は[L3固定ケース](#l3固定ケースと手動引継ぎ)と同じ順で証拠を保全します。個別承認したstarting記録を排他保持してcompletedへ更新し、flush・読戻しを確認してから、承認したハッシュのガードだけを除去します。
 ケースCの後始末は[L3固定ケース](#l3固定ケースと手動引継ぎ)と同じ順で、旧MCPと子コンソール・対象Excelの終了を確認してから所有記録をcompletedへ更新し、ガードを除去します。Excelは既に終了しているため、開き直しません。
-ケースCの後に残るownedのPIDは既に不在です。後始末の前にSpike0を直接起動すると、次回開始の規則で記録がcompletedへ更新されるため、直接起動しません。
+各ケースの後始末が済むまでSpike0を直接起動しません。ケースCの後に残るownedのPIDは既に不在のため、直接起動すると次回開始の規則で記録がcompletedへ更新されます。

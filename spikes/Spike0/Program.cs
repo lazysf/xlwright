@@ -12,15 +12,17 @@ internal static class Program
             if (args.Length == 0 || args is ["--self-check"])
                 return await SelfChecks.Run(repository);
             if (args is not ["--excel"] and not ["--excel-end-refusal"] and not ["--excel-record-fault-starting"]
-                and not ["--excel-record-fault-completed"])
+                and not ["--excel-record-fault-owned"] and not ["--excel-record-fault-completed"])
             {
                 Console.Error.WriteLine("Usage: Spike0 [--self-check | --excel | --excel-end-refusal | " +
-                    "--excel-record-fault-starting | --excel-record-fault-completed]. Excel experiments require prior approval.");
+                    "--excel-record-fault-starting | --excel-record-fault-owned | --excel-record-fault-completed]. " +
+                    "Excel experiments require prior approval.");
                 return 1;
             }
             string? recordFault = args[0] switch
             {
                 "--excel-record-fault-starting" => "starting",
+                "--excel-record-fault-owned" => "owned",
                 "--excel-record-fault-completed" => "completed",
                 _ => null
             };

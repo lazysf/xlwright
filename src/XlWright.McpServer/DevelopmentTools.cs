@@ -65,6 +65,10 @@ internal sealed class DevelopmentTools : IAsyncDisposable
     internal string StartRecordFaultStarting()
         => StartFixed("record-fault-starting", "--excel-record-fault-starting");
 
+    [Description("Start the fixed L2 experiment once: the owned record write fails after a visible Excel is created and identified, before any workbook opens. Requires explicit approval. Leaves the starting record, guard, and possibly that Excel for manual recovery even when the failure is expected. Do not retry.")]
+    internal string StartRecordFaultOwned()
+        => StartFixed("record-fault-owned", "--excel-record-fault-owned");
+
     [Description("Start the fixed L2 experiment once: the completed record write fails after the owned Excel has exited. Requires explicit approval. Leaves ownership and guard for manual recovery even when the failure is expected. Do not retry.")]
     internal string StartRecordFaultCompleted()
         => StartFixed("record-fault-completed", "--excel-record-fault-completed");

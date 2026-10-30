@@ -100,7 +100,7 @@ internal static class LifecycleChecks
             Require(File.ReadAllBytes(path).SequenceEqual(original));
         });
 
-        foreach (string target in new[] { "starting", "completed" })
+        foreach (string target in new[] { "starting", "owned", "completed" })
         {
             check("L2 fixed injection targets only " + target, () =>
             {

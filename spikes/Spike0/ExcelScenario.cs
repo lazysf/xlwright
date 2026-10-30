@@ -146,6 +146,17 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
             RuntimeAssets.VerifyCell(workbookPath, 0);
             retained = new(1, "completed");
         }
+        else if (recordFault == "owned")
+        {
+            if (!generationStarted || identity is null || process is not { HasExited: false } || exitConfirmed ||
+                closeStarted || workbooks is not null || workbook is not null || snapshot.State != "isolated")
+                throw new InvalidOperationException("L2 owned fault evidence is incomplete; preserve all records.");
+            using var current = Process.GetProcessById(identity.Pid);
+            if (!identity.Matches(ProcessIdentity.Read(current)))
+                throw new InvalidOperationException("L2 owned process identity could not be reverified.");
+            RuntimeAssets.VerifyCell(workbookPath, 0);
+            retained = new(1, "starting", workbookPath);
+        }
         else
         {
             if (!saveConfirmed || !closeStarted || !quitReturned || !exitConfirmed || identity is null ||
@@ -159,7 +170,8 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
         log.Write("record-fault.verified", gate, new
         {
             boundary = fault.Boundary, operation = fault.Operation, process = identity, record = retained,
-            generation_started = generationStarted, excel_exit_confirmed = exitConfirmed, new_excel_pids = newExcelPids,
+            generation_started = generationStarted, excel_alive = process is { HasExited: false },
+            excel_exit_confirmed = exitConfirmed, new_excel_pids = newExcelPids,
             close_started = closeStarted, quit_returned = quitReturned, record_released = recordReleased,
             sharing_violation_observed = true, manual_recovery = generationStarted
         });
@@ -194,7 +206,21 @@ internal sealed class ExcelScenario(string workbookPath, OwnershipRecordFile rec
                 !StringComparer.OrdinalIgnoreCase.Equals(identity.Name, "EXCEL"))
                 throw new InvalidOperationException("New Excel ownership could not be established.");
         });
-        RecordTransition.Run(gate, record, new(1, "owned", workbookPath, identity), OpenCopy);
+        if (recordFault == "owned")
+        {
+            // Approved exception for this fixed case only: show Excel before the owned record so a person can
+            // identify and close it normally when it remains without identity in the record.
+            gate.Step("l2-owned-visible", () => application!.Visible = true);
+            gate.Step("l2-owned-caption", () => application!.Caption =
+                "xlwright L2 owned " + Path.GetFileName(Path.GetDirectoryName(workbookPath)));
+        }
+        RecordTransition.Run(gate, record, new(1, "owned", workbookPath, identity), () =>
+        {
+            if (recordFault == "owned")
+                gate.Step("l2-owned-not-injected", () => throw new InvalidOperationException(
+                    "L2 owned fault was not injected; the workbook was not opened."));
+            OpenCopy();
+        });
     }
 
     private void OpenCopy()

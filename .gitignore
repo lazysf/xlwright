@@ -25,3 +25,4 @@ dist/
 
 # Machine-specific project MCP configuration
 /.codex/config.toml
+/.mcp.json

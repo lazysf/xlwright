@@ -16,4 +16,7 @@ repo = "local"
 hooks = [
     # Uses the markdownlint-cli2 installed by `npm ci` with the Node.js version in .nvmrc.
     { id = "markdownlint", name = "markdownlint", entry = "npx --no-install markdownlint-cli2", language = "system", types = ["markdown"] },
+    # Commits of anything but Markdown carry a passed integrated check. Excluding keeps new build inputs covered.
+    # prek does not pass deleted files to hooks, so a commit that only deletes code skips this.
+    { id = "integrated-check", name = "npm run check", entry = "npm run check", language = "system", pass_filenames = false, exclude = '\.md$' },
 ]

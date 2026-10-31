@@ -8,7 +8,7 @@ namespace Spike0;
 // This is one lifecycle experiment, not the Core or a reusable session service.
 internal sealed partial class ExcelScenario(string workbookPath, OwnershipRecordFile record,
     ExecutionGate gate, DiagnosticLog log, string? unmanagedPath = null, string? recordFault = null,
-    string? startupCase = null, string? cellCase = null)
+    string? startupCase = null, string? cellCase = null, string? calculationCase = null)
 {
     private static readonly TimeSpan SessionTimeout = TimeSpan.FromSeconds(120);
     private readonly List<object> references = [];
@@ -35,7 +35,8 @@ internal sealed partial class ExcelScenario(string workbookPath, OwnershipRecord
         try
         {
             Start();
-            if (cellCase is not null) ProbeCells();
+            if (calculationCase is not null) ProbeCalculation();
+            else if (cellCase is not null) ProbeCells();
             else if (startupCase is null) EditKnownCell();
             else ProbeStartup();
             if (unmanagedPath is not null) OpenUnmanagedCopy();
@@ -234,7 +235,7 @@ internal sealed partial class ExcelScenario(string workbookPath, OwnershipRecord
         gate.Step("excel-caption", () => application!.Caption = unmanagedPath is null ? "xlwright Spike0" :
             "xlwright L3 " + Path.GetFileName(Path.GetDirectoryName(workbookPath)));
         if (startupCase is not null) ObserveSettings("generated");
-        var originalSecurity = startupCase is null && cellCase is null ? Office.MsoAutomationSecurity.msoAutomationSecurityLow :
+        var originalSecurity = startupCase is null && cellCase is null && calculationCase is null ? Office.MsoAutomationSecurity.msoAutomationSecurityLow :
             gate.Step("read-automation-security", () => application!.AutomationSecurity);
         gate.Step("automation-security", () => application!.AutomationSecurity =
             startupCase == "C" ? Office.MsoAutomationSecurity.msoAutomationSecurityForceDisable :
@@ -260,7 +261,7 @@ internal sealed partial class ExcelScenario(string workbookPath, OwnershipRecord
                 StartupProbe.RequireTrace(startupCase, "open", ReadTrace());
             }
         });
-        if (cellCase is not null)
+        if (cellCase is not null || calculationCase is not null)
         {
             gate.Step("restore-cell-security", () => application!.AutomationSecurity = originalSecurity);
             ObserveSettings("cell-open");

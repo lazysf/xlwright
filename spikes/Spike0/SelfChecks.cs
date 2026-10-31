@@ -16,6 +16,54 @@ internal static class SelfChecks
         }
         RuntimeAssets.VerifyPias();
         RuntimeAssets.VerifyFixture(repository);
+        Check("S14 fixed selection and ordering", () =>
+        {
+            Assert(CalculationProbe.Parse(["--excel-s14-auto"]) == "auto");
+            Assert(CalculationProbe.Parse(["--excel-s14-manual"]) == "manual");
+            Assert(CalculationProbe.Parse(["--excel-s14-mode-change"]) == "mode-change");
+            Assert(CalculationProbe.Parse(["--excel-s14-auto", "other.xlsm"]) is null);
+            Assert(CalculationProbe.Parse(["--excel-s14-unknown"]) is null);
+            Assert(CalculationProbe.Previous("auto") is null);
+            Assert(CalculationProbe.Previous("manual") == "auto");
+            Assert(CalculationProbe.Previous("mode-change") == "manual");
+            Expect<InvalidDataException>(() => CalculationProbe.Previous("unknown"));
+        });
+        Check("S14 saved package rejects stale values, mode and external parts", () =>
+        {
+            string s14Directory = RuntimeAssets.CreateLocalDirectory(repository, ".xlwright/spike0-checks/" + Guid.NewGuid().ToString("N"));
+            void Verify(string name, string mode, int cached, bool external, bool unboundPrefix = false)
+            {
+                string path = Path.Combine(s14Directory, name + ".xlsm");
+                using (var archive = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create))
+                {
+                    void Part(string part, string xml)
+                    {
+                        using var writer = new StreamWriter(archive.CreateEntry(part).Open());
+                        writer.Write(xml);
+                    }
+                    const string ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+                    Part("xl/vbaProject.bin", "synthetic; never execute");
+                    string compatibility = unboundPrefix ? " xmlns:mc='http://schemas.openxmlformats.org/markup-compatibility/2006' mc:Ignorable='missing'" : "";
+                    Part("xl/workbook.xml", $"<workbook xmlns='{ns}' xmlns:r='http://schemas.openxmlformats.org/officeDocument/2006/relationships'{compatibility}><sheets><sheet name='Probe' r:id='p'/><sheet name='Result' r:id='r'/></sheets><calcPr calcMode='{mode}'/></workbook>");
+                    Part("xl/_rels/workbook.xml.rels", "<Relationships><Relationship Id='p' Target='worksheets/input.xml'/><Relationship Id='r' Target='worksheets/output.xml'/></Relationships>");
+                    Part("xl/worksheets/input.xml", $"<worksheet xmlns='{ns}'><sheetData><row><c r='B2'><v>21</v></c><c r='C2'><f>B2*2</f><v>{cached}</v></c></row></sheetData></worksheet>");
+                    Part("xl/worksheets/output.xml", $"<worksheet xmlns='{ns}'><sheetData><row><c r='B2'><f>Probe!C2+1</f><v>43</v></c></row></sheetData></worksheet>");
+                    if (external) Part("xl/connections.xml", "<connections/>");
+                }
+                CalculationProbe.VerifyPackage(path, 21, "manual");
+            }
+            Verify("valid", "manual", 42, false);
+            Expect<InvalidDataException>(() => Verify("stale", "manual", 2, false));
+            Expect<InvalidDataException>(() => Verify("mode", "auto", 42, false));
+            Expect<InvalidDataException>(() => Verify("external", "manual", 42, true));
+            Expect<InvalidDataException>(() => Verify("unbound-prefix", "manual", 42, false, true));
+            Expect<FileNotFoundException>(() => CalculationProbe.RequirePrevious(repository, s14Directory, "manual"));
+            File.WriteAllText(Path.Combine(s14Directory, "s14-auto.attempt"), "run");
+            File.WriteAllText(Path.Combine(s14Directory, "s14-auto.success"), "other");
+            Expect<InvalidDataException>(() => CalculationProbe.RequirePrevious(repository, s14Directory, "manual"));
+            File.WriteAllText(Path.Combine(s14Directory, "s14-auto.success"), "run");
+            CalculationProbe.RequirePrevious(repository, s14Directory, "manual");
+        });
         Check("saved rich errors resolve metadata references and positional keys", () =>
         {
             var parts = new Dictionary<string, System.Xml.Linq.XDocument>();

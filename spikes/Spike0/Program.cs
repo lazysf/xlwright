@@ -18,13 +18,15 @@ internal static class Program
             }
             string? startupCase = StartupProbe.Parse(args);
             string? cellCase = CellProbe.Parse(args);
-            if (startupCase is null && cellCase is null && args is not ["--excel"] and not ["--excel-end-refusal"] and not ["--excel-record-fault-starting"]
+            string? calculationCase = CalculationProbe.Parse(args);
+            if (startupCase is null && cellCase is null && calculationCase is null && args is not ["--excel"] and not ["--excel-end-refusal"] and not ["--excel-record-fault-starting"]
                 and not ["--excel-record-fault-owned"] and not ["--excel-record-fault-completed"])
             {
                 Console.Error.WriteLine("Usage: Spike0 [--self-check | --excel | --excel-end-refusal | " +
                     "--excel-record-fault-starting | --excel-record-fault-owned | --excel-record-fault-completed]. " +
                     "S10: --excel-s10-a2 | --excel-s10-b | --excel-s10-c. " +
                     "Cells: --excel-s1 | --excel-s2 | --excel-s3 | --excel-s4. " +
+                    "Calculation: --excel-s14-auto | --excel-s14-manual | --excel-s14-mode-change. " +
                     "Offline: --verify-s4-saved. Excel experiments require prior approval.");
                 return 1;
             }
@@ -35,7 +37,7 @@ internal static class Program
                 "--excel-record-fault-completed" => "completed",
                 _ => null
             };
-            return await RunExcel(repository, args[0] == "--excel-end-refusal", recordFault, startupCase, cellCase);
+            return await RunExcel(repository, args[0] == "--excel-end-refusal", recordFault, startupCase, cellCase, calculationCase);
         }
         catch (Exception error)
         {
@@ -44,12 +46,13 @@ internal static class Program
         }
     }
 
-    private static async Task<int> RunExcel(string repository, bool endRefusal, string? recordFault, string? startupCase, string? cellCase)
+    private static async Task<int> RunExcel(string repository, bool endRefusal, string? recordFault, string? startupCase, string? cellCase, string? calculationCase)
     {
         RuntimeAssets.VerifyPias();
         RuntimeAssets.VerifyFixture(repository);
         var startupFixture = startupCase is null ? null : StartupProbe.VerifyFixture(repository);
-        string? experiment = cellCase ?? (startupCase is null ? null : "s10-" + startupCase);
+        var calculationFixture = calculationCase is null ? null : CalculationProbe.VerifyFixture(repository, calculationCase);
+        string? experiment = calculationCase is null ? cellCase ?? (startupCase is null ? null : "s10-" + startupCase) : "s14-" + calculationCase;
         string guardPath = Path.Combine(repository, ".xlwright", "mcp-development", "active-smoke.json");
         string? attemptPath = null;
         if (experiment is not null)
@@ -66,6 +69,12 @@ internal static class Program
         using var record = OwnershipRecordFile.Acquire(recordPath);
         // Recheck under the shared record lock before any record transition or new guard.
         if (attemptPath is not null) StartupProbe.RequireNewAttempt(attemptPath);
+        if (calculationCase is not null)
+        {
+            if (record.CreatedNew || record.Read().Kind != "completed")
+                throw new InvalidDataException("T9 requires existing completed ownership.");
+            CalculationProbe.RequirePrevious(repository, workspace, calculationCase);
+        }
         if (cellCase is not null)
         {
             if (!record.CreatedNew && record.Read().Kind != "completed")
@@ -103,8 +112,9 @@ internal static class Program
             writer.Flush();
             attempt.Flush(true);
         }
-        string workbook = Path.Combine(run, startupCase is null ? "lifecycle.xlsx" : "probe.xlsm");
-        File.Copy(startupFixture?.Path ?? Path.Combine(repository, "tests", "fixtures", "lifecycle.xlsx"), workbook, overwrite: false);
+        string workbook = Path.Combine(run, startupCase is null && calculationCase is null ? "lifecycle.xlsx" : "probe.xlsm");
+        File.Copy(calculationFixture?.Path ?? startupFixture?.Path ?? Path.Combine(repository, "tests", "fixtures", "lifecycle.xlsx"), workbook, overwrite: false);
+        if (calculationFixture is not null) StartupProbe.VerifyHash(workbook, calculationFixture.Hash);
         if (cellCase is not null) StartupProbe.VerifyHash(workbook, RuntimeAssets.FixtureHash);
         if (startupFixture is not null)
         {
@@ -150,7 +160,8 @@ internal static class Program
                 }
             });
             if (cellCase is not null) CellProbe.WriteIdentity(repository, run, cellCase);
-            var scenario = new ExcelScenario(workbook, record, gate, log, unmanaged, recordFault, startupCase, cellCase);
+            if (calculationCase is not null) CalculationProbe.WriteIdentity(repository, run, calculationFixture!);
+            var scenario = new ExcelScenario(workbook, record, gate, log, unmanaged, recordFault, startupCase, cellCase, calculationCase);
             Task<bool> work = StaRunner.Start(scenario.Run);
             while (!work.IsCompleted)
             {
@@ -172,11 +183,16 @@ internal static class Program
             {
                 bool smokePassed = await work;
                 if (!smokePassed) return 1;
-                if (cellCase is not null) CellProbe.VerifySaved(workbook);
+                if (calculationCase is not null)
+                {
+                    CalculationProbe.VerifySaved(workbook, calculationCase);
+                    StartupProbe.VerifyHash(calculationFixture!.Path, calculationFixture.Hash);
+                }
+                else if (cellCase is not null) CellProbe.VerifySaved(workbook);
                 else if (startupCase is null) RuntimeAssets.VerifyCell(workbook, 1);
                 else StartupProbe.VerifyHash(startupFixture!.Path, startupFixture.Hash);
                 RuntimeAssets.VerifyFixture(repository);
-                log.Write(cellCase is not null ? "cell.completed" : startupCase is null ? "saved-file.verified" : "s10.completed", gate);
+                log.Write(calculationCase is not null ? "s14.completed" : cellCase is not null ? "cell.completed" : startupCase is null ? "saved-file.verified" : "s10.completed", gate);
                 if (experiment is not null)
                 {
                     string success = Path.Combine(workspace, experiment + ".success");

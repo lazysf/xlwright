@@ -40,7 +40,7 @@ T4で参照を追加し、Debug・Releaseビルドと非COM自己チェックを
 | `.editorconfig` | C#と設定ファイルの編集形式 |
 | `prek.toml` | commit前のチェック |
 | `.nvmrc` | Node.jsの版の選択 |
-| `package.json`・`package-lock.json` | Markdownのチェックに使う開発用パッケージの固定 |
+| `package.json`・`package-lock.json` | MarkdownのチェックとInspectorに使う開発用パッケージの固定 |
 | `.markdownlint-cli2.jsonc` | Markdownのチェックのルールと対象 |
 
 コードと検証資産は、次の位置へ配置します。
@@ -58,6 +58,80 @@ T4で参照を追加し、Debug・Releaseビルドと非COM自己チェックを
 本体リポジトリに、利用プロジェクトの `project.yaml` や実ブックを先に生成しないでください。
 
 ## 作業と検証
+
+### 非COM検証の自動実行
+
+通常のビルドと非COM検証は、エージェントがリポジトリ直下で`npm run check`を実行します。
+既存実験の再送・復旧・実Excel操作の承認条件は変更しません。
+通常ユーザー側ではNode.js 26.13.0とnpm 11.20.0を確認しました。
+sandbox側で指定版が見つからない場合は、正式な権限経路で実行します。
+実行ポリシーは変更しません。
+
+入口は[scripts/development.ps1](../scripts/development.ps1)です。
+Windows PowerShell 5.1で既存の2本のcheck.ps1を`-Isolated`付きで実行します。
+Debug・Releaseの出力と中間ファイルは`.xlwright/development/artifacts/`へ置きます。
+接続中サーバーが使う通常のbin・objは更新しません。
+続けてInspector CLIでツール一覧と読取り専用の`dev_status`を検証します。
+最後にMarkdownチェックと`git diff --check`を実行します。
+失敗時は後続工程を実行しません。
+
+実行結果は`.xlwright/development/runs/<run-id>/result.json`と工程別の標準出力・標準エラーログへ保存します。
+通常はキャッシュだけで依存を復元します。
+キャッシュが不足する場合は、承認された取得範囲を確認して`npm run check -- -Restore`を実行します。
+Nodeパッケージの準備には既存の`npm ci`を使います。
+各`-Isolated`チェックは同じ出力先を使うため、統合入口から順番に実行してください。
+
+### Inspectorによる調査
+
+`npm run check`の後、リポジトリ直下で次を実行します。
+
+```powershell
+npm run inspect
+```
+
+Inspector 2.13.0のCLIがツール一覧をJSONで出力して終了します。
+CLIの標準引数をそのまま渡せます。読取り専用の状態確認は次のとおりです。
+
+```powershell
+npm run inspect -- --method tools/call --tool-name dev_status
+```
+
+通常の検証はCLIで完結します。
+必要なときだけ`npm run inspect:web`でGUIを起動します。
+画面でxlwrightへ接続し、Toolsから引数・応答を確認します。
+ProtocolでJSON-RPC、Consoleでサーバーの標準エラーを調査できます。
+起動と`dev_status`はExcelを操作しません。
+Excel開始ツールを使う場合は、既存の実験の対象・承認・再送禁止条件に従ってください。
+
+[scripts/inspector.mjs](../scripts/inspector.mjs)は公式CLI・GUIへの薄い起動処理です。
+標準機能の`--config`による読取り専用設定を使います。
+起動ごとにサーバーとSpikeのビルド一式を`.xlwright/development/inspector/<session-id>/`へコピーします。
+Inspectorが参照するDLLと次のビルド先を分けるため、GUIへ接続したまま`npm run check`を実行できます。
+コピー中は統合ビルドと排他します。競合した場合は片方の完了を確認してから実行してください。
+既存GUIの接続先は起動時のコピーです。新しいビルドを調査するときはGUIを終了し、`npm run inspect:web`を起動し直します。
+終了するときはサーバーをDisconnectしてから、起動したターミナルでCtrl+Cを押してください。
+`npm ci`などで依存を入れ直すときも、先にInspectorを終了してください。
+WindowsではGUIが読み込んだネイティブモジュールの削除を拒否されることを確認しています。
+
+`XLWRIGHT_DEVELOPMENT_SPIKE_DLL`は開発モード専用のSpike DLL指定です。
+起動処理がコピー先を設定します。省略時は従来のRelease DLLを使います。
+指定先はリポジトリ内に限定し、reparse pointを拒否します。
+作業ディレクトリと実機の所有記録・ガードは同じリポジトリを使います。
+コピーしたDLLを、Excelや作業データの隔離とは扱いません。
+
+Inspectorの状態とログはセッションごとにリポジトリ内へ置きます。
+secret storeはmemoryを指定し、個人のcredential storeを使いません。
+GUIは127.0.0.1へbindし、標準の起動ごとの認証を有効にします。
+起動URLやProtocol・Consoleにはローカル情報が含まれるため、出力をそのまま共有しないでください。
+
+CLIの検証は接続ごとに1要求を実行して終了します。
+非同期実験の開始と状態照会を、別々のCLI呼出しで行わないでください。
+接続を維持するGUIか、既存の実機手順を使います。
+
+InspectorはCodexへ登録した`xlwright-dev`とは別のサーバーを起動します。
+Codexのツール選択や一連の操作は、直接MCP接続で別に確認します。
+直接接続のDLL更新は[登録と更新](#登録と更新)に従って、アプリ通常終了・ビルド・再起動を行います。
+Hotloadによる自動差替えは採用しません。
 
 T10の準備コードとユーザー実行手順は[S9の固定ケース](../tests/fixtures/s9/README.md)を参照してください。
 Excelなしの制御COM試験は通常チェックと別の専用CLIです。ユーザー実行の7ケースとビルド・チェックは通過しました。[実測と限界](notes/spike-0-results.md#t10の制御com試験2026-10-31)を参照してください。

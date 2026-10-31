@@ -1,9 +1,13 @@
 {
   "private": true,
   "scripts": {
+    "check": "powershell.exe -NoLogo -NoProfile -NonInteractive -File scripts/development.ps1",
+    "inspect": "node scripts/inspector.mjs --cli",
+    "inspect:web": "node scripts/inspector.mjs --web",
     "lint:md": "markdownlint-cli2 \"**/*.md\""
   },
   "devDependencies": {
+    "@modelcontextprotocol/inspector": "2.13.0",
     "markdownlint-cli2": "0.24.0"
   }
 }

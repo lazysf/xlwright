@@ -37,13 +37,38 @@ if (args is ["--excel"] or ["--excel-end-refusal"] or ["--excel-record-fault-sta
 
 string repository = Environment.CurrentDirectory;
 string dotnet = Environment.ProcessPath!;
-string server = Path.Combine(repository, "src/XlWright.McpServer/bin/Release/net10.0-windows/XlWright.McpServer.dll");
+if (args.Length != 0 && args is not ["--server", _])
+    throw new ArgumentException("Usage: Checks [--server <server DLL>]");
+string server = args is ["--server", var serverPath] ? Path.GetFullPath(serverPath, repository) :
+    Path.Combine(repository, "src/XlWright.McpServer/bin/Release/net10.0-windows/XlWright.McpServer.dll");
 string checksDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
 string testRoot = Path.Combine(repository, ".xlwright", "mcp-checks", Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(testRoot);
 using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 int passed = 0;
 string blockedRepository = PrepareFake("blocked");
+
+// A prepared release selects its own Spike without replacing the live build.
+string configuredRepository = PrepareFake("configured");
+string configuredDll = Path.Combine(configuredRepository, "selected.dll");
+File.Move(Path.Combine(configuredRepository, "spikes", "Spike0", "bin", "Release", "net10.0-windows", "Spike0.dll"), configuredDll);
+string? previousSpike = Environment.GetEnvironmentVariable("XLWRIGHT_DEVELOPMENT_SPIKE_DLL");
+try
+{
+    Environment.CurrentDirectory = configuredRepository;
+    Environment.SetEnvironmentVariable("XLWRIGHT_DEVELOPMENT_SPIKE_DLL", "selected.dll");
+    await using (var configured = new DevelopmentTools())
+        Require(State(configured) == "idle", "Configured Spike is used without a legacy DLL");
+    Environment.SetEnvironmentVariable("XLWRIGHT_DEVELOPMENT_SPIKE_DLL", "../outside.dll");
+    bool rejected = false;
+    try { await using var outside = new DevelopmentTools(); } catch (IOException) { rejected = true; }
+    Require(rejected, "Configured Spike outside the repository is rejected");
+}
+finally
+{
+    Environment.CurrentDirectory = repository;
+    Environment.SetEnvironmentVariable("XLWRIGHT_DEVELOPMENT_SPIKE_DLL", previousSpike);
+}
 
 foreach (bool development in new[] { false, true })
 {

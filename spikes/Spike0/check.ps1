@@ -1,4 +1,6 @@
 #requires -Version 5.1
+[CmdletBinding()]
+param([switch] $Isolated)
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -21,13 +23,28 @@ $configPath = Join-Path $buildRoot 'NuGet.Config'
 [IO.File]::WriteAllText($configPath,
     '<configuration><packageSources><clear /></packageSources></configuration>')
 $dotnetPath = (Get-Command dotnet -CommandType Application).Source
+$artifactArguments = @()
+if ($Isolated) {
+    $artifactRoot = Join-Path $PSScriptRoot '../../.xlwright/development/artifacts'
+    for ($ancestor = [IO.DirectoryInfo]::new([IO.Path]::GetFullPath($artifactRoot)); $null -ne $ancestor; $ancestor = $ancestor.Parent) {
+        if ($ancestor.Exists -and $ancestor.Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) {
+            throw 'Artifact path ancestors may not use reparse points.'
+        }
+    }
+    if (Test-Path -LiteralPath $artifactRoot) {
+        foreach ($entry in Get-ChildItem -LiteralPath $artifactRoot -Recurse -Force) {
+            if ($entry.Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) { throw 'Artifacts may not use reparse points.' }
+        }
+    }
+    $artifactArguments = @('--artifacts-path', '.xlwright/development/artifacts')
+}
 
 function Invoke-SpikeDotnet([ValidatePattern('^[A-Za-z0-9_./:=\-]+$')][string[]] $DotnetArguments) {
     $processInfo = [Diagnostics.ProcessStartInfo]::new($dotnetPath)
     $processInfo.UseShellExecute = $false
     $processInfo.WorkingDirectory = $repositoryRoot
     # All callers use fixed tokens; reject values needing quoting on .NET Framework.
-    $processInfo.Arguments = $DotnetArguments -join ' '
+    $processInfo.Arguments = @($DotnetArguments + $artifactArguments) -join ' '
     # Child-process settings keep SDK initialization and NuGet away from personal config.
     $processInfo.EnvironmentVariables['DOTNET_CLI_HOME'] = Join-Path $buildRoot 'dotnet-home'
     $processInfo.EnvironmentVariables['APPDATA'] = Join-Path $buildRoot 'appdata'
@@ -52,4 +69,6 @@ Invoke-SpikeDotnet @('restore', 'spikes/Spike0/Spike0.csproj', '--configfile',
 foreach ($configuration in @('Debug', 'Release')) {
     Invoke-SpikeDotnet @('build', 'spikes/Spike0/Spike0.csproj', '--configuration', $configuration, '--no-restore')
 }
-Invoke-SpikeDotnet @('spikes/Spike0/bin/Release/net10.0-windows/Spike0.dll', '--self-check')
+$selfCheck = if ($Isolated) { '.xlwright/development/artifacts/bin/Spike0/release/Spike0.dll' } else { 'spikes/Spike0/bin/Release/net10.0-windows/Spike0.dll' }
+$artifactArguments = @()
+Invoke-SpikeDotnet @($selfCheck, '--self-check')

@@ -30,7 +30,10 @@ internal sealed class DevelopmentTools : IAsyncDisposable
     {
         if (!File.Exists(Path.Combine(repository, "spikes", "Spike0", "Spike0.csproj")))
             throw new InvalidOperationException("Development mode requires the repository working directory.");
-        spike = Path.Combine(repository, "spikes", "Spike0", "bin", "Release", "net10.0-windows", "Spike0.dll");
+        string? configuredSpike = Environment.GetEnvironmentVariable("XLWRIGHT_DEVELOPMENT_SPIKE_DLL");
+        spike = configuredSpike is null
+            ? Path.Combine(repository, "spikes", "Spike0", "bin", "Release", "net10.0-windows", "Spike0.dll")
+            : Path.GetFullPath(configuredSpike, repository);
         RejectLinks(spike);
         spikeHash = Hash(spike);
         directory = Path.Combine(repository, ".xlwright", "mcp-development", invocation);

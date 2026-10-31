@@ -49,6 +49,8 @@ nvm use (Get-Content .nvmrc)
 npm ci
 ```
 
+開発用パッケージにはMarkdownのチェックと、MCP Inspector 2.13.0を含みます。
+
 構成と作業手順は[開発ガイド](docs/development.md)に記載しています。
 AIエージェント向けのリポジトリ固有ルールは [AGENTS.md](AGENTS.md) にあります。
 
@@ -58,6 +60,17 @@ AIエージェント向けのリポジトリ固有ルールは [AGENTS.md](AGENT
 今後の仕様判断には、現在の `docs/` と実装・検証結果を使います。
 
 ## 開発時のチェック
+
+通常のビルド・非COM検証・Inspector CLIによる接続検証は、次のコマンドでまとめて実行します。
+実Excelは起動しません。
+
+```powershell
+npm run check
+```
+
+チェック後に`npm run inspect`でInspector CLIからツール一覧を取得できます。
+GUIを使う場合だけ`npm run inspect:web`を実行します。
+操作方法と接続先の区別は[開発ガイド](docs/development.md#inspectorによる調査)を参照してください。
 
 commit 時に、行末空白、末尾改行、大きな追加ファイル、Markdownの記法をチェックします。
 全件チェックは次のコマンドで実行します。

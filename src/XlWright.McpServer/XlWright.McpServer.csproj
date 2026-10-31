@@ -10,6 +10,5 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="ModelContextProtocol.Core" Version="[2.3.0]" />
-    <InternalsVisibleTo Include="XlWright.McpServer.Checks" />
   </ItemGroup>
 </Project>

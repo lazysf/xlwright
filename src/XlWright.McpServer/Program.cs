@@ -14,31 +14,19 @@ internal static class Program
             return 1;
         }
 
-        DevelopmentTools? development = null;
         try
         {
-            if (args.Length != 0) development = new DevelopmentTools();
             var options = new McpServerOptions
             {
                 ServerInfo = new() { Name = "xlwright", Version = "0.1.0" }
             };
-            if (development is not null)
+            if (args.Length != 0)
             {
                 options.ToolCollection = new();
-                options.ToolCollection.Add(McpServerTool.Create(development.Status,
-                    new() { Name = "dev_status", ReadOnly = true }));
-                options.ToolCollection.Add(McpServerTool.Create(development.Start,
-                    new() { Name = "dev_excel_smoke_start", ReadOnly = false }));
-                options.ToolCollection.Add(McpServerTool.Create(development.StartEndRefusal,
-                    new() { Name = "dev_excel_end_refusal_start", ReadOnly = false }));
-                options.ToolCollection.Add(McpServerTool.Create(development.StartRecordFaultStarting,
-                    new() { Name = "dev_excel_record_fault_starting_start", ReadOnly = false }));
-                options.ToolCollection.Add(McpServerTool.Create(development.StartRecordFaultOwned,
-                    new() { Name = "dev_excel_record_fault_owned_start", ReadOnly = false }));
-                options.ToolCollection.Add(McpServerTool.Create(development.StartRecordFaultCompleted,
-                    new() { Name = "dev_excel_record_fault_completed_start", ReadOnly = false }));
-                options.ToolCollection.Add(McpServerTool.Create(development.SmokeStatus,
-                    new() { Name = "dev_excel_smoke_status", ReadOnly = true }));
+                options.ToolCollection.Add(McpServerTool.Create(new DevelopmentTools().Status, new()
+                {
+                    Name = "dev_status", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false
+                }));
             }
             await using var server = ModelContextProtocol.Server.McpServer.Create(
                 new StdioServerTransport(options), options);
@@ -50,10 +38,6 @@ internal static class Program
             // Messages can contain personal paths; detailed development output stays local.
             Console.Error.WriteLine($"xlwright server failed: {error.GetType().Name}");
             return 1;
-        }
-        finally
-        {
-            if (development is not null) await development.DisposeAsync();
         }
     }
 

@@ -1,0 +1,16 @@
+[
+  {
+    "name": "dev_status",
+    "description": "Read the identity of the running development server build. Does not access Excel.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  }
+]

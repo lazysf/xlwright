@@ -4,6 +4,8 @@
     "check": "powershell.exe -NoLogo -NoProfile -NonInteractive -File scripts/development.ps1",
     "inspect": "node scripts/inspector.mjs --cli",
     "inspect:web": "node scripts/inspector.mjs --web",
+    "snapshot:tools": "node scripts/inspector.mjs --snapshot",
+    "prepare:experiment": "node scripts/prepare-experiment.mjs",
     "lint:md": "markdownlint-cli2 \"**/*.md\""
   },
   "devDependencies": {

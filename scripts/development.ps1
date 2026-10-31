@@ -1,6 +1,6 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([switch] $Restore)
+param([switch] $Restore, [string] $TestFilter)
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $development = Join-Path $repository '.xlwright/development'
@@ -31,7 +31,21 @@ $runId = [Guid]::NewGuid().ToString('N')
 $runDirectory = Join-Path $development "runs/$runId"
 Assert-LocalPath $runDirectory
 [IO.Directory]::CreateDirectory($runDirectory) | Out-Null
-$result = [ordered]@{ runId = $runId; state = 'running'; stages = @() }
+$result = [ordered]@{ runId = $runId; state = 'running'; testFilter = $TestFilter; stages = @() }
+
+function Write-StageLogTail([string] $Name) {
+    foreach ($stream in @('stdout', 'stderr')) {
+        $path = Join-Path $runDirectory "$Name.$stream.log"
+        if (-not (Test-Path -LiteralPath $path)) { continue }
+        Write-Output "--- $Name.$stream.log (last 80 lines)"
+        # Console output often lands in reports, so keep home paths out of it.
+        Get-Content -LiteralPath $path -Tail 80 -Encoding UTF8 | ForEach-Object {
+            $line = $_
+            foreach ($form in @($repository, $repository.Replace('\', '/'), $repository.Replace('\', '\\'))) { $line = $line.Replace($form, '.') }
+            $line.Replace($env:USERPROFILE, '~').Replace($env:USERPROFILE.Replace('\', '/'), '~')
+        }
+    }
+}
 
 function Invoke-Stage([string] $Name, [string] $Command, [string[]] $Arguments) {
     Write-Output "Running $Name"
@@ -46,9 +60,10 @@ function Invoke-Stage([string] $Name, [string] $Command, [string[]] $Arguments) 
     $info.Arguments = $Arguments -join ' '
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
-    $stage = [ordered]@{ name = $Name; state = 'running'; exitCode = $null }
+    $stage = [ordered]@{ name = $Name; state = 'running'; exitCode = $null; durationMs = $null }
     $result.stages += $stage
     $process = $null
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
     try {
         $process = [Diagnostics.Process]::Start($info)
         $stdout = $process.StandardOutput.ReadToEndAsync()
@@ -57,15 +72,19 @@ function Invoke-Stage([string] $Name, [string] $Command, [string[]] $Arguments) 
         [IO.File]::WriteAllText((Join-Path $runDirectory "$Name.stdout.log"), $stdout.GetAwaiter().GetResult())
         [IO.File]::WriteAllText((Join-Path $runDirectory "$Name.stderr.log"), $stderr.GetAwaiter().GetResult())
         $stage.exitCode = $process.ExitCode
-        if ($process.ExitCode -ne 0) { $stage.state = 'failed'; throw "$Name failed; inspect .xlwright/development/runs/$runId/$Name.stderr.log" }
+        if ($process.ExitCode -ne 0) { $stage.state = 'failed'; throw "$Name failed; inspect $Name.stdout.log and $Name.stderr.log in .xlwright/development/runs/$runId" }
         $stage.state = 'passed'
     }
     catch {
         $stage.state = 'failed'
         [IO.File]::AppendAllText((Join-Path $runDirectory "$Name.stderr.log"), [Environment]::NewLine + $_.Exception.Message)
+        Write-StageLogTail $Name
         throw
     }
-    finally { if ($null -ne $process) { $process.Dispose() } }
+    finally {
+        $stage.durationMs = $stopwatch.ElapsedMilliseconds
+        if ($null -ne $process) { $process.Dispose() }
+    }
 }
 
 try {
@@ -75,13 +94,25 @@ try {
             if ($entry.Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) { throw 'Artifacts may not use reparse points.' }
         }
     }
-    Invoke-Stage 'spike' 'powershell.exe' @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', 'spikes/Spike0/check.ps1', '-Isolated')
-    $mcpArguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', 'src/XlWright.McpServer/check.ps1', '-Isolated')
+    $mcpArguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', 'src/XlWright.McpServer/check.ps1')
     if ($Restore) { $mcpArguments += '-Restore' }
-    Invoke-Stage 'mcp' 'powershell.exe' $mcpArguments
-    Invoke-Stage 'inspector' 'node.exe' @('scripts/inspector.mjs', '--check')
-    Invoke-Stage 'markdown' 'node.exe' @('node_modules/markdownlint-cli2/markdownlint-cli2-bin.mjs', '**/*.md')
-    Invoke-Stage 'diff' 'git.exe' @('diff', '--check')
+    $spikeArguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', 'spikes/Spike0/check.ps1')
+    if ($TestFilter) {
+        # The tests run the built Spike0, so a filtered run still has to rebuild it.
+        Invoke-Stage 'spike' 'powershell.exe' $spikeArguments
+        Invoke-Stage 'mcp' 'powershell.exe' ($mcpArguments + @('-TestFilter', $TestFilter))
+    }
+    else {
+        # A failed run must not leave an earlier pass valid for preparing experiments.
+        [IO.File]::Delete((Join-Path $development 'last-passed.json'))
+        Invoke-Stage 'sources' 'node.exe' @('scripts/record-build.mjs', '--begin', $runId)
+        Invoke-Stage 'spike' 'powershell.exe' $spikeArguments
+        Invoke-Stage 'mcp' 'powershell.exe' $mcpArguments
+        Invoke-Stage 'inspector' 'node.exe' @('scripts/inspector.mjs', '--check')
+        Invoke-Stage 'markdown' 'node.exe' @('node_modules/markdownlint-cli2/markdownlint-cli2-bin.mjs', '**/*.md')
+        Invoke-Stage 'diff' 'git.exe' @('diff', '--check')
+        Invoke-Stage 'record' 'node.exe' @('scripts/record-build.mjs', '--finish', $runId)
+    }
 
     $result.state = 'passed'
 }

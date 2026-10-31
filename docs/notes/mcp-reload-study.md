@@ -3,6 +3,7 @@
 - Date: 2026-10-30
 - 出典: [公式App Server API](https://learn.chatgpt.com/docs/app-server)、`codex mcp --help`、[Kitsune MCP 0.21.0配布情報](https://pypi.org/project/kitsune-mcp/0.21.0/)、取得したwheel内のソース。
 - 調査開始時のHEAD: `d7a92ee`。作業ツリーはクリーンでした。
+- Outdated: AIクライアントの登録と更新手順は廃止しました。現在の開発方法は[ADR 0003](../adr/0003-inspector-centered-development.md)を参照してください。候補の評価結果は再検討の材料として残します。
 
 ## 今回の判断と範囲
 

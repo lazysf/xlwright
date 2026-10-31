@@ -61,7 +61,6 @@ Spike0のビルドには、Officeの既存PIAが必要です。固定版は[環�
 
 エージェントは、コード・テスト・文書の作成と修正、統合チェック、Inspectorの確認、実験の準備、証拠の照合を自走します。
 人は、方針の判断、実Excelの操作と復旧の承認、コンソールでの実験の実行、画面の目視確認を担当します。
-承認の条件は[AGENTS.md](../AGENTS.md#自走と承認)に従います。
 
 ### 実装の進め方
 
@@ -124,16 +123,12 @@ Inspector CLIは1要求ごとに接続を閉じるためです。
 
 ### 非COM検証の自動実行
 
-通常のビルドと非COM検証は、エージェントがリポジトリ直下で`npm run check`を実行します。
-ビルドの経路はこの1つだけです。
-既存実験の再送・復旧・実Excel操作の承認条件は変更しません。
+ビルドと非COM検証は`npm run check`の1経路だけです。Excelは起動しません。
 通常ユーザー側ではNode.js 26.13.0とnpm 11.20.0を確認しました。
 sandbox側で指定版が見つからない場合は、正式な権限経路で実行します。
-実行ポリシーは変更しません。
 
 入口は[scripts/development.ps1](../scripts/development.ps1)です。
 Windows PowerShell 5.1で2本のcheck.ps1を実行します。
-Spike0の自己チェックとMCPのテストはExcelを起動しません。
 Debug・Releaseの出力と中間ファイルは`.xlwright/development/artifacts/`へ置きます。
 続けてInspector CLIで、legacyとmodernの両プロトコル世代のツール一覧と読取り専用の`dev_status`を検証します。
 ツール一覧の検証は、スキーマの`--strict`検査とスナップショットの照合を含みます。
@@ -212,8 +207,7 @@ Hotloadによる自動差替えは採用しません。
 
 ### 実Excel実験の進め方
 
-Spikeの実Excel実験は、人がコンソールで起動します。
-エージェントのシェルではCOM生成のアクセス拒否を観測しているためです。[実機結果](notes/spike-0-results.md)を参照してください。
+Spikeの実Excel実験は、人がコンソールで起動します。承認の条件は[AGENTS.md](../AGENTS.md#自走と承認)に従います。
 
 1. エージェントが`npm run check`を通し、`npm run prepare:experiment`で固定コピーを作ります。
 2. エージェントが、使用するブック、変更・終了する対象、副作用、停止条件を示して承認を得ます。

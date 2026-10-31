@@ -100,6 +100,17 @@ internal static class LifecycleChecks
             Require(File.ReadAllBytes(path).SequenceEqual(original));
         });
 
+        check("next start replaces an owned record with an absent PID and returns it", () =>
+        {
+            string path = Path.Combine(directory, "absent-pid.lock");
+            var owned = new OwnershipRecord(1, "owned", workbook, identity with { Pid = int.MaxValue });
+            using (var created = OwnershipRecordFile.Acquire(path)) created.Write(owned);
+            using var file = OwnershipRecordFile.Acquire(path);
+            Require(file.CheckPrevious() == owned);
+            Require(file.Read() == new OwnershipRecord(1, "completed"));
+            Require(file.CheckPrevious() is null);
+        });
+
         foreach (string target in new[] { "starting", "owned", "completed" })
         {
             check("L2 fixed injection targets only " + target, () =>

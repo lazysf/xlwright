@@ -16,6 +16,30 @@ internal static class SelfChecks
         }
         RuntimeAssets.VerifyPias();
         RuntimeAssets.VerifyFixture(repository);
+        Check("prepared build must match its manifest", () =>
+        {
+            string copy = RuntimeAssets.CreateLocalDirectory(repository,
+                Path.Combine(".xlwright", "spike0-checks", "prepared-" + Guid.NewGuid().ToString("N")));
+            string dll = Path.Combine(copy, "Spike0.dll");
+            File.WriteAllText(dll, "build");
+            string hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData("build"u8));
+            File.WriteAllText(Path.Combine(copy, "manifest.json"), JsonSerializer.Serialize(new
+            {
+                checkRun = "run", files = new[] { new { path = "Spike0.dll", sha256 = hash } }
+            }));
+            Assert(PreparedBuild.Verify(copy) == new PreparedBuild.Identity("run", hash));
+            Expect<InvalidOperationException>(() => PreparedBuild.Require(repository, copy));
+            File.WriteAllText(Path.Combine(copy, "extra.dll"), "extra");
+            Expect<InvalidDataException>(() => PreparedBuild.Verify(copy));
+            File.Delete(Path.Combine(copy, "extra.dll"));
+            File.WriteAllText(dll, "other");
+            Expect<InvalidDataException>(() => PreparedBuild.Verify(copy));
+            File.Delete(dll);
+            Expect<InvalidDataException>(() => PreparedBuild.Verify(copy));
+            File.Delete(Path.Combine(copy, "manifest.json"));
+            Expect<InvalidDataException>(() => PreparedBuild.Verify(copy));
+            Directory.Delete(copy);
+        });
         Check("S14 fixed selection and ordering", () =>
         {
             Assert(CalculationProbe.Parse(["--excel-s14-auto"]) == "auto");
@@ -257,7 +281,7 @@ internal static class SelfChecks
                 string path = Path.Combine(directory, Guid.NewGuid() + ".lock");
                 File.WriteAllText(path, text);
                 using (var file = OwnershipRecordFile.Acquire(path))
-                    Expect<SessionRecordInvalidException>(file.CheckPrevious);
+                    Expect<SessionRecordInvalidException>(() => file.CheckPrevious());
                 Assert(File.ReadAllText(path) == text);
             }
         });
@@ -268,10 +292,10 @@ internal static class SelfChecks
             string path = Path.Combine(directory, "live.lock");
             using (var created = OwnershipRecordFile.Acquire(path)) created.Write(existing);
             using var file = OwnershipRecordFile.Acquire(path);
-            Expect<InvalidOperationException>(file.CheckPrevious);
+            Expect<InvalidOperationException>(() => file.CheckPrevious());
             Assert(file.Read() == existing);
             file.Write(existing with { Process = existing.Process! with { Name = "different" } });
-            Expect<InvalidOperationException>(file.CheckPrevious);
+            Expect<InvalidOperationException>(() => file.CheckPrevious());
         });
         Check("I/O failure does not permit the next stage", () =>
         {

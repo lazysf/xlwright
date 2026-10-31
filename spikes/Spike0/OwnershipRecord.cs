@@ -165,18 +165,19 @@ internal sealed class OwnershipRecordFile : IDisposable
         if (boundary == kind && operation == "write") throw new IOException("Injected L2 record write failure.");
     };
 
-    internal void CheckPrevious()
+    // Returns the record the next-start rule replaced, so the run can keep it as evidence.
+    internal OwnershipRecord? CheckPrevious()
     {
-        if (CreatedNew) return;
+        if (CreatedNew) return null;
         var record = Read();
-        if (record.Kind == "completed") return;
+        if (record.Kind == "completed") return null;
         if (record.Kind == "starting") throw new SessionRecordInvalidException();
         Process process;
         try { process = Process.GetProcessById(record.Process!.Pid); }
         catch (ArgumentException)
         {
             Write(new(1, "completed"));
-            return;
+            return record;
         }
         using (process)
         {

@@ -4,7 +4,7 @@ namespace Spike0;
 
 internal static class StaRunner
 {
-    internal static Task<bool> Start(Func<bool> scenario)
+    internal static Task<bool> Start(Func<bool> scenario, Action? beforeLoop = null)
     {
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
@@ -21,6 +21,7 @@ internal static class StaRunner
             {
                 Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
                 Application.Idle += runOnce;
+                beforeLoop?.Invoke();
                 Application.Run();
             }
             catch (Exception error) { completion.TrySetException(error); }

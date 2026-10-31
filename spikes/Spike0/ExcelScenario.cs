@@ -8,7 +8,7 @@ namespace Spike0;
 // This is one lifecycle experiment, not the Core or a reusable session service.
 internal sealed partial class ExcelScenario(string workbookPath, OwnershipRecordFile record,
     ExecutionGate gate, DiagnosticLog log, string? unmanagedPath = null, string? recordFault = null,
-    string? startupCase = null, string? cellCase = null, string? calculationCase = null)
+    string? startupCase = null, string? cellCase = null, string? calculationCase = null, S9Probe? s9 = null)
 {
     private static readonly TimeSpan SessionTimeout = TimeSpan.FromSeconds(120);
     private readonly List<object> references = [];
@@ -35,7 +35,8 @@ internal sealed partial class ExcelScenario(string workbookPath, OwnershipRecord
         try
         {
             Start();
-            if (calculationCase is not null) ProbeCalculation();
+            if (s9 is not null) ProbeS9();
+            else if (calculationCase is not null) ProbeCalculation();
             else if (cellCase is not null) ProbeCells();
             else if (startupCase is null) EditKnownCell();
             else ProbeStartup();

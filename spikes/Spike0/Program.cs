@@ -9,6 +9,10 @@ internal static class Program
         try
         {
             string repository = RuntimeAssets.FindRepository();
+            if (args is ["--s9-com-check"])
+                return await S9ComCheck.Run(repository);
+            if (args is ["--s9-com-receiver", var receiverCase, var nonce])
+                return await S9ComReceiver.Run(receiverCase, nonce);
             if (args.Length == 0 || args is ["--self-check"])
                 return await SelfChecks.Run(repository);
             if (args is ["--verify-s4-saved"])
@@ -17,9 +21,10 @@ internal static class Program
                 return 0;
             }
             string? startupCase = StartupProbe.Parse(args);
+            string? s9Case = S9Probe.Parse(args);
             string? cellCase = CellProbe.Parse(args);
             string? calculationCase = CalculationProbe.Parse(args);
-            if (startupCase is null && cellCase is null && calculationCase is null && args is not ["--excel"] and not ["--excel-end-refusal"] and not ["--excel-record-fault-starting"]
+            if (s9Case is null && startupCase is null && cellCase is null && calculationCase is null && args is not ["--excel"] and not ["--excel-end-refusal"] and not ["--excel-record-fault-starting"]
                 and not ["--excel-record-fault-owned"] and not ["--excel-record-fault-completed"])
             {
                 Console.Error.WriteLine("Usage: Spike0 [--self-check | --excel | --excel-end-refusal | " +
@@ -27,6 +32,8 @@ internal static class Program
                     "S10: --excel-s10-a2 | --excel-s10-b | --excel-s10-c. " +
                     "Cells: --excel-s1 | --excel-s2 | --excel-s3 | --excel-s4. " +
                     "Calculation: --excel-s14-auto | --excel-s14-manual | --excel-s14-mode-change. " +
+                    "S9: --excel-s9-release | --excel-s9-limit | --excel-s9-deadline. " +
+                    "Controlled COM without Excel: --s9-com-check. " +
                     "Offline: --verify-s4-saved. Excel experiments require prior approval.");
                 return 1;
             }
@@ -37,7 +44,7 @@ internal static class Program
                 "--excel-record-fault-completed" => "completed",
                 _ => null
             };
-            return await RunExcel(repository, args[0] == "--excel-end-refusal", recordFault, startupCase, cellCase, calculationCase);
+            return await RunExcel(repository, args[0] == "--excel-end-refusal", recordFault, startupCase, cellCase, calculationCase, s9Case);
         }
         catch (Exception error)
         {
@@ -46,13 +53,13 @@ internal static class Program
         }
     }
 
-    private static async Task<int> RunExcel(string repository, bool endRefusal, string? recordFault, string? startupCase, string? cellCase, string? calculationCase)
+    private static async Task<int> RunExcel(string repository, bool endRefusal, string? recordFault, string? startupCase, string? cellCase, string? calculationCase, string? s9Case)
     {
         RuntimeAssets.VerifyPias();
         RuntimeAssets.VerifyFixture(repository);
         var startupFixture = startupCase is null ? null : StartupProbe.VerifyFixture(repository);
         var calculationFixture = calculationCase is null ? null : CalculationProbe.VerifyFixture(repository, calculationCase);
-        string? experiment = calculationCase is null ? cellCase ?? (startupCase is null ? null : "s10-" + startupCase) : "s14-" + calculationCase;
+        string? experiment = s9Case is not null ? "s9-" + s9Case : calculationCase is null ? cellCase ?? (startupCase is null ? null : "s10-" + startupCase) : "s14-" + calculationCase;
         string guardPath = Path.Combine(repository, ".xlwright", "mcp-development", "active-smoke.json");
         string? attemptPath = null;
         if (experiment is not null)
@@ -69,6 +76,12 @@ internal static class Program
         using var record = OwnershipRecordFile.Acquire(recordPath);
         // Recheck under the shared record lock before any record transition or new guard.
         if (attemptPath is not null) StartupProbe.RequireNewAttempt(attemptPath);
+        if (s9Case is not null)
+        {
+            if (record.CreatedNew || record.Read().Kind != "completed")
+                throw new InvalidDataException("S9 requires existing completed ownership.");
+            S9Probe.RequirePrevious(repository, workspace, s9Case);
+        }
         if (calculationCase is not null)
         {
             if (record.CreatedNew || record.Read().Kind != "completed")
@@ -127,6 +140,7 @@ internal static class Program
         string diagnosticPath = Path.Combine(run, "diagnostics.jsonl");
         using var log = new DiagnosticLog(diagnosticPath);
         var gate = new ExecutionGate();
+        using var s9 = s9Case is null ? null : new S9Probe(s9Case, run, gate);
         log.Write("run.prepared", gate, new { workbook_path = workbook, record_path = recordPath, diagnostic_path = diagnosticPath,
             server_pid = Environment.ProcessId });
         ConsoleCancelEventHandler onCancel = (_, e) =>
@@ -145,6 +159,7 @@ internal static class Program
                     while (true)
                     {
                         string? line = await Console.In.ReadLineAsync();
+                        if (line == "go") s9?.SignalStart();
                         if (line is null || line == "stop")
                         {
                             gate.RequestShutdown();
@@ -161,12 +176,14 @@ internal static class Program
             });
             if (cellCase is not null) CellProbe.WriteIdentity(repository, run, cellCase);
             if (calculationCase is not null) CalculationProbe.WriteIdentity(repository, run, calculationFixture!);
-            var scenario = new ExcelScenario(workbook, record, gate, log, unmanaged, recordFault, startupCase, cellCase, calculationCase);
+            var scenario = new ExcelScenario(workbook, record, gate, log, unmanaged, recordFault, startupCase, cellCase, calculationCase, s9);
             Task<bool> work = StaRunner.Start(scenario.Run);
             while (!work.IsCompleted)
             {
+                s9?.NotifyRelease();
                 if (gate.CheckTimeout())
                 {
+                    s9?.SaveEvidence("timeout");
                     log.Write("operation.result_unknown", gate, new
                     {
                         record_path = recordPath,

@@ -366,6 +366,7 @@ internal static class SelfChecks
         });
 
         LifecycleChecks.Run(directory, Check);
+        S9Checks.Run(directory, Check);
         Check("retained record verifies exact sharing violation", () =>
         {
             using var file = OwnershipRecordFile.Acquire(Path.Combine(directory, "retained-proof.lock"));

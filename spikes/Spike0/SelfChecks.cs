@@ -16,6 +16,74 @@ internal static class SelfChecks
         }
         RuntimeAssets.VerifyPias();
         RuntimeAssets.VerifyFixture(repository);
+        Check("saved rich errors resolve metadata references and positional keys", () =>
+        {
+            var parts = new Dictionary<string, System.Xml.Linq.XDocument>();
+            const string ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+            const string rich = "http://schemas.microsoft.com/office/spreadsheetml/2017/richdata";
+            parts["xl/metadata.xml"] = System.Xml.Linq.XDocument.Parse(
+                $"<metadata xmlns='{ns}' xmlns:r='{rich}'><metadataTypes><metadataType name='XLRICHVALUE'/></metadataTypes>" +
+                "<valueMetadata><bk><rc t='1' v='0'/></bk><bk><rc t='1' v='1'/></bk></valueMetadata>" +
+                "<futureMetadata name='XLRICHVALUE'><bk><r:rvb i='0'/></bk><bk><r:rvb i='1'/></bk></futureMetadata></metadata>");
+            parts["xl/richData/rdrichvalue.xml"] = System.Xml.Linq.XDocument.Parse(
+                $"<rvData xmlns='{rich}'><rv s='0'><v>1</v><v>8</v></rv><rv s='0'><v>3</v><v>13</v></rv></rvData>");
+            parts["xl/richData/rdrichvaluestructure.xml"] = System.Xml.Linq.XDocument.Parse(
+                $"<rvStructures xmlns='{rich}'><s t='_error'><k n='subType' t='i'/><k n='errorType' t='i'/></s></rvStructures>");
+            System.Xml.Linq.XDocument Read(string part) => parts.TryGetValue(part, out var xml) ? xml :
+                throw new InvalidDataException("Missing synthetic part.");
+            var cell = System.Xml.Linq.XElement.Parse($"<c xmlns='{ns}' t='e' vm='1'><v>#VALUE!</v></c>");
+            Assert(SavedCellError.Read(cell, Read) == "#SPILL!");
+            cell.SetAttributeValue("vm", "2");
+            Assert(SavedCellError.Read(cell, Read) == "#CALC!");
+            cell.SetAttributeValue("vm", "0");
+            Expect<InvalidDataException>(() => SavedCellError.Read(cell, Read));
+            cell.SetAttributeValue("vm", "3");
+            Expect<InvalidDataException>(() => SavedCellError.Read(cell, Read));
+            cell.SetAttributeValue("vm", "x");
+            Expect<InvalidDataException>(() => SavedCellError.Read(cell, Read));
+            cell.SetAttributeValue("vm", "1");
+            var structure = parts["xl/richData/rdrichvaluestructure.xml"].Root!.Elements().Single();
+            structure.SetAttributeValue("t", "unknown");
+            Expect<InvalidDataException>(() => SavedCellError.Read(cell, Read));
+            structure.SetAttributeValue("t", "_error");
+            structure.Elements().Last().SetAttributeValue("n", "wrongKey");
+            Expect<InvalidDataException>(() => SavedCellError.Read(cell, Read));
+            structure.Elements().Last().SetAttributeValue("n", "errorType");
+            var values = parts["xl/richData/rdrichvalue.xml"].Root!.Elements().First();
+            values.Elements().Last().Value = "999";
+            Expect<InvalidDataException>(() => SavedCellError.Read(cell, Read));
+            values.Elements().Last().Value = "8";
+            cell.Element(System.Xml.Linq.XName.Get("v", ns))!.Value = "#SPILL!";
+            Expect<InvalidDataException>(() => SavedCellError.Read(cell, Read));
+            cell.Element(System.Xml.Linq.XName.Get("v", ns))!.Value = "#VALUE!";
+            values.Elements().Last().Remove();
+            Expect<InvalidDataException>(() => SavedCellError.Read(cell, Read));
+            parts.Remove("xl/richData/rdrichvalue.xml");
+            Expect<InvalidDataException>(() => SavedCellError.Read(cell, Read));
+            cell.SetAttributeValue("vm", null);
+            Assert(SavedCellError.Read(cell, Read) == "#VALUE!");
+        });
+        Check("cell fixed selection and ordering", () =>
+        {
+            Assert(CellProbe.Parse(["--excel-s1"]) == "s1" && CellProbe.Previous("s1") is null);
+            Assert(CellProbe.Parse(["--excel-s4"]) == "s4" && CellProbe.Previous("s4") == "s3");
+            Assert(CellProbe.Parse(["--excel-s1", "other.xlsx"]) is null);
+            Assert(CellProbe.Parse(["--excel-s5"]) is null);
+            Expect<InvalidDataException>(() => CellProbe.Previous("s5"));
+        });
+        Check("cell errors preserve unknown raw and distinguish numbers and strings", () =>
+        {
+            int unknown = CellProbe.ErrorRaw(2999);
+            string json = JsonSerializer.Serialize(CellProbe.Project(unknown));
+            using var document = JsonDocument.Parse(json);
+            Assert(document.RootElement.GetProperty("code").ValueKind == JsonValueKind.Null);
+            Assert(document.RootElement.GetProperty("raw").GetInt32() == unknown);
+            Assert(CellProbe.Project(2007d) is double);
+            Assert(CellProbe.Project((double)CellProbe.ErrorRaw(2007)) is double);
+            Assert(CellProbe.Project("#DIV/0!") is string);
+            using var known = JsonDocument.Parse(JsonSerializer.Serialize(CellProbe.Project(CellProbe.ErrorRaw(2045))));
+            Assert(known.RootElement.GetProperty("code").GetString() == "#SPILL!");
+        });
         Check("S10 fixed case selection", () =>
         {
             Assert(StartupProbe.Parse(["--excel-s10-a2"]) == "A2");
@@ -60,6 +128,22 @@ internal static class SelfChecks
         string directory = RuntimeAssets.CreateLocalDirectory(repository,
             Path.Combine(".xlwright", "spike0-checks", Guid.NewGuid().ToString("N")));
         string workbook = Path.Combine(directory, "lifecycle.xlsx");
+        Check("cell previous evidence and repeat rejection preserve files", () =>
+        {
+            Expect<InvalidDataException>(() => CellProbe.RequirePrevious(repository, directory, "s2"));
+            string attempt = Path.Combine(directory, "s1.attempt");
+            string success = Path.Combine(directory, "s1.success");
+            string guard = Path.Combine(directory, "cell.guard");
+            File.WriteAllText(attempt, "original run");
+            File.WriteAllText(success, "different run");
+            File.WriteAllText(guard, "existing guard");
+            Expect<IOException>(() => StartupProbe.RequireNewAttempt(guard));
+            Expect<InvalidDataException>(() => CellProbe.RequirePrevious(repository, directory, "s2"));
+            Expect<IOException>(() => StartupProbe.RequireNewAttempt(attempt));
+            Assert(File.ReadAllText(attempt) == "original run" && File.ReadAllText(guard) == "existing guard");
+            File.WriteAllText(success, "original run");
+            CellProbe.RequirePrevious(repository, directory, "s2");
+        });
         Check("S10 repeated case is rejected before creating a guard", () =>
         {
             string attemptPath = Path.Combine(directory, "repeat.attempt");

@@ -11,14 +11,21 @@ internal static class Program
             string repository = RuntimeAssets.FindRepository();
             if (args.Length == 0 || args is ["--self-check"])
                 return await SelfChecks.Run(repository);
+            if (args is ["--verify-s4-saved"])
+            {
+                CellProbe.RecheckS4(repository);
+                return 0;
+            }
             string? startupCase = StartupProbe.Parse(args);
-            if (startupCase is null && args is not ["--excel"] and not ["--excel-end-refusal"] and not ["--excel-record-fault-starting"]
+            string? cellCase = CellProbe.Parse(args);
+            if (startupCase is null && cellCase is null && args is not ["--excel"] and not ["--excel-end-refusal"] and not ["--excel-record-fault-starting"]
                 and not ["--excel-record-fault-owned"] and not ["--excel-record-fault-completed"])
             {
                 Console.Error.WriteLine("Usage: Spike0 [--self-check | --excel | --excel-end-refusal | " +
                     "--excel-record-fault-starting | --excel-record-fault-owned | --excel-record-fault-completed]. " +
                     "S10: --excel-s10-a2 | --excel-s10-b | --excel-s10-c. " +
-                    "Excel experiments require prior approval.");
+                    "Cells: --excel-s1 | --excel-s2 | --excel-s3 | --excel-s4. " +
+                    "Offline: --verify-s4-saved. Excel experiments require prior approval.");
                 return 1;
             }
             string? recordFault = args[0] switch
@@ -28,7 +35,7 @@ internal static class Program
                 "--excel-record-fault-completed" => "completed",
                 _ => null
             };
-            return await RunExcel(repository, args[0] == "--excel-end-refusal", recordFault, startupCase);
+            return await RunExcel(repository, args[0] == "--excel-end-refusal", recordFault, startupCase, cellCase);
         }
         catch (Exception error)
         {
@@ -37,18 +44,19 @@ internal static class Program
         }
     }
 
-    private static async Task<int> RunExcel(string repository, bool endRefusal, string? recordFault, string? startupCase)
+    private static async Task<int> RunExcel(string repository, bool endRefusal, string? recordFault, string? startupCase, string? cellCase)
     {
         RuntimeAssets.VerifyPias();
         RuntimeAssets.VerifyFixture(repository);
         var startupFixture = startupCase is null ? null : StartupProbe.VerifyFixture(repository);
+        string? experiment = cellCase ?? (startupCase is null ? null : "s10-" + startupCase);
         string guardPath = Path.Combine(repository, ".xlwright", "mcp-development", "active-smoke.json");
         string? attemptPath = null;
-        if (startupCase is not null)
+        if (experiment is not null)
         {
             RuntimeAssets.RejectReparsePoints(repository, guardPath);
-            if (File.Exists(guardPath)) throw new InvalidOperationException("Existing MCP guard requires review.");
-            attemptPath = Path.Combine(repository, ".xlwright", "spike0", "s10-" + startupCase + ".attempt");
+            StartupProbe.RequireNewAttempt(guardPath);
+            attemptPath = Path.Combine(repository, ".xlwright", "spike0", experiment + ".attempt");
             RuntimeAssets.RejectReparsePoints(repository, attemptPath);
             StartupProbe.RequireNewAttempt(attemptPath);
         }
@@ -58,13 +66,20 @@ internal static class Program
         using var record = OwnershipRecordFile.Acquire(recordPath);
         // Recheck under the shared record lock before any record transition or new guard.
         if (attemptPath is not null) StartupProbe.RequireNewAttempt(attemptPath);
+        if (cellCase is not null)
+        {
+            if (!record.CreatedNew && record.Read().Kind != "completed")
+                throw new InvalidDataException("T8 requires completed ownership; preserve the existing record.");
+            CellProbe.RequirePrevious(repository, workspace, cellCase);
+        }
         record.CheckPrevious();
-        string? previous = startupCase is null ? null : StartupProbe.PreviousCase(startupCase);
+        string? previousStartup = startupCase is null ? null : StartupProbe.PreviousCase(startupCase);
+        string? previous = previousStartup is null ? null : "s10-" + previousStartup;
         if (previous is not null)
         {
-            string success = Path.Combine(workspace, "s10-" + previous + ".success");
+            string success = Path.Combine(workspace, previous + ".success");
             RuntimeAssets.RejectReparsePoints(repository, success);
-            string attempt = Path.Combine(workspace, "s10-" + previous + ".attempt");
+            string attempt = Path.Combine(workspace, previous + ".attempt");
             RuntimeAssets.RejectReparsePoints(repository, attempt);
             if (!File.Exists(success) || !File.Exists(attempt) || new FileInfo(success).Length == 0 ||
                 File.ReadAllText(success) != File.ReadAllText(attempt))
@@ -74,20 +89,23 @@ internal static class Program
         if (recordFault is not null) record.InjectWriteFailure(recordFault);
         string run = RuntimeAssets.CreateLocalDirectory(repository,
             Path.Combine(".xlwright", "spike0", "runs", Guid.NewGuid().ToString("N")));
-        if (startupCase is not null)
+        if (experiment is not null)
         {
             RuntimeAssets.CreateLocalDirectory(repository, ".xlwright/mcp-development");
             using (var guard = new FileStream(guardPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
             {
-                JsonSerializer.Serialize(guard, new { scenario = "s10-" + startupCase, run });
+                JsonSerializer.Serialize(guard, new { scenario = experiment, run });
                 guard.Flush(true);
             }
             using var attempt = new FileStream(attemptPath!, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
             using var writer = new StreamWriter(attempt);
             writer.WriteLine(run);
+            writer.Flush();
+            attempt.Flush(true);
         }
         string workbook = Path.Combine(run, startupCase is null ? "lifecycle.xlsx" : "probe.xlsm");
         File.Copy(startupFixture?.Path ?? Path.Combine(repository, "tests", "fixtures", "lifecycle.xlsx"), workbook, overwrite: false);
+        if (cellCase is not null) StartupProbe.VerifyHash(workbook, RuntimeAssets.FixtureHash);
         if (startupFixture is not null)
         {
             StartupProbe.VerifyHash(workbook, startupFixture.Hash);
@@ -131,7 +149,8 @@ internal static class Program
                     Console.Error.WriteLine("Console monitor failed: " + error.GetType().Name);
                 }
             });
-            var scenario = new ExcelScenario(workbook, record, gate, log, unmanaged, recordFault, startupCase);
+            if (cellCase is not null) CellProbe.WriteIdentity(repository, run, cellCase);
+            var scenario = new ExcelScenario(workbook, record, gate, log, unmanaged, recordFault, startupCase, cellCase);
             Task<bool> work = StaRunner.Start(scenario.Run);
             while (!work.IsCompleted)
             {
@@ -153,13 +172,14 @@ internal static class Program
             {
                 bool smokePassed = await work;
                 if (!smokePassed) return 1;
-                if (startupCase is null) RuntimeAssets.VerifyCell(workbook, 1);
+                if (cellCase is not null) CellProbe.VerifySaved(workbook);
+                else if (startupCase is null) RuntimeAssets.VerifyCell(workbook, 1);
                 else StartupProbe.VerifyHash(startupFixture!.Path, startupFixture.Hash);
                 RuntimeAssets.VerifyFixture(repository);
-                log.Write(startupCase is null ? "saved-file.verified" : "s10.completed", gate);
-                if (startupCase is not null)
+                log.Write(cellCase is not null ? "cell.completed" : startupCase is null ? "saved-file.verified" : "s10.completed", gate);
+                if (experiment is not null)
                 {
-                    string success = Path.Combine(workspace, "s10-" + startupCase + ".success");
+                    string success = Path.Combine(workspace, experiment + ".success");
                     RuntimeAssets.RejectReparsePoints(repository, success);
                     using (var stream = new FileStream(success, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
                     {
@@ -167,12 +187,12 @@ internal static class Program
                         stream.Write(bytes);
                         stream.Flush(true);
                     }
-                    if (File.ReadAllText(success) != File.ReadAllText(Path.Combine(workspace, "s10-" + startupCase + ".attempt")))
+                    if (File.ReadAllText(success) != File.ReadAllText(attemptPath!))
                         throw new InvalidDataException("S10 success evidence did not read back.");
                     RuntimeAssets.RejectReparsePoints(repository, guardPath);
                     using (var guard = JsonDocument.Parse(File.ReadAllText(guardPath)))
                         if (guard.RootElement.GetProperty("run").GetString() != run ||
-                            guard.RootElement.GetProperty("scenario").GetString() != "s10-" + startupCase)
+                            guard.RootElement.GetProperty("scenario").GetString() != experiment)
                             throw new InvalidDataException("S10 guard changed; preserve it for review.");
                     File.Delete(guardPath);
                 }

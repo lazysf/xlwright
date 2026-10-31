@@ -120,8 +120,13 @@ nuspecのrepository commitは`9a327829ef066c44a0d737c58bf3c7617d7c701c`でした
 | Microsoft.Extensions.AI.Abstractions | 10.11.0 | MIT |
 | Microsoft.Extensions.Logging.Abstractions | 10.0.13 | MIT |
 | Microsoft.Extensions.DependencyInjection.Abstractions | 10.0.13 | MIT |
+| xunit.v3（テスト専用） | 4.0.2 | Apache-2.0 |
 
-SDKは.NET 10向けアセットを使用します。直接依存と推移依存の版・content hashはサーバーとチェックプロジェクトの`packages.lock.json`に記録しています。
+SDKは.NET 10向けアセットを使用します。直接依存と推移依存の版・content hashはサーバーとテストプロジェクトの`packages.lock.json`に記録しています。
+xunit.v3の推移依存はApache-2.0またはMITです。製品のサーバーはこれらに依存しません。
+テストはDLLを直接実行し、xUnitのIn-Process Runnerを使います。この経路はMicrosoft.Testing.Platformを起動しません。
+推移依存のテレメトリ拡張は`dotnet test`やIDEの経路で登録されます。その経路の通信は未確認のため、テストは`npm run check`で実行します。
+xunit.v3は2026-10-31にユーザーの承認を得て、公式NuGetから取得しました。
 初回のネットワークrestore後は、通常のビルドでrestoreを行いません。依存変更時には版・利用条件・影響を確認します。
 配布方式と第三者ライセンスの同梱方法は配布工程で確定します。ビルド成功を配布準備完了とは扱いません。
 

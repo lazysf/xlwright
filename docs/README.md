@@ -10,9 +10,11 @@
 - [../ROADMAP.md](../ROADMAP.md): 開発段階の進捗と完了条件への参照。
 - [../TODO.md](../TODO.md): 直近の作業、未解決事項、完了の根拠。
 - [spike-0.md](spike-0.md): 最初の実機検証の仮説、実施計画、結果記録、PoCへの移行条件。
+- [spike-0-runbook.md](spike-0-runbook.md): 実施済みの実験の手順と経過。
 
 - [adr/0001-initial-lifecycle.md](adr/0001-initial-lifecycle.md): 初期ライフサイクルと所有記録の採用判断。
 - [adr/0002-development-mcp-foundation.md](adr/0002-development-mcp-foundation.md): R1でのMCP接続基盤の前倒し、開発用機能と製品配布の境界。
+- [adr/0003-inspector-centered-development.md](adr/0003-inspector-centered-development.md): Inspector中心の開発と、開発用のExcel開始ツールの削除。
 
 調査記録は仕様の正本とは区別します。
 
@@ -23,6 +25,7 @@
 - [notes/spike-0-results.md](notes/spike-0-results.md): ユーザー実行とMCP経由の正常系・次回開始、手動復旧、COM生成失敗の調査、接続基盤の検証・設定・更新、確認範囲と再開条件。
 - [notes/mcp-reload-study.md](notes/mcp-reload-study.md): 標準再読込み・Kitsune・Hotloadの調査と、Inspector中心の開発環境を採用する根拠。
 - [notes/mcp-server-development-handoff.md](notes/mcp-server-development-handoff.md): dotfilesへ持ち出すための、MCPサーバー開発環境の知見と標準化候補。単独で読める引継ぎ資料。
+- [notes/mcp-best-practices.md](notes/mcp-best-practices.md): MCPサーバーの設計・開発の公式資料の調査、実測、現在の実装との差。
 
 [PROJECT_OVERVIEW_V22.md](../references/PROJECT_OVERVIEW_V22.md) は初期の参考資料です。
 正式文書に未移行の記述を、自動的に現行仕様として採用しないでください。

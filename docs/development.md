@@ -266,7 +266,7 @@ dotnet .xlwright/development/prepared/product-<id>/bin/XlWright.RealExcel.Tests/
 #### 表示要求の手動復旧スクリプト
 
 非表示の所有Excelを人へ見せるときは、[scripts/Show-OwnedExcel.ps1](../scripts/Show-OwnedExcel.ps1)を使います。
-合成の記録で拒否を確認しただけで、実機では実行していません。
+実機ではT13で1回実行し、確認・表示要求とも成立しました。[T13の記録](notes/spike-0-results.md#手動復旧)を参照します。
 個別承認の後だけ実行し、先に`-CheckOnly`で確認します。
 
 ```powershell
@@ -295,9 +295,40 @@ stdio接続基盤です。経緯は[ADR 0002](adr/0002-development-mcp-foundatio
 ### 登録と更新
 
 AIクライアントへの直接接続は現在登録していません。
-このリポジトリはClaude Code・Codexのプロジェクト設定を持ちません。
+このリポジトリはClaude Code・Codexのプロジェクト設定をGit管理しません。
 開発サーバーはInspectorから起動します。
-R3の登録方法は[R3の進め方](spike-0.md#r3の進め方)にあります。手順は登録を確認した後にここへ記載します。
+
+Claude Codeから製品サーバーを使う実機確認では、固定コピーをGit管理外の2ファイルで登録します。
+T13で確認した手順です。結果は[T13の記録](notes/spike-0-results.md#t13-claude-codeからの縦断とs132026-11-01)にあります。
+`~/.claude.json`のlocal scopeは使いません。ユーザー設定を変えないためです。
+
+1. リポジトリ直下に`.mcp.json`を置きます。`<id>`は使う固定コピーです。
+
+   ```json
+   {
+     "mcpServers": {
+       "xlwright": {
+         "type": "stdio",
+         "command": "C:\\Program Files\\dotnet\\dotnet.exe",
+         "args": ["${CLAUDE_PROJECT_DIR:-.}\\.xlwright\\development\\prepared\\product-<id>\\bin\\XlWright.McpServer\\release\\XlWright.McpServer.dll"]
+       }
+     }
+   }
+   ```
+
+2. `.claude/settings.local.json`に`{"enabledMcpjsonServers": ["xlwright"]}`を置きます。承認ダイアログを出さないためです。ダイアログで答えた結果の保存先は未確認です。ダイアログが出たら答えずに止めます。
+3. 人がアプリを再起動します。新しいセッションは、このフォルダを作業ディレクトリとし、worktreeを使いません。
+
+`${CLAUDE_PROJECT_DIR:-.}`は`.`に展開され、相対パスはリポジトリ直下を基準に解決されます。
+再起動後は、このフォルダのセッションがそれぞれサーバーを起動し、`session_start`を公開します。
+エージェントは製品ツールを呼ばず、人が開いたセッションだけが呼びます。ツールの許可は人が1回ずつ与え、常に許可しません。
+
+ファイルがある間は`git status --porcelain`が空でないため、その間に作った固定コピーは`worktreeDirty: true`になります。
+確認が終わったら2ファイルを消し、人がアプリを再起動します。
+`Show-OwnedExcel.ps1`は全サーバーの不在を要求するため、手動復旧の前にもこの手順でサーバーを止めます。
+
+T13では、セッションを削除すると、Claude Codeは標準入力を閉じ、約0.4秒でサーバーが消えました。readyのまま削除すると、EOFの後始末が完了せず、所有Excelが残りました。
+この対応が決まるまでは、`session_end`でclosedにしてから会話を終えます。
 
 ## 実行時の生成物
 

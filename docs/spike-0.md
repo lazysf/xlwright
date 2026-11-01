@@ -104,7 +104,7 @@ T14で[PoC-1への移行](notes/spike-0-results.md#t14-poc-1への移行判定20
 2. Spike0の検証済みの処理をCoreへ移します。候補は`ExecutionGate`、`OwnershipRecord`、`RecordTransition`、`EndSafety`、`StaRunner`と、対応する非COMの確認です。T17で移しました。Spike0の実装と自己チェックは実験の記録として残します。
 3. 製品の実Excel経路を用意します。T18で用意しました。
 4. MCP → 専用STA → 専用Excelで1セルを読み書きして終了する縦断を作り、接続を維持するxUnitのシナリオで人が確認します（T19）。
-5. Claude Codeから縦断を確認し、S13を観測します（T13）。
+5. Claude Codeから縦断を確認し、S13を観測します（T13）。T13で[確認](notes/spike-0-results.md#t13-claude-codeからの縦断とs132026-11-01)しました。
 6. PoC-1の6操作へ広げ、合格条件1〜9とL9・L10を確認します（T20）。
 7. L4〜L8のExcel依存条件を確認します（T12）。
 
@@ -112,7 +112,7 @@ T14で[PoC-1への移行](notes/spike-0-results.md#t14-poc-1への移行判定20
 
 - Excelを起動しない単発の要求は、エージェントがInspector CLIで確認します。
 - 要求をまたぐセッションは、接続を維持するxUnitのシナリオで確認します。実Excel用のシナリオは`npm run check`から除外し、固定コピーに対して人が通常のPowerShellから実行します。エージェントは証拠を照合します。
-- AIクライアントはClaude Codeとし、Git管理外のlocal scopeで固定コピーを登録します。縦断とS13を各1回確認します。
+- AIクライアントはClaude Codeとし、Git管理外の`.mcp.json`で固定コピーを登録します。手順は[開発ガイド](development.md#登録と更新)を参照します。
 - 固定コピーへサーバーとテストを含める方法と、固定コピー以外を実行させない検査の置き場は、この経路の準備で決めます。T18で、別のテストプロジェクト`tests/XlWright.RealExcel.Tests/`と`npm run prepare:product`にしました。検査はシナリオのassembly fixtureにあります。手順は[開発ガイド](development.md#製品の固定コピー)を参照します。
 
 L4〜L8はSpike0では実施しません。合格を判定する対象はCoreの実装であり、L4〜L8の大半は自前の状態遷移と記録処理だからです。
@@ -122,7 +122,7 @@ L4〜L8はSpike0では実施しません。合格を判定する対象はCoreの
 遅延完了後の抑止はT10の制御COMで確認し、COM保留中に実行側が終了してもExcelが残ることはT11のモーダルで観測しています。
 実Excelの保存・Close等の遅延復帰は未検証で、R3で確認します。
 
-S13はR3でAIクライアントを登録するときに1回観測します。
+S13はT13でClaude Codeについて観測しました。セッションを削除すると、Claude Codeは標準入力を閉じ、約0.4秒でサーバーが消えました。readyではEOFの後始末が完了せず、所有Excelが残りました。
 サーバーは[MCPのstdio仕様](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio)に沿って、入力の終了と強制終了の両方に備えます。
 
 ## 着手前の確認

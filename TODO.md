@@ -14,7 +14,7 @@ R3を対象とします。チェックは、記載した完了条件を満たし
 R3のT18を終えた時点で、2026-11-01に作業を止めています。再開の入口は、下記の「T19の前提を実装する」です。
 
 - コード: `095ef99`。この後の変更は文書だけです。
-- 最後に通った`npm run check`: run `b2d3e9dcc49d4eb19946a0f828719577`、テスト131件。ソースは`095ef99`から変わっていません。
+- 最後に通った`npm run check`: run `7db13f79bb1143d7878edf4edad566ff`、テスト131件。ソースは`095ef99`から変わっていません。
 - `origin`へは一度もpushしていません。mainの全commitはこの端末にしかありません。pushは人がterminalで行います。
 - 2026-11-01の照会で、EXCELとXlWright.McpServerのプロセスは0件でした。
 
@@ -37,7 +37,7 @@ R3のT18を終えた時点で、2026-11-01に作業を止めています。再�
 - [ ] **T13 Claude Codeから縦断とS13を確認する。** Git管理外のlocal scopeで固定コピーを登録し、MCP起動経路からのCOM生成も確認します（実機）。
 - [ ] **T20 6操作へ広げる。** PoC-1合格条件1〜9とL9・L10を確認します。既存Excelとの同時利用、所有Excelの予期しない終了、計算鮮度の契約の製品経路での検証、終了待ちが期限内に収まることを含みます（実機）。
 - [ ] **T12 L4〜L8のExcel依存条件を確認する。** Quit後の残存、期限後の遅延完了、COM保留中のEOF、保存・Close等の遅延復帰を確認します（実機）。
-- [ ] **開発環境の後始末。** 古いSpike0.dllと`src/XlWright.McpServer/bin/`を整理します。`.xlwright/development/`の`prepared/t11-*`、`releases/`、`inspector/`にある古いSpike0.dllは検査を持たないため、実行しません。`.xlwright/mcp-checks/`の合成データ（約1.5GB、`.xlwright/`全体で約2.1GB）を消すかをユーザーが判断します。S14の作成領域に残った`exported-S11Module.bas`の扱いもユーザーが判断します。
+- [ ] **開発環境の後始末。** 2026-11-01にユーザーの判断で、文書から参照されない生成物を削除しました（`.xlwright/`は約2.1GBから約350MB）。残りは、`.xlwright/spike0/fixture-preparation/`の`s11r2/`と`s14-*/`にある`exported-S11Module.bas`、用途が未確認の`.xlwright/fixture-builder/`と`.xlwright/t11-discarded/`です。これらの扱いはユーザーが判断します。
 
 ## 更新方法
 

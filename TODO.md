@@ -13,8 +13,8 @@ R3を対象とします。チェックは、記載した完了条件を満たし
 
 T19を終えた時点で、2026-11-01に作業を止めています。再開の入口は、下記のT13です。
 
-- コード: T19までの変更は、作業ツリーにあり未commitです。commitの基準は`d664f9e`です。
-- 最後に通った`npm run check`: run `cfb821a152b14b6f9278d87fb0acf4b2`、テスト271件。
+- コード: `2795c12`。この後の変更は文書だけです。
+- 最後に通った`npm run check`: run `54258892720a4230bd6a73ec69a47005`、テスト271件。
 - 固定コピー: `.xlwright/development/prepared/product-8cc5eca6afe1411c8dc55b0d868f688c/`。独立レビューの修正を含むT19の再実行に使いました。
 - `origin`へは一度もpushしていません。mainの全commitはこの端末にしかありません。pushは人がterminalで行います。
 - 同じ時点の照会で、EXCELとXlWright.McpServerのプロセスは0件でした。

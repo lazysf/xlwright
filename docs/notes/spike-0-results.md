@@ -3,6 +3,41 @@
 - Date: 2026-11-01
 - 出典: [検証コード](../../spikes/Spike0/Program.cs)、[準備記録](spike-0-preparation.md)、下記の実行ログ・保存ファイル・所有記録・OSプロセス照会、ユーザーによる実行・終了コード・整合性SID・DCOMイベント抽出結果の報告。
 
+## T16〜T18 PoC-1の準備（2026-11-01）
+
+R3のうち、実Excelを使わない準備の結果です。
+この3項目では実Excelを起動していません。PoC-1合格条件の評価はT19以降です。
+
+### T16 6操作の公開契約
+
+ユーザーが承認し、[API契約](../api.md#poc-1の提供範囲)、[ADR 0005](../adr/0005-error-as-json-text.md)、[ADR 0006](../adr/0006-project-json-config.md)へ反映しました（`ef36401`）。
+文書だけの変更で、統合チェックのrunはありません。
+SDK 2.3.0で引数をツール側で検査する形を組めるかは未確認です。[API契約の未確認](../api.md#未確認)に残しています。
+
+### T17 Coreへの移行
+
+Spike0の`ExecutionGate`・`OwnershipRecord`・`RecordTransition`・`EndSafety`・`StaRunner`を`src/XlWright.Core/`へ移しました（`e2c38ab`）。
+T16の契約のcode・detailに合わせ、StaRunnerは常駐の`StaThread`にしました。Spike0は変えていません。
+非COMの確認はxUnitの`tests/XlWright.McpServer.Tests/Core/`へ移しました。
+
+`npm run check`の全工程が通過しました。runは`9fd1af6574e746a8a566f1f7f5b7ddc3`、テストは119件です。
+記録更新・期限・応答の確定・次回開始の判定はCoreの非COMテストの確認です。実Excelでの確認はT12に残します。
+Coreは製品のサーバーから使われていません。McpServerはCoreをまだ参照していません。
+
+### T18 製品の実Excel経路
+
+実Excelのシナリオを別のテストプロジェクト`tests/XlWright.RealExcel.Tests/`に置きました（`095ef99`）。
+`npm run prepare:product`と`scripts/Show-OwnedExcel.ps1`を加えました。手順は[開発ガイド](../development.md#製品の固定コピー)にあります。
+
+`npm run check`の全工程が通過しました。runは`2d05a04e53b84a409ee01743f9036843`、テストは131件です。
+このrunから固定コピー`product-cc9e131063e3492b854db63d562c77b5`を作りました。manifestの`checkRun`は同じrunです。
+エージェントが固定コピーから接続シナリオを実行し、通過を確認しました。このシナリオは`dev_status`で接続の維持を確かめるだけで、Excelへ到達しません。
+
+#### 未実施
+
+- `Show-OwnedExcel.ps1`の実機実行は未実施です。確認したのは、`-CheckOnly`が合成の記録を拒否することだけです。ウィンドウの探索と表示要求の送信は動かしていません。
+- 製品ツールは`dev_status`だけです。実Excelの製品シナリオはありません。
+
 ## T14 PoC-1への移行判定（2026-11-01）
 
 ユーザーは、下記の照合と決定を根拠に、PoC-1（R3）への移行を承認しました。

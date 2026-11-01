@@ -29,6 +29,9 @@
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.13"
         }
+      },
+      "xlwright.core": {
+        "type": "Project"
       }
     }
   }

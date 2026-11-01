@@ -41,6 +41,29 @@ internal sealed class ExecutionGate(TimeProvider? clock = null)
         }
     }
 
+    // The public acceptance order. It checks and begins under one lock, so two requests cannot both be accepted.
+    internal void Accept(string operation, TimeSpan timeout, SessionState required)
+    {
+        lock (sync)
+        {
+            Expire();
+            if (busy)
+                throw new CoreException(ErrorCode.Conflict, ErrorDetail.OperationBusy,
+                    "Another operation is running. Check session_status and retry after busy is false.");
+            if (state != required)
+                throw (required, state) switch
+                {
+                    (SessionState.Closed, _) => new CoreException(ErrorCode.Conflict, ErrorDetail.SessionActive,
+                        "A session is already active. End it before starting another."),
+                    (_, SessionState.Closed) => new CoreException(ErrorCode.Conflict, ErrorDetail.SessionNotStarted,
+                        "No session is active. Call session_start first."),
+                    _ => new CoreException(ErrorCode.Conflict, ErrorDetail.SessionIsolated,
+                        "The session is isolated. Do not resend; follow manual recovery.")
+                };
+            Begin(operation, timeout);
+        }
+    }
+
     internal T Step<T>(string nextStage, Func<T> action)
     {
         lock (sync)

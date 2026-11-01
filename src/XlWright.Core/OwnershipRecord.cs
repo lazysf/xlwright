@@ -202,7 +202,7 @@ internal sealed class OwnershipRecordFile : IDisposable
 
 internal sealed class RecordIoException(string boundary, string operation, Exception inner)
     : CoreException(ErrorCode.InternalError, ErrorDetail.SessionRecordIoError,
-        $"Ownership record I/O failed: {boundary}/{operation}.", inner)
+        $"Ownership record I/O failed: {boundary}/{operation}. Do not resend; check the log and follow manual recovery.", inner)
 {
     internal string Boundary { get; } = boundary;
     internal string Operation { get; } = operation;

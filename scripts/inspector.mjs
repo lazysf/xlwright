@@ -18,7 +18,9 @@ await rejectLinks(join(development, 'check.lock'));
 const buildLock = mode !== '--check' ? await open(join(development, 'check.lock'), 'a+') : undefined;
 const session = join(sessions, randomUUID());
 try {
+  // Each DLL is compared with its own sources: an internal Core change does not always recompile the server.
   await rejectStaleBuild('XlWright.McpServer', 'src/XlWright.McpServer');
+  await rejectStaleBuild('XlWright.Core', 'src/XlWright.Core');
   await mkdir(session);
   const source = join(development, 'artifacts', 'bin', 'XlWright.McpServer', 'release');
   await rejectLinks(source);

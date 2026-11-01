@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Security.Cryptography;
-using System.Text.Json;
 using Xunit;
 
 namespace XlWright.McpServer.Tests;
@@ -13,6 +11,7 @@ public sealed class RealExcelEntryTests : IDisposable
     private static readonly string BuildDirectory = new DirectoryInfo(AppContext.BaseDirectory).Name;
     private static readonly string Artifacts = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", ".."));
     private static readonly string ScenarioOutput = Path.Combine(Artifacts, "XlWright.RealExcel.Tests", BuildDirectory);
+    private static readonly string ManifestScript = Path.GetFullPath(Path.Combine(Artifacts, "..", "..", "..", "..", "scripts", "write-manifest.mjs"));
     private readonly string repository = Directory.CreateTempSubdirectory("xlwright-real-excel-").FullName;
     private readonly string copy;
 
@@ -21,12 +20,21 @@ public sealed class RealExcelEntryTests : IDisposable
         copy = Path.Combine(repository, ".xlwright", "development", "prepared", "product-test");
         foreach (string project in new[] { "XlWright.RealExcel.Tests", "XlWright.McpServer" })
             CopyDirectory(Path.Combine(Artifacts, project, BuildDirectory), Path.Combine(copy, "bin", project, "release"));
-        var files = Directory.EnumerateFiles(copy, "*", SearchOption.AllDirectories).Select(path => new
+        WriteManifest(repository);
+    }
+
+    // Uses the real writer, so a format change there fails these tests. npm run check cannot run prepare:product.
+    private void WriteManifest(string madeFor)
+    {
+        var info = new ProcessStartInfo("node")
         {
-            path = Path.GetRelativePath(copy, path).Replace('\\', '/'),
-            sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))
-        }).ToList();
-        File.WriteAllText(Path.Combine(copy, "manifest.json"), JsonSerializer.Serialize(new { checkRun = "test", files }));
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true
+        };
+        foreach (string argument in new[] { ManifestScript, copy, "test", madeFor }) info.ArgumentList.Add(argument);
+        using var process = Process.Start(info)!;
+        string errors = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        Assert.True(process.ExitCode == 0, errors);
     }
 
     private string GuardPath => Path.Combine(repository, ".xlwright", "mcp-development", "active-smoke.json");
@@ -94,6 +102,17 @@ public sealed class RealExcelEntryTests : IDisposable
 
         Assert.NotEqual(0, exitCode);
         Assert.Contains("npm run prepare:product", output);
+    }
+
+    [Fact(Timeout = 120000)]
+    public async Task MovedCopyIsRefused()
+    {
+        WriteManifest(Path.Combine(repository, "other"));
+
+        var (exitCode, output) = await Run(CopiedScenarios, TestContext.Current.CancellationToken);
+
+        Assert.NotEqual(0, exitCode);
+        Assert.Contains("another location", output);
     }
 
     [Fact(Timeout = 120000)]

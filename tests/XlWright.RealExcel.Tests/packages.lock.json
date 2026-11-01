@@ -156,10 +156,14 @@
           "xunit.v3.runner.common": "[4.0.2]"
         }
       },
+      "xlwright.core": {
+        "type": "Project"
+      },
       "xlwright.mcpserver": {
         "type": "Project",
         "dependencies": {
-          "ModelContextProtocol.Core": "[2.3.0, 2.3.0]"
+          "ModelContextProtocol.Core": "[2.3.0, 2.3.0]",
+          "XlWright.Core": "[1.0.0, )"
         }
       }
     }

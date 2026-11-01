@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Security.Cryptography;
 using ModelContextProtocol.Server;
+using XlWright.Core;
 
 namespace XlWright.McpServer;
 
@@ -16,13 +17,17 @@ internal static class Program
 
         try
         {
+            // Development mode serves the Inspector and tests, which must never start Excel from an unprepared build.
+            bool development = args.Length != 0;
+            using var session = new ExcelSession(excelAllowed: !development);
             var options = new McpServerOptions
             {
-                ServerInfo = new() { Name = "xlwright", Version = "0.1.0" }
+                ServerInfo = new() { Name = "xlwright", Version = "0.1.0" },
+                ToolCollection = new()
             };
-            if (args.Length != 0)
+            ProductTools.AddTo(options.ToolCollection, session);
+            if (development)
             {
-                options.ToolCollection = new();
                 options.ToolCollection.Add(McpServerTool.Create(new DevelopmentTools().Status, new()
                 {
                     Name = "dev_status", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false
@@ -31,6 +36,7 @@ internal static class Program
             await using var server = ModelContextProtocol.Server.McpServer.Create(
                 new StdioServerTransport(options), options);
             await server.RunAsync();
+            await session.ShutdownAsync();
             return 0;
         }
         catch (Exception error)

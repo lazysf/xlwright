@@ -7,8 +7,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <OfficePiaRoot>$(SystemRoot)\assembly\GAC_MSIL</OfficePiaRoot>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="XlWright.McpServer.Tests" />
+    <Reference Include="Microsoft.Office.Interop.Excel">
+      <HintPath>$(OfficePiaRoot)\Microsoft.Office.Interop.Excel\15.0.0.0__71e9bce111e9429c\Microsoft.Office.Interop.Excel.dll</HintPath>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="office">
+      <HintPath>$(OfficePiaRoot)\office\15.0.0.0__71e9bce111e9429c\OFFICE.DLL</HintPath>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </Reference>
   </ItemGroup>
 </Project>

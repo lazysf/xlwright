@@ -162,7 +162,8 @@
       "xlwright.mcpserver": {
         "type": "Project",
         "dependencies": {
-          "ModelContextProtocol.Core": "[2.3.0, 2.3.0]"
+          "ModelContextProtocol.Core": "[2.3.0, 2.3.0]",
+          "XlWright.Core": "[1.0.0, )"
         }
       }
     }

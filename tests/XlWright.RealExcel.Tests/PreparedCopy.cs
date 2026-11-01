@@ -15,6 +15,7 @@ public sealed class PreparedCopy
     internal string Repository { get; }
     internal string ServerPath { get; }
     internal string CheckRun { get; }
+    internal string GuardPath { get; }
 
     public PreparedCopy()
     {
@@ -26,19 +27,22 @@ public sealed class PreparedCopy
             !string.Equals(prepared, Path.Combine(Repository, ".xlwright", "development", "prepared"), StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Run real-Excel scenarios from a copy made by npm run prepare:product.");
         RejectReparsePoints(Repository, root);
-        CheckRun = Verify(root);
-        string guard = Path.Combine(Repository, ".xlwright", "mcp-development", "active-smoke.json");
-        RejectReparsePoints(Repository, guard);
-        RequireNoGuard(guard);
+        CheckRun = Verify(root, Repository);
+        GuardPath = Path.Combine(Repository, ".xlwright", "mcp-development", "active-smoke.json");
+        RejectReparsePoints(Repository, GuardPath);
+        RequireNoGuard(GuardPath);
         ServerPath = Path.Combine(root, "bin", "XlWright.McpServer", "release", "XlWright.McpServer.dll");
     }
 
-    private static string Verify(string root)
+    private static string Verify(string root, string repository)
     {
         string manifestPath = Path.Combine(root, "manifest.json");
         if (!File.Exists(manifestPath))
             throw new InvalidDataException("The prepared copy has no manifest; run npm run prepare:product.");
         using var manifest = JsonDocument.Parse(File.ReadAllBytes(manifestPath));
+        // The layout alone cannot tell a moved copy: the repository is derived from the copy's own location.
+        if (!string.Equals(manifest.RootElement.GetProperty("repository").GetString(), repository, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The prepared copy was made for another location; run npm run prepare:product.");
         var expected = manifest.RootElement.GetProperty("files").EnumerateArray().ToDictionary(
             file => file.GetProperty("path").GetString()!, file => file.GetProperty("sha256").GetString()!);
         var actual = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)

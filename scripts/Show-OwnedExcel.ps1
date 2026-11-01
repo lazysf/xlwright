@@ -1,4 +1,5 @@
 #requires -Version 5.1
+#requires -PSEdition Desktop
 # Manual recovery step 3 in docs/architecture.md: shows a hidden owned Excel to a person.
 # Run only after individual approval. Run -CheckOnly first; it sends nothing.
 # Sends one display request to each hidden XLMAIN window of the recorded process. No COM, input or termination.

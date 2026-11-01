@@ -10,5 +10,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="ModelContextProtocol.Core" Version="[2.3.0]" />
+    <ProjectReference Include="../XlWright.Core/XlWright.Core.csproj" />
   </ItemGroup>
 </Project>

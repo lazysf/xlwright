@@ -1,9 +1,10 @@
-import { cp, lstat, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, lstat, open, readFile, rename, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { join, relative, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { development, directoryHashes, productOutputs, productSources, rejectLinks, repository, sha256File, spikeOutput, spikeSources } from './build-guard.mjs';
+import { writeManifest } from './write-manifest.mjs';
 
 // No argument copies Spike0. --product copies the server and the real-Excel scenarios.
 const args = process.argv.slice(2);
@@ -50,15 +51,12 @@ try {
   const byPath = list => [...list].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   if (!isDeepStrictEqual(byPath(files), byPath(verified)))
     throw new Error('The copy differs from the last passed check.');
-  const manifest = {
-    checkRun: lastPassed.runId,
+  await writeManifest(incoming, lastPassed.runId, repository, files, {
     commit: git('rev-parse', 'HEAD'),
     worktreeDirty: git('status', '--porcelain') !== '',
     ...(product ? {} : { fixtureHash: await sha256File(join(repository, 'tests', 'fixtures', 'lifecycle.xlsx')) }),
-    files,
     sources
-  };
-  await writeFile(join(incoming, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  });
   await rename(incoming, target);
 } finally {
   await buildLock.close();

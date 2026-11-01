@@ -9,7 +9,7 @@ R3を対象とします。チェックは、記載した完了条件を満たし
 進め方は[R3の進め方](docs/spike-0.md#r3の進め方)、移行の判定と未解決の仮説は[T14の判定](docs/notes/spike-0-results.md#t14-poc-1への移行判定2026-11-01)を参照します。
 実機の項目は、着手時に目的・対象・停止条件を示して個別に承認を得ます。
 
-- [ ] **T16 6操作の公開契約を確定する。** 提供範囲、JSON Schema、envelope、省略時の挙動、状態遷移、未対応要求の拒否を確定し、承認を得ます。製品ツールはこの後に実装します。
+- [x] **T16 6操作の公開契約を確定する。** 提供範囲、JSON Schema、envelope、省略時の挙動、状態遷移、未対応要求の拒否を確定し、承認を得ます。製品ツールはこの後に実装します。2026-11-01にユーザーが承認し、[API契約](docs/api.md#poc-1の提供範囲)、[ADR 0005](docs/adr/0005-error-as-json-text.md)、[ADR 0006](docs/adr/0006-project-json-config.md)へ反映しました。SDKでの成立は[未確認](docs/api.md#未確認)のとおりT17以降で確認します。
 - [ ] **T17 検証済みの処理をCoreへ移す。** Spike0の`ExecutionGate`・`OwnershipRecord`・`RecordTransition`・`EndSafety`・`StaRunner`を移し、非COMの確認をxUnitへ移します。T12のうち記録更新・期限・応答の確定・次回開始の判定は、Coreの非COMテストで確認します。
 - [ ] **T18 製品の実Excel経路を用意する。** 固定コピーにサーバーとテストを含め、接続を維持するxUnitのシナリオを`npm run check`から除外します。固定コピー以外を実行させない検査の置き場を決めます。表示要求を送る手動復旧スクリプトも用意します。
 - [ ] **T19 1セルの縦断を確認する。** session_start → range_set → range_get → session_save → session_end を、人が実行します（実機）。

@@ -16,6 +16,8 @@
 - [adr/0002-development-mcp-foundation.md](adr/0002-development-mcp-foundation.md): R1でのMCP接続基盤の前倒し、開発用機能と製品配布の境界。
 - [adr/0003-inspector-centered-development.md](adr/0003-inspector-centered-development.md): Inspector中心の開発と、開発用のExcel開始ツールの削除。
 - [adr/0004-process-scoped-session.md](adr/0004-process-scoped-session.md): セッションをサーバープロセス単位に保ち、`session_id`を導入しない判断。
+- [adr/0005-error-as-json-text.md](adr/0005-error-as-json-text.md): 製品ツールの失敗を`McpException`の1行のJSONで返す判断。
+- [adr/0006-project-json-config.md](adr/0006-project-json-config.md): 利用プロジェクトの設定を`project.json`にする判断。
 
 調査記録は仕様の正本とは区別します。
 

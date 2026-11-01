@@ -6,7 +6,7 @@ MCPのJSON Schemaと応答全体のスキーマは、各操作の実装前に確
 実行制御と安全条件は [設計文書](architecture.md) に従います。
 本書の全操作を初期PoCで一括実装する必要はありません。提供する範囲は [Spike-0](spike-0.md#実施順序と着手条件) で段階化します。
 初期は残存Excelの自動後始末・force・保留中COM呼出しを伴う制御用破棄終了を必須とせず、手動復旧を使います。
-未対応の操作・引数を黙って無視しません。初期ライフサイクルの提供範囲は以下に示します。残りのPoCの提供範囲は各操作の実装前に確定します。
+未対応の操作・引数を黙って無視しません。初期ライフサイクルとPoC-1の提供範囲は以下に示します。残りのPoCの提供範囲は各操作の実装前に確定します。
 
 ## 初期ライフサイクルの提供範囲
 
@@ -28,7 +28,248 @@ R1〜R5の採用契約です。実装・実機検証の完了を示しません�
 
 共有違反による排他取得失敗はCONFLICTです。権限・読取り等のI/O失敗を競合にまとめません。
 診断には対象ブック、取得できたプロセス同一性、失敗段階、結果不明の操作、残存可能性、ログ参照先を含めます。
-公開応答全体のJSON Schemaとenvelopeは、PoC-1の製品ツールを実装する前に確定します。共通コード6種類は増やしません。
+6操作の公開応答のJSON Schemaとenvelopeは、[PoC-1の提供範囲](#poc-1の提供範囲)で定めます。共通コード6種類は増やしません。
+
+## PoC-1の提供範囲
+
+T16で2026-11-01にユーザーが承認した契約です。製品ツールの実装・検証の完了を示しません。
+対象は`session_start`・`session_status`・`range_get`・`range_set`・`session_save`・`session_end`です。
+本節にない事項は、本書の他の節と[設計](architecture.md)に従います。
+
+### 提供範囲
+
+- セル操作は単一セルだけです。矩形はP0-coreで提供します。
+- 単一セルでも、値と数式は`[[x]]`の2次元配列で受け渡します。矩形へ広げるときに形を変えないためです。
+- `range_get`の`fields`は`values`と`formulas`を提供します。`merged_ranges`は`INVALID_REQUEST`、`detail: NOT_IMPLEMENTED`とします。
+- 結合セルへの書込み制限は、PoC-1でも契約どおりに適用します。
+- マクロ・テストのジョブはありません。`session_status`はジョブの欄を持ちません。
+
+### 応答の形
+
+成功は`isError: false`とし、`structuredContent`に次の形のオブジェクトを返します。同じJSONをテキストでも返します。
+
+```json
+{ "session": { "state": "ready", "busy": false }, "workbook": "<主ブックの絶対パス>" }
+```
+
+`session`は応答を確定した時点の状態です。`session`以外のフィールドは操作ごとに決めます。
+`outputSchema`は成功の形だけを記述します。ルートには`additionalProperties`を指定せず、後続の項目追加を互換に保ちます。
+
+失敗は`isError: true`とし、`structuredContent`を付けません。
+テキストは次の形の1行のJSONで、`McpException`の文言として返します。
+選んだ理由は[ADR 0005](adr/0005-error-as-json-text.md)にあります。
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "detail": "OPERATION_BUSY",
+    "message": "Another operation is running. Check session_status and retry after busy is false.",
+    "operation": "range_set",
+    "stage": null,
+    "excel_may_remain": null,
+    "process": null,
+    "log": null
+  },
+  "session": { "state": "ready", "busy": true }
+}
+```
+
+| フィールド | 内容 |
+| --- | --- |
+| `code` | 共通コード6種類のいずれか |
+| `detail` | 下記の一覧にあるUPPER_SNAKEの文字列1つ。追加の情報は他のフィールドに入れる |
+| `message` | 英語の説明と、次に取る行動。ブックに由来する文字列を含めない |
+| `operation` | 失敗した操作の名前 |
+| `stage` | 失敗した段階。副作用の前の拒否ではnull |
+| `excel_may_remain` | Excel生成に着手した後の失敗では、残存の可能性を真偽値で示す。それ以外はnull |
+| `process` | 取得できた所有Excelの`{pid, started_at_utc, name}`。なければnull |
+| `log` | `paths.workspace/logs/`の診断ファイルの絶対パス。書いていなければnull |
+
+`stage`の値は`config`・`lock`・`record`・`process_query`・`excel_start`・`open`・`calculate`・`read`・`write`・`verify`・`save`・`safety_check`・`close`・`process_exit`です。
+COMの詳細とスタックトレースはログだけに出します。
+
+`message`に含める再試行の指針は次のとおりです。
+
+- `OPERATION_BUSY`は、`session_status`で`busy: false`を確認してから再試行できます。
+- `INVALID_REQUEST`は、引数を直して再試行できます。
+- `STATE_UNKNOWN`と`SESSION_ISOLATED`は、再送せず[手動復旧](architecture.md#初期の手動復旧)へ進みます。
+
+### 受付の判定順
+
+1. 引数を検証します。型・必須・未知の引数・組合せ・アドレスの文法・配列の形状の不正は`INVALID_REQUEST`です。未対応の`true`・矩形・`merged_ranges`もこの段階で拒否します。
+2. busyなら`CONFLICT`、`detail: OPERATION_BUSY`です。
+3. 状態を下表で判定します。
+4. 操作を実行します。シートの不在など、COMが必要な判定はこの段階で行います。
+
+引数の不正も上記の形で返します。検査の置き場は[実装基準](development.md#mcpツールの実装基準)に従います。
+inputSchemaは`additionalProperties: false`とします。
+
+| 操作 | closed | ready | isolated |
+| --- | --- | --- | --- |
+| `session_status` | 応答 | 応答 | 応答 |
+| `session_start` | 実行 | `CONFLICT` / `SESSION_ACTIVE` | `CONFLICT` / `SESSION_ACTIVE` |
+| `range_get`・`range_set`・`session_save`・`session_end` | `CONFLICT` / `SESSION_NOT_STARTED` | 実行 | `CONFLICT` / `SESSION_ISOLATED` |
+
+表はbusyでない場合です。`session_status`はbusyでも応答します。
+
+### 各操作
+
+`fields`の既定値と、`force`・`discard`の省略をfalseとする規則は、前節までの規定どおりです。
+アドレスは`$`の有無と大文字小文字を問わず受け付け、`$`なしの大文字へ正規化して返します。
+列はXFDまで、行は1048576までです。
+`sheet`は大文字小文字を区別して照合します。
+
+| 操作 | 成功の出力（`session`以外） | 注釈 RO / D / I / OW |
+| --- | --- | --- |
+| `session_start` | `workbook` | false / false / false / false |
+| `session_status` | `workbook`（未確定ならnull）、`last_error`（なければnull） | true / false / true / false |
+| `range_get` | `sheet`、`address`、要求した`values`・`formulas` | false / false / true / false |
+| `range_set` | `sheet`、`address` | false / true / true / false |
+| `session_save` | `workbook` | false / true / true / false |
+| `session_end` | `workbook`（`state`はclosed） | false / true / false / false |
+
+注釈はreadOnly・destructive・idempotent・openWorldの順です。
+`range_get`は`Application.Calculate()`でブックの計算結果を変え、それが保存で残り得るため、readOnlyをfalseとします。
+`session_save`はディスク上のファイルを上書きするため、destructiveをtrueとします。
+
+`session_status`の`workbook`は、開始処理で確定した主ブックの絶対パスです。
+`last_error`は、受付後に実行した操作の最新の失敗で、`error`と同じ形です。
+副作用の前の拒否（引数・未対応・busy・状態）は記録しません。
+後続の操作の成功では消さず、次の`session_start`の成功で消します。
+
+`session_start`の`project_path`は、プロジェクトのルートの絶対パスです。
+`range_set`は`values`と`formulas`のどちらか1つを要求します。
+
+### 失敗の対応
+
+各行の状態は、[初期ライフサイクル契約](architecture.md#initial-lifecycle)の遷移に従います。
+
+| 操作 | 条件 | code / detail | 状態 |
+| --- | --- | --- | --- |
+| `session_start` | 相対パス | `INVALID_REQUEST` / `INVALID_ARGUMENT` | 変更しない |
+| `session_start` | 設定ファイルがない | `NOT_FOUND` / `CONFIG_NOT_FOUND` | closed |
+| `session_start` | 設定の構文・キー・値・拡張子の不正、`workspace`・`dist`の重なり | `INVALID_REQUEST` / `INVALID_CONFIG` | closed |
+| `session_start` | 主ブック・VBAソース・テストのディレクトリがない | `NOT_FOUND` / `PATH_NOT_FOUND` | closed |
+| `session_start` | 主ブックが読取専用 | `CONFLICT` / `WORKBOOK_READ_ONLY` | closed |
+| `session_start` | 主ブックを他のプロセスが使用中 | `CONFLICT` / `WORKBOOK_LOCKED` | closed |
+| `session_start` | `.xlwright.lock`の排他を共有違反で取得できない | `CONFLICT` / `PROJECT_LOCKED` | closed |
+| `session_start` | 所有記録がstarting、残存、同一性不一致 | `CONFLICT` / `EXCEL_NEEDS_REVIEW` | closed |
+| `session_start` | プロセスの照会に失敗 | `INTERNAL_ERROR` / `PROCESS_QUERY_FAILED` | closed |
+| `session_start` | Excelの生成・同一性の取得に失敗 | `EXCEL_ERROR` / `EXCEL_START_FAILED` | isolated |
+| `session_start` | 主ブックのOpenが明確に失敗 | `EXCEL_ERROR` / `WORKBOOK_OPEN_FAILED` | isolated |
+| `range_get`・`range_set` | シートがない | `NOT_FOUND` / `SHEET_NOT_FOUND` | ready |
+| `range_set` | `values`と`formulas`の両方・どちらもない、型の不正、エラー値、`=`で始まらない数式 | `INVALID_REQUEST` / `INVALID_ARGUMENT` | 変更しない |
+| `range_set` | 配列の形状がアドレスと一致しない | `INVALID_REQUEST` / `SHAPE_MISMATCH` | 変更しない |
+| `range_set` | 結合範囲の左上以外 | `EXCEL_ERROR` / `MERGED_CELL` | ready |
+| `range_set` | 保護されたセル | `EXCEL_ERROR` / `CELL_PROTECTED` | ready |
+| `range_set` | 読戻しで型と値を確認できない。数式は`HasFormula`で確認する | `EXCEL_ERROR` / `WRITE_NOT_VERIFIED` | ready |
+| `range_get`・`range_set` | COM呼出しの明確な失敗 | `EXCEL_ERROR` / `EXCEL_REJECTED` | ready |
+| `session_save`・`session_end` | 保存の明確な失敗 | `EXCEL_ERROR` / `SAVE_FAILED` | ready |
+| `session_end` | 終了安全確認による拒否。`stage: safety_check`は保存済みを示す | `CONFLICT` / `EXCEL_NEEDS_REVIEW` | 上記の契約による |
+| `session_end` | 終了安全確認の結果不明 | `STATE_UNKNOWN` / `EXCEL_NEEDS_REVIEW` | isolated |
+| 全操作（`session_status`を除く） | 期限切れ・結果不明 | `STATE_UNKNOWN` / `OPERATION_TIMEOUT` | isolated |
+| 全操作（`session_status`を除く） | Excelとの接続が切れた | `STATE_UNKNOWN` / `EXCEL_DISCONNECTED` | isolated |
+
+所有記録の形式不正とI/O失敗は、[初期ライフサイクルの提供範囲](#初期ライフサイクルの提供範囲)の表に従います。
+想定外の内部の失敗は`INTERNAL_ERROR`、`detail: INTERNAL_FAILURE`とします。Excel生成に着手した後なら、結果不明と同じく隔離します。
+
+PoC-1で使う`detail`は次のとおりです。
+
+| code | detail |
+| --- | --- |
+| `INVALID_REQUEST` | `INVALID_ARGUMENT`、`INVALID_ADDRESS`、`SHAPE_MISMATCH`、`INVALID_CONFIG`、`NOT_IMPLEMENTED`、`RESPONSE_TOO_LARGE` |
+| `NOT_FOUND` | `CONFIG_NOT_FOUND`、`PATH_NOT_FOUND`、`SHEET_NOT_FOUND` |
+| `CONFLICT` | `OPERATION_BUSY`、`SESSION_ACTIVE`、`SESSION_NOT_STARTED`、`SESSION_ISOLATED`、`PROJECT_LOCKED`、`WORKBOOK_LOCKED`、`WORKBOOK_READ_ONLY`、`SESSION_RECORD_INVALID`、`EXCEL_NEEDS_REVIEW` |
+| `EXCEL_ERROR` | `EXCEL_START_FAILED`、`WORKBOOK_OPEN_FAILED`、`SAVE_FAILED`、`MERGED_CELL`、`CELL_PROTECTED`、`EXCEL_REJECTED`、`WRITE_NOT_VERIFIED` |
+| `STATE_UNKNOWN` | `OPERATION_TIMEOUT`、`EXCEL_DISCONNECTED`、`EXCEL_NEEDS_REVIEW` |
+| `INTERNAL_ERROR` | `SESSION_RECORD_IO_ERROR`、`PROCESS_QUERY_FAILED`、`INTERNAL_FAILURE` |
+
+アドレスが矩形なら`NOT_IMPLEMENTED`、不連続・行全体・列全体・文法の不正なら`INVALID_ADDRESS`です。
+
+### JSON Schema
+
+記法の都合で共通の定義を`$defs`にまとめます。各ツールのSchemaでは展開してもかまいません。
+方言はMCPの既定の2020-12です。
+
+```json
+{
+  "$defs": {
+    "SessionSummary": {
+      "type": "object",
+      "properties": {
+        "state": { "enum": ["closed", "ready", "isolated"] },
+        "busy": { "type": "boolean" }
+      },
+      "required": ["state", "busy"]
+    },
+    "CellError": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "error" },
+        "code": {
+          "enum": ["#NULL!", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#N/A", "#SPILL!", "#CALC!", null]
+        },
+        "raw": { "type": "integer" }
+      },
+      "required": ["type", "code"]
+    },
+    "CellValue": {
+      "anyOf": [{ "type": ["number", "string", "boolean", "null"] }, { "$ref": "#/$defs/CellError" }]
+    },
+    "WritableValue": { "type": ["number", "string", "boolean", "null"] },
+    "Formula": { "type": ["string", "null"] },
+    "Error": {
+      "type": "object",
+      "properties": {
+        "code": { "enum": ["INVALID_REQUEST", "NOT_FOUND", "CONFLICT", "EXCEL_ERROR", "STATE_UNKNOWN", "INTERNAL_ERROR"] },
+        "detail": { "type": "string" },
+        "message": { "type": "string" },
+        "operation": { "type": "string" },
+        "stage": { "type": ["string", "null"] },
+        "excel_may_remain": { "type": ["boolean", "null"] },
+        "process": {
+          "type": ["object", "null"],
+          "properties": {
+            "pid": { "type": "integer" },
+            "started_at_utc": { "type": "string" },
+            "name": { "type": "string" }
+          },
+          "required": ["pid", "started_at_utc", "name"]
+        },
+        "log": { "type": ["string", "null"] }
+      },
+      "required": ["code", "detail", "message", "operation", "stage", "excel_may_remain", "process", "log"]
+    }
+  }
+}
+```
+
+`code`が`null`の`CellError`には`raw`を付けます。
+
+| 操作 | inputSchema |
+| --- | --- |
+| `session_start` | `{"type":"object","properties":{"project_path":{"type":"string"},"force":{"type":"boolean"}},"required":["project_path"],"additionalProperties":false}` |
+| `session_status`・`session_save` | `{"type":"object","additionalProperties":false}` |
+| `range_get` | `{"type":"object","properties":{"sheet":{"type":"string"},"address":{"type":"string"},"fields":{"type":"array","items":{"enum":["values","formulas","merged_ranges"]},"minItems":1,"uniqueItems":true}},"required":["sheet","address"],"additionalProperties":false}` |
+| `range_set` | `{"type":"object","properties":{"sheet":{"type":"string"},"address":{"type":"string"},"values":{"type":"array","items":{"type":"array","items":{"$ref":"#/$defs/WritableValue"}}},"formulas":{"type":"array","items":{"type":"array","items":{"$ref":"#/$defs/Formula"}}}},"required":["sheet","address"],"additionalProperties":false}` |
+| `session_end` | `{"type":"object","properties":{"discard":{"type":"boolean"},"force":{"type":"boolean"}},"additionalProperties":false}` |
+
+| 操作 | outputSchema |
+| --- | --- |
+| `session_start`・`session_save`・`session_end` | `{"type":"object","properties":{"session":{"$ref":"#/$defs/SessionSummary"},"workbook":{"type":"string"}},"required":["session","workbook"]}` |
+| `session_status` | `{"type":"object","properties":{"session":{"$ref":"#/$defs/SessionSummary"},"workbook":{"type":["string","null"]},"last_error":{"anyOf":[{"$ref":"#/$defs/Error"},{"type":"null"}]}},"required":["session","workbook","last_error"]}` |
+| `range_get` | `{"type":"object","properties":{"session":{"$ref":"#/$defs/SessionSummary"},"sheet":{"type":"string"},"address":{"type":"string"},"values":{"type":"array","items":{"type":"array","items":{"$ref":"#/$defs/CellValue"}}},"formulas":{"type":"array","items":{"type":"array","items":{"$ref":"#/$defs/Formula"}}}},"required":["session","sheet","address"]}` |
+| `range_set` | `{"type":"object","properties":{"session":{"$ref":"#/$defs/SessionSummary"},"sheet":{"type":"string"},"address":{"type":"string"}},"required":["session","sheet","address"]}` |
+
+アドレスの文法、配列の形状、`values`・`formulas`の排他、数式の先頭の`=`は、Schemaではなくツール側で検査します。
+ツールの説明は英語で、用途・副作用・失敗後に再試行できるかを書きます。文面は実装時にスナップショットの差分で確認します。
+
+### 未確認
+
+- `McpException`の文言がそのままテキストになることは、1箇所でだけ確認しました。[調査記録](notes/mcp-best-practices.md#対象の版と実測)を参照してください。
+- 引数をツール側で検査する形を、SDK 2.3.0で組めるかは未確認です。
+- 単一セルでの計算鮮度の手順と読戻しの照合は、製品経路で未検証です。
 
 ## 共通規約
 
@@ -198,8 +439,9 @@ IDは `<モジュール名>.<プロシージャ名>` です。名前から推測
 
 ## 実装前に確定する詳細
 
-- 各操作のJSON Schema、出力のenvelope、`detail` の具体的な構造。
-- 初期PoCで提供する操作・引数の範囲と、未対応要求の拒否応答。forceと隔離中の終了の初期制限は本書で確定済みです。
+- PoC-1の6操作以外のJSON Schemaと`detail`。envelopeはPoC-1の形を使います。
+- 矩形と`merged_ranges`を提供するときの、処理済み部分の返し方。
+- PoC-2以降で提供する操作・引数の範囲と、未対応要求の拒否応答。PoC-1の分は確定済みです。
 - 省略可能引数の既定値と型、`startup_events` の指定方法。
 - `isolated` と保留中呼出しが同時に存在する場合の `session_end` の受付条件。初期は上記のとおり拒否し、後続の受付条件は[安全条件の承認](architecture.md#承認待ちの安全条件)後に反映します。
 - ラッパー経由のマクロ引数の有効上限と、戻り値の対応範囲。

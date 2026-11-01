@@ -11,7 +11,7 @@ R3を対象とします。チェックは、記載した完了条件を満たし
 
 - [x] **T16 6操作の公開契約を確定する。** 提供範囲、JSON Schema、envelope、省略時の挙動、状態遷移、未対応要求の拒否を確定し、承認を得ます。製品ツールはこの後に実装します。2026-11-01にユーザーが承認し、[API契約](docs/api.md#poc-1の提供範囲)、[ADR 0005](docs/adr/0005-error-as-json-text.md)、[ADR 0006](docs/adr/0006-project-json-config.md)へ反映しました。SDKでの成立は[未確認](docs/api.md#未確認)のとおりT17以降で確認します。
 - [x] **T17 検証済みの処理をCoreへ移す。** Spike0の`ExecutionGate`・`OwnershipRecord`・`RecordTransition`・`EndSafety`・`StaRunner`を移し、非COMの確認をxUnitへ移します。T12のうち記録更新・期限・応答の確定・次回開始の判定は、Coreの非COMテストで確認します。2026-11-01に`src/XlWright.Core/`へ移し、T16の契約のcode・detailに合わせました。StaRunnerは常駐の`StaThread`にしました。Spike0は変えていません。`npm run check`の全工程が通過しました（run `9fd1af6574e746a8a566f1f7f5b7ddc3`、テスト119件）。McpServerからCoreへの参照はまだありません。
-- [ ] **T18 製品の実Excel経路を用意する。** 固定コピーにサーバーとテストを含め、接続を維持するxUnitのシナリオを`npm run check`から除外します。固定コピー以外を実行させない検査の置き場を決めます。表示要求を送る手動復旧スクリプトも用意します。
+- [x] **T18 製品の実Excel経路を用意する。** 固定コピーにサーバーとテストを含め、接続を維持するxUnitのシナリオを`npm run check`から除外します。固定コピー以外を実行させない検査の置き場を決めます。表示要求を送る手動復旧スクリプトも用意します。2026-11-01に、シナリオを別のテストプロジェクト`tests/XlWright.RealExcel.Tests/`に置き、`npm run prepare:product`と`scripts/Show-OwnedExcel.ps1`を加えました。`npm run check`の全工程が通過しました（run `2d05a04e53b84a409ee01743f9036843`、テスト131件）。エージェントが固定コピーを作り、コピーの接続シナリオが通ることを確認しました（Excelは起動しない）。表示要求のスクリプトは、合成の記録での拒否だけを確認しています。実機での実行は未実施です。
 - [ ] **T19 1セルの縦断を確認する。** session_start → range_set → range_get → session_save → session_end を、人が実行します（実機）。
 - [ ] **T13 Claude Codeから縦断とS13を確認する。** Git管理外のlocal scopeで固定コピーを登録し、MCP起動経路からのCOM生成も確認します（実機）。
 - [ ] **T20 6操作へ広げる。** PoC-1合格条件1〜9とL9・L10を確認します。既存Excelとの同時利用、所有Excelの予期しない終了、計算鮮度の契約の製品経路での検証、終了待ちが期限内に収まることを含みます（実機）。

@@ -44,19 +44,25 @@ function Invoke-DevelopmentDotnet([ValidatePattern('^[A-Za-z0-9_./:=*\-]+$')][st
 }
 
 $testProject = 'tests/XlWright.McpServer.Tests/XlWright.McpServer.Tests.csproj'
+# Built so its entry tests and prepare:product have an output, but never run here: its scenarios start Excel.
+$realExcelProject = 'tests/XlWright.RealExcel.Tests/XlWright.RealExcel.Tests.csproj'
 $artifactArguments = @('--artifacts-path', '.xlwright/development/artifacts')
-if ($Restore) {
-    Invoke-DevelopmentDotnet (@('restore', $testProject, '--locked-mode', '--configfile',
-        'src/XlWright.McpServer/NuGet.Config') + $artifactArguments)
-}
-else {
+if (-not $Restore) {
     $offlineConfig = Join-Path $buildRoot 'offline.NuGet.Config'
     [IO.File]::WriteAllText($offlineConfig, '<configuration><packageSources><clear /></packageSources></configuration>')
-    Invoke-DevelopmentDotnet (@('restore', $testProject, '--locked-mode', '--configfile',
-        '.xlwright/mcp-build/offline.NuGet.Config', '-p:NuGetAudit=false') + $artifactArguments)
 }
-foreach ($configuration in @('Debug', 'Release')) {
-    Invoke-DevelopmentDotnet (@('build', $testProject, '-c', $configuration, '--no-restore') + $artifactArguments)
+foreach ($project in @($testProject, $realExcelProject)) {
+    if ($Restore) {
+        Invoke-DevelopmentDotnet (@('restore', $project, '--locked-mode', '--configfile',
+            'src/XlWright.McpServer/NuGet.Config') + $artifactArguments)
+    }
+    else {
+        Invoke-DevelopmentDotnet (@('restore', $project, '--locked-mode', '--configfile',
+            '.xlwright/mcp-build/offline.NuGet.Config', '-p:NuGetAudit=false') + $artifactArguments)
+    }
+    foreach ($configuration in @('Debug', 'Release')) {
+        Invoke-DevelopmentDotnet (@('build', $project, '-c', $configuration, '--no-restore') + $artifactArguments)
+    }
 }
 $testResults = '.xlwright/development/test-results.xml'
 $testResultsPath = Join-Path $repository $testResults

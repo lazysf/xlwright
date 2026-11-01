@@ -39,7 +39,7 @@ Spike0のビルドには、Officeの既存PIAが必要です。固定版は[環�
 | `.nvmrc` | Node.jsの版の選択 |
 | `package.json`・`package-lock.json` | MarkdownのチェックとInspectorに使う開発用パッケージの固定 |
 | `.markdownlint-cli2.jsonc` | Markdownのチェックのルールと対象 |
-| `scripts/` | 統合チェック、Inspector、実験の準備の入口 |
+| `scripts/` | 統合チェック、Inspector、実験の準備、手動復旧の表示要求の入口 |
 
 コードと検証資産は、次の位置へ配置します。
 空ディレクトリや仮実装を先に追加する必要はありません。
@@ -50,6 +50,7 @@ Spike0のビルドには、Officeの既存PIAが必要です。固定版は[環�
 | `src/XlWright.Core/` | MCPに依存しない中核処理。現在はSpike0から移した実行枠・所有記録・終了安全確認・常駐STA |
 | `src/XlWright.McpServer/` | stdio接続基盤と開発モードの`dev_status`。製品のExcel操作APIは未実装 |
 | `tests/XlWright.McpServer.Tests/` | サーバーを実プロセスで起動するxUnitテスト、`Core/`のCoreの単体テスト、ツール定義のスナップショット |
+| `tests/XlWright.RealExcel.Tests/` | 製品の実Excelのシナリオ。固定コピーから人が実行する |
 | `tests/fixtures/` | Git管理する基準ブック。現在はマクロなしの`lifecycle.xlsx` |
 
 本体と利用プロジェクトの責務は [設計文書](architecture.md) に従います。
@@ -115,8 +116,9 @@ R3のCoreは、COMの境界の外をExcelなしで試験できる形で作りま
 | Coreの単体（R3から） | xUnit | `npm run check` |
 | MCPのプロトコル | xUnitからサーバーを実プロセスで起動 | `npm run check` |
 | Excel入口の検査 | xUnitから合成リポジトリでSpike0の`--preflight`を実行。Excelのコードへ到達しない | `npm run check` |
+| 製品の固定コピーの検査 | xUnitから合成リポジトリでRealExcelのシナリオを実行。現在のシナリオはExcelへ到達しない | `npm run check` |
 | 公開内容 | Inspector CLI、スキーマ検査、スナップショット | `npm run check` |
-| 実Excel | 固定コピーの実験 | 承認後に人が実行 |
+| 実Excel | 固定コピーの実験とRealExcelのシナリオ | 承認後に人が実行 |
 
 複数の要求にまたがる状態は、接続を維持する`tests/XlWright.McpServer.Tests/`のクライアントで検証します。
 Inspector CLIは1要求ごとに接続を閉じるためです。
@@ -235,6 +237,46 @@ Spike0のExcel入口は、次の検査を通らなければ開始しません。
 未完了の所有記録がある場合は、証拠保全と手動復旧の承認を必要とします。
 手動復旧は[設計文書](architecture.md#初期の手動復旧)に従います。
 ガードがなければ、Spike0は[次回開始の規則](architecture.md#initial-lifecycle)で所有記録を更新します。置き換えた記録は`run.prepared`に残します。ガードを除去できるのは、対象と証拠を確認した後だけです。
+
+#### 製品の固定コピー
+
+製品の実Excelのシナリオは`tests/XlWright.RealExcel.Tests/`に置きます。
+`npm run check`はこのプロジェクトをビルドしますが、実行しません。
+人は、上記の手順2で`npm run prepare:experiment`の代わりに`npm run prepare:product`を使い、表示されたコマンドを手順4で実行します。
+
+```powershell
+dotnet .xlwright/development/prepared/product-<id>/bin/XlWright.RealExcel.Tests/release/XlWright.RealExcel.Tests.dll
+```
+
+`npm run prepare:product`は、サーバーとシナリオの出力を`.xlwright/development/prepared/product-<id>/bin/`へビルドと同じ配置でコピーします。
+コピーの条件と`manifest.json`の内容はSpike0と同じです。基準ブックのハッシュは含めません。
+シナリオは、どのテストより先に次の検査を行います。検査に失敗すると全テストが失敗します。
+
+- `product-<id>/`の下から起動され、全ファイルが`manifest.json`と一致すること。
+- 共有ガード`.xlwright/mcp-development/active-smoke.json`が存在しないこと。
+
+シナリオはコピー内のサーバーを起動し、接続を維持したまま要求を送ります。
+現在のシナリオは接続の確認だけで、Excelを起動しません。
+
+#### 表示要求の手動復旧スクリプト
+
+非表示の所有Excelを人へ見せるときは、[scripts/Show-OwnedExcel.ps1](../scripts/Show-OwnedExcel.ps1)を使います。
+個別承認の後だけ実行し、先に`-CheckOnly`で確認します。
+
+```powershell
+powershell.exe -NoProfile -File scripts/Show-OwnedExcel.ps1 -RecordPath <所有記録の絶対パス> -CheckOnly
+```
+
+スクリプトは次を確認します。
+
+- 所有記録を排他で開けること。開いたまま最後まで保持し、その間に新しいサーバーが開始しないようにします。
+- 記録がowned。
+- プロセスの同一性が一致すること。プロセスのハンドルを保持し、照合後のPIDの再利用を防ぎます。
+- xlwrightのサーバーが不在であること。コマンドラインを読めない`dotnet.exe`も、サーバーの可能性として拒否します。
+- 非表示の`XLMAIN`があること。
+
+確認できたときだけ、各`XLMAIN`へ表示要求を1回送ります。送る直前にも、ウィンドウの所有プロセスを照合し直します。COMの呼出し、入力、終了は行いません。
+結果は記録と同じディレクトリの`.xlwright/recovery/`へ書きます。同じプロセスへの2回目は拒否します。
 
 ## 継続利用するMCP開発環境
 

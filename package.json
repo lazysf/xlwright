@@ -6,6 +6,7 @@
     "inspect:web": "node scripts/inspector.mjs --web",
     "snapshot:tools": "node scripts/inspector.mjs --snapshot",
     "prepare:experiment": "node scripts/prepare-experiment.mjs",
+    "prepare:product": "node scripts/prepare-experiment.mjs --product",
     "lint:md": "markdownlint-cli2 \"**/*.md\""
   },
   "devDependencies": {

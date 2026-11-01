@@ -38,6 +38,13 @@ export const spikeSources = async () => hashEntries(repository, await sourceFile
 
 export const spikeOutput = join(development, 'artifacts', 'bin', 'Spike0', 'release');
 
+// The product copy holds the server and the real-Excel scenarios, which start that server from ../../XlWright.McpServer.
+export const productSources = async () =>
+  hashEntries(repository, [...await sourceFiles('src'), ...await sourceFiles('tests')]);
+
+export const productOutputs = Object.fromEntries(['XlWright.McpServer', 'XlWright.RealExcel.Tests']
+  .map(project => [project, join(development, 'artifacts', 'bin', project, 'release')]));
+
 export async function directoryHashes(root) {
   const entries = await readdir(root, { recursive: true, withFileTypes: true });
   return hashEntries(root, entries.filter(entry => entry.isFile())

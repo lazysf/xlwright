@@ -49,7 +49,7 @@ statusはCOMなしの状態照会です。stop・EOF・Ctrl+Cは終了要求で�
 
 ## 後続のxlsm準備
 
-wait・modalだけが`probe.xlsm`と`probe.sha256`を要求します。未配置ならExcel生成前に拒否します。
+wait・modalと`--excel-t15-vba`だけが`probe.xlsm`と`probe.sha256`を要求します。未配置ならExcel生成前に拒否します。
 `probe.xlsm`は固定済みです。作成の記録は[結果記録](../../../docs/notes/spike-0-results.md#t11-s11r2probexlsmの作成2026-11-01)にあります。
 再作成には個別の承認が必要で、手順は次のとおりです。
 

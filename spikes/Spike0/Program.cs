@@ -27,7 +27,8 @@ internal static class Program
             string? s9Case = S9Probe.Parse(args);
             string? cellCase = CellProbe.Parse(args);
             string? calculationCase = CalculationProbe.Parse(args);
-            if (s11Case is null && s9Case is null && startupCase is null && cellCase is null && calculationCase is null && args is not ["--excel"] and not ["--excel-end-refusal"] and not ["--excel-record-fault-starting"]
+            bool vbaPath = VbaPathProbe.Parse(args);
+            if (!vbaPath && s11Case is null && s9Case is null && startupCase is null && cellCase is null && calculationCase is null && args is not ["--excel"] and not ["--excel-end-refusal"] and not ["--excel-record-fault-starting"]
                 and not ["--excel-record-fault-owned"] and not ["--excel-record-fault-completed"])
             {
                 Console.Error.WriteLine("Usage: Spike0 [--self-check | --excel | --excel-end-refusal | " +
@@ -37,6 +38,7 @@ internal static class Program
                     "Calculation: --excel-s14-auto | --excel-s14-manual | --excel-s14-mode-change. " +
                     "S9: --excel-s9-release | --excel-s9-limit | --excel-s9-deadline. " +
                     "S11: --excel-s11r2-baseline | --excel-s11r2-protected-view | --excel-s11r2-wait | --excel-s11r2-modal | --excel-s11r2-shell2. " +
+                    "T15: --excel-t15-vba. " +
                     "Controlled COM without Excel: --s9-com-check. " +
                     "Offline: --verify-s4-saved. Checks only, without Excel: --preflight <Excel argument>. " +
                     "Excel experiments require prior approval.");
@@ -55,7 +57,9 @@ internal static class Program
                 "--excel-record-fault-completed" => "completed",
                 _ => null
             };
-            return await RunExcel(repository, args[0] == "--excel-end-refusal", recordFault, startupCase, cellCase, calculationCase, s9Case, s11Case);
+            int exitCode = await RunExcel(repository, args[0] == "--excel-end-refusal", recordFault, startupCase, cellCase, calculationCase, s9Case, s11Case, vbaPath);
+            if (vbaPath) VbaPathProbe.AnnounceEnd(exitCode);
+            return exitCode;
         }
         catch (Exception error)
         {
@@ -83,14 +87,16 @@ internal static class Program
         return (build, guardPath);
     }
 
-    private static async Task<int> RunExcel(string repository, bool endRefusal, string? recordFault, string? startupCase, string? cellCase, string? calculationCase, string? s9Case, string? s11Case)
+    private static async Task<int> RunExcel(string repository, bool endRefusal, string? recordFault, string? startupCase, string? cellCase, string? calculationCase, string? s9Case, string? s11Case, bool vbaPath)
     {
         var (build, guardPath) = Preflight(repository);
         RuntimeAssets.VerifyPias();
         RuntimeAssets.VerifyFixture(repository);
+        var vbaSettings = vbaPath ? VbaPathProbe.ReadSettings() : null;
+        if (vbaSettings is not null) VbaPathProbe.RequireAccess(vbaSettings);
         string? s11Fixture = null;
         string? s11Hash = null;
-        if (s11Case is "wait" or "modal")
+        if (s11Case is "wait" or "modal" || vbaPath)
         {
             s11Fixture = Path.Combine(repository, "tests", "fixtures", "s11", "probe.xlsm");
             RuntimeAssets.RejectReparsePoints(repository, s11Fixture);
@@ -103,7 +109,7 @@ internal static class Program
         }
         var startupFixture = startupCase is null ? null : StartupProbe.VerifyFixture(repository);
         var calculationFixture = calculationCase is null ? null : CalculationProbe.VerifyFixture(repository, calculationCase);
-        string? experiment = s11Case is not null ? "s11r2-" + s11Case : s9Case is not null ? "s9-" + s9Case : calculationCase is null ? cellCase ?? (startupCase is null ? null : "s10-" + startupCase) : "s14-" + calculationCase;
+        string? experiment = vbaPath ? VbaPathProbe.Scenario : s11Case is not null ? "s11r2-" + s11Case : s9Case is not null ? "s9-" + s9Case : calculationCase is null ? cellCase ?? (startupCase is null ? null : "s10-" + startupCase) : "s14-" + calculationCase;
         string scenarioName = experiment ?? (endRefusal ? "end-refusal" : recordFault is null ? "smoke" : "record-fault-" + recordFault);
         string? attemptPath = null;
         if (experiment is not null)
@@ -140,6 +146,8 @@ internal static class Program
         }
         if (s11Case is not null && (record.CreatedNew || record.Read().Kind != "completed"))
             throw new InvalidDataException("S11 requires existing completed ownership.");
+        if (vbaPath && (record.CreatedNew || record.Read().Kind != "completed"))
+            throw new InvalidDataException("T15 requires existing completed ownership.");
         var replacedRecord = record.CheckPrevious();
         string? previousStartup = startupCase is null ? null : StartupProbe.PreviousCase(startupCase);
         string? previous = previousStartup is null ? null : "s10-" + previousStartup;
@@ -173,7 +181,8 @@ internal static class Program
         }
         string workbook = Path.Combine(run, s11Fixture is null && startupCase is null && calculationCase is null ? "lifecycle.xlsx" : "probe.xlsm");
         File.Copy(s11Fixture ?? calculationFixture?.Path ?? startupFixture?.Path ?? Path.Combine(repository, "tests", "fixtures", "lifecycle.xlsx"), workbook, overwrite: false);
-        if (s11Case is not null) StartupProbe.VerifyHash(workbook, s11Hash ?? RuntimeAssets.FixtureHash);
+        if (s11Case is not null || vbaPath) StartupProbe.VerifyHash(workbook, s11Hash ?? RuntimeAssets.FixtureHash);
+        if (vbaPath) VbaPathProbe.WriteModule(run);
         if (s11Case is "protected-view" or "shell2")
             File.Copy(Path.Combine(repository, "tests", "fixtures", "lifecycle.xlsx"), Path.Combine(run, "s11-other.xlsx"), overwrite: false);
         if (calculationFixture is not null) StartupProbe.VerifyHash(workbook, calculationFixture.Hash);
@@ -187,14 +196,20 @@ internal static class Program
         if (unmanaged is not null)
             File.Copy(Path.Combine(repository, "tests", "fixtures", "lifecycle.xlsx"), unmanaged, overwrite: false);
         string diagnosticPath = Path.Combine(run, "diagnostics.jsonl");
-        using var evidence = s11Case is null ? null : new S11Evidence(Path.Combine(run, "s11-timing.jsonl"));
+        // T15 reuses the S11 window and timing evidence: a modal in hidden Excel is its most likely stop.
+        using var evidence = s11Case is null && !vbaPath ? null : new S11Evidence(Path.Combine(run, "s11-timing.jsonl"));
         using var log = new DiagnosticLog(diagnosticPath, evidence);
         var gate = new ExecutionGate();
-        using var s11 = s11Case is null ? null : new S11Probe(s11Case, run, evidence!);
+        using var s11 = evidence is null ? null : new S11Probe(s11Case ?? VbaPathProbe.Scenario, run, evidence);
         using var s9 = s9Case is null ? null : new S9Probe(s9Case, run, gate);
         log.Write("run.prepared", gate, new { workbook_path = workbook, record_path = recordPath, diagnostic_path = diagnosticPath,
             server_pid = Environment.ProcessId, assembly_hash = build.Assembly, check_run = build.CheckRun,
             replaced_record = replacedRecord });
+        if (vbaSettings is not null)
+        {
+            log.Write("t15.settings", gate, vbaSettings);
+            VbaPathProbe.AnnounceStart();
+        }
         ConsoleCancelEventHandler onCancel = (_, e) =>
         {
             e.Cancel = true;
@@ -265,6 +280,11 @@ internal static class Program
                     StartupProbe.VerifyHash(calculationFixture!.Path, calculationFixture.Hash);
                 }
                 else if (cellCase is not null) CellProbe.VerifySaved(workbook);
+                else if (vbaPath)
+                {
+                    RuntimeAssets.VerifyCell(workbook, VbaPathProbe.MarkedValue);
+                    StartupProbe.VerifyHash(s11Fixture!, s11Hash!);
+                }
                 else if (startupCase is null) RuntimeAssets.VerifyCell(workbook, 1);
                 else StartupProbe.VerifyHash(startupFixture!.Path, startupFixture.Hash);
                 RuntimeAssets.VerifyFixture(repository);

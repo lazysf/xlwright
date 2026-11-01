@@ -35,7 +35,8 @@ internal sealed partial class ExcelScenario(string workbookPath, OwnershipRecord
         try
         {
             Start();
-            if (s11 is not null) { EditKnownCell(); ProbeS11(); }
+            if (s11?.Scenario == VbaPathProbe.Scenario) ProbeVbaPath();
+            else if (s11 is not null) { EditKnownCell(); ProbeS11(); }
             else if (s9 is not null) ProbeS9();
             else if (calculationCase is not null) ProbeCalculation();
             else if (cellCase is not null) ProbeCells();

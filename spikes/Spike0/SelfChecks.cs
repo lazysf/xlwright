@@ -391,6 +391,7 @@ internal static class SelfChecks
 
         LifecycleChecks.Run(directory, Check);
         S11Checks.Run(directory, Check);
+        VbaPathChecks.Run(directory, Check);
         S9Checks.Run(directory, Check);
         Check("retained record verifies exact sharing violation", () =>
         {

@@ -5,7 +5,7 @@ Windows上の実Excelを操作し、VBAソースの反映、マクロ実行、�
 
 ## 現在の状態
 
-R2（基盤のSpike）が進行中です。MCP接続基盤を実装しています。製品のExcel操作APIとPoCは未実装です。
+R3（PoC-1）が進行中です。MCP接続基盤を実装しています。製品のExcel操作APIとPoCは未実装です。
 技術的な成立性や実運用の安全性は、まだ確認されていません。
 
 要件と設計は [docs/](docs/README.md)、開発の順序は [ROADMAP.md](ROADMAP.md)、直近の作業は [TODO.md](TODO.md) で管理しています。

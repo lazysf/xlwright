@@ -1,6 +1,6 @@
 # MCPサーバーの設計・開発の調査
 
-- Date: 2026-10-31
+- Date: 2026-11-01
 - 出典: [Tools仕様](https://modelcontextprotocol.io/specification/draft/server/tools)、[2026-07-28の変更点](https://modelcontextprotocol.io/specification/2026-07-28/changelog)、[Security Best Practices](https://modelcontextprotocol.io/specification/draft/basic/security_best_practices)、[Local Server Security](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/local-server-security)、[Inspector CLI](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector/cli)、[Inspector Recipes](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector/recipes)、[mcpdo](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector/mcpdo)、[Protocol eras](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector/protocol-eras)、[Tasks拡張](https://modelcontextprotocol.io/extensions/tasks/overview)、[conformance](https://github.com/modelcontextprotocol/conformance)、[C# SDK](https://github.com/modelcontextprotocol/csharp-sdk)、[McpServerToolAttribute](https://csharp.sdk.modelcontextprotocol.io/api/ModelContextProtocol.Server.McpServerToolAttribute.html)、[Writing effective tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents)、ローカルの実行結果。
 
 日々の手順と基準の正本は[開発ガイド](../development.md#mcpツールの実装基準)です。
@@ -36,11 +36,11 @@ Toolsの要件はdraftの本文で確認しました。
 開発用の`dev_status`は、注釈を基準どおり明示しています。SDKの既定では`Destructive`と`OpenWorld`がtrueのためです。
 結果はJSON文字列のテキストだけで、`outputSchema`はありません。開発用の識別情報なので、基準の対象とする製品ツールとは分けています。
 
-[api.md](../api.md)の「セッションはMCP接続ごとに1つ」は、2026-07-28の方針と異なります。
+[api.md](../api.md#共通規約)は、セッションをサーバープロセス単位で持ち、`session_id`を引数に取りません。プロトコルのセッションには依存しませんが、明示的なハンドルを渡す2026-07-28の案内とは異なります。
 仕様は、プロトコルのセッションを廃止しました。
 接続ごとの暗黙の状態に頼らず、明示的なハンドルを引数で渡す設計を案内しています。
 この案内は非規範です。stdioのサーバーは1プロセスに1クライアントなので、現在の契約が直ちに動かなくなるとは確認していません。
-契約の変更は未判断です。
+契約は維持しています。理由は[ADR 0004](../adr/0004-process-scoped-session.md)にあります。
 
 ハンドルへ変えても、stdioではサーバープロセスが終わると状態が失われます。
 接続ごとに終了するInspector CLIでは、セッションをまたぐ操作を検証できません。
@@ -50,7 +50,7 @@ Toolsの要件はdraftの本文で確認しました。
 | 対象 | 理由 | 再検討の条件 |
 | --- | --- | --- |
 | conformance | 公式資料の実行方法がURL接続だけです。このサーバーはstdioだけです | stdio対応を確認したとき |
-| mcpdo | 公式が実験的と明記しています。切断したstdioの子プロセスを次の利用時に自動で再接続するため、結果不明で再送しない方針との整合が未確認です。複数要求の検証は、接続を維持するxUnitのテストで行います | 製品ツールの探索で接続の維持が必要になったとき |
+| mcpdo | 公式が実験的と明記しています。切断したstdioの子プロセスを次の利用時に自動で再接続するため、結果不明で再送しない方針との整合が未確認です。複数要求の検証は、接続を維持するxUnitのテストで行います | 接続を維持する手段をxUnitから替えるとき。再接続と再送の挙動を先に確認します |
 | Tasks拡張 | 拡張であり、クライアントごとに対応が異なります。`execution_id`と状態照会で同じ形を実現できます | 対象クライアントの対応を確認したとき |
 | エージェント評価ループ | 実際のAIクライアントかLLM APIの実行が必要です。現在は直接接続を登録していません | 製品ツールのツール選択を評価するとき |
 

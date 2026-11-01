@@ -5,16 +5,17 @@ TODOへの記載は、未承認の設計変更や実機操作を承認するも�
 
 ## 直近のTODO
 
-R2を対象とします。チェックは、記載した完了条件を満たしたときに付けます。
-T12（L4〜L8）とT13（S13）は[R3へ移しました](ROADMAP.md#後続工程で拾う事項)。
+R3を対象とします。チェックは、記載した完了条件を満たしたときに付けます。
+進め方は[R3の進め方](docs/spike-0.md#r3の進め方)、移行の判定と未解決の仮説は[T14の判定](docs/notes/spike-0-results.md#t14-poc-1への移行判定2026-11-01)を参照します。
+実機の項目は、着手時に目的・対象・停止条件を示して個別に承認を得ます。
 
-- [x] **T7 S10の起動設定を評価する。** 初期経路の設定を維持します。ActiveXは非対応のため対象外です。ForceDisableによるVBA抽出は`project_init`の実装前に残します。
-- [x] **T8 S1〜S4のセル入出力を評価する。** 既存のセルAPI契約を維持します。[判定](docs/notes/spike-0-results.md#s4の限定整理とt8の判定)
-- [x] **T9 S14の計算結果の鮮度を評価する。** 値取得前に明示計算・xlDone確認を行う設計を採用しました。[判定](docs/notes/spike-0-results.md#t9の完了判定と採用判断)
-- [x] **T10 S9のSTAと再試行を評価する。** 限定評価です。実ExcelのRETRYLATER等は未検証です。[判定](docs/notes/spike-0-results.md#t10の限定完了判定2026-10-31)
-- [x] **T11 S11の診断と終了拒否を評価する。** 限定評価です。約60秒の終了待ちと、人が閉じた後の残存の原因は未特定です。[判定](docs/notes/spike-0-results.md#t11-s11r2の全体の評価2026-11-01)
-- [x] **T15 VBA経路を最小限確認する。** 遅延バインドのImportと、続くマクロ実行・保存・通常終了が成立しました。S5・S6・S7・S15はR4に残します。[結果](docs/notes/spike-0-results.md#t15-vba経路の最小確認2026-11-01)
-- [ ] **T14 PoC-1への移行を判定する。** 未解決の仮説を整理し、[着手条件](docs/spike-0.md#poc-1へ進む前の確認)を照合して、R3のTODOを用意します。製品ツールを実Excelで検証する経路とセッション契約を最初に決めます。
+- [ ] **T16 6操作の公開契約を確定する。** 提供範囲、JSON Schema、envelope、省略時の挙動、状態遷移、未対応要求の拒否を確定し、承認を得ます。製品ツールはこの後に実装します。
+- [ ] **T17 検証済みの処理をCoreへ移す。** Spike0の`ExecutionGate`・`OwnershipRecord`・`RecordTransition`・`EndSafety`・`StaRunner`を移し、非COMの確認をxUnitへ移します。T12のうち記録更新・期限・応答の確定・次回開始の判定は、Coreの非COMテストで確認します。
+- [ ] **T18 製品の実Excel経路を用意する。** 固定コピーにサーバーとテストを含め、接続を維持するxUnitのシナリオを`npm run check`から除外します。固定コピー以外を実行させない検査の置き場を決めます。表示要求を送る手動復旧スクリプトも用意します。
+- [ ] **T19 1セルの縦断を確認する。** session_start → range_set → range_get → session_save → session_end を、人が実行します（実機）。
+- [ ] **T13 Claude Codeから縦断とS13を確認する。** Git管理外のlocal scopeで固定コピーを登録し、MCP起動経路からのCOM生成も確認します（実機）。
+- [ ] **T20 6操作へ広げる。** PoC-1合格条件1〜9とL9・L10を確認します。既存Excelとの同時利用、所有Excelの予期しない終了、計算鮮度の契約の製品経路での検証、終了待ちが期限内に収まることを含みます（実機）。
+- [ ] **T12 L4〜L8のExcel依存条件を確認する。** Quit後の残存、期限後の遅延完了、COM保留中のEOF、保存・Close等の遅延復帰を確認します（実機）。
 - [ ] **開発環境の後始末。** 古いSpike0.dllと`src/XlWright.McpServer/bin/`を整理します。`.xlwright/development/`の`prepared/t11-*`、`releases/`、`inspector/`にある古いSpike0.dllは検査を持たないため、実行しません。`.xlwright/mcp-checks/`の合成データ（約1.4GB）を消すかをユーザーが判断します。S14の作成領域に残った`exported-S11Module.bas`の扱いもユーザーが判断します。
 
 ## 更新方法

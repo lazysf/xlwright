@@ -16,8 +16,8 @@ API契約と実機検証の仮説は、それぞれの正式文書で管理し�
 プレビュー版は選択しません。
 選択規則は [Microsoftのglobal.jsonリファレンス](https://learn.microsoft.com/en-us/dotnet/core/tools/global-json) に従います。
 
-現在のC#プロジェクトはSpike0、MCP接続基盤、MCPテストです。製品のExcel操作APIとCoreは未実装です。
-Spike0は.NET 10のWindows Desktop共有フレームワークを使います。
+現在のC#プロジェクトはSpike0、Core、MCP接続基盤、MCPテスト、実Excelのシナリオです。製品のExcel操作APIは未実装で、McpServerはCoreをまだ参照していません。
+Spike0とCoreは.NET 10のWindows Desktop共有フレームワークを使います。
 Spike0のビルドには、Officeの既存PIAが必要です。固定版は[環境の確認結果](notes/verification-environment.md)を参照してください。
 同じ理由で、GitHubの標準ランナーではビルドできないためCIを置いていません。
 
@@ -49,9 +49,9 @@ Spike0のビルドには、Officeの既存PIAが必要です。固定版は[環�
 | `spikes/Spike0/` | 実機検証の実験コードと非COM自己チェック |
 | `src/XlWright.Core/` | MCPに依存しない中核処理。現在はSpike0から移した実行枠・所有記録・終了安全確認・常駐STA |
 | `src/XlWright.McpServer/` | stdio接続基盤と開発モードの`dev_status`。製品のExcel操作APIは未実装 |
-| `tests/XlWright.McpServer.Tests/` | サーバーを実プロセスで起動するxUnitテスト、`Core/`のCoreの単体テスト、ツール定義のスナップショット |
+| `tests/XlWright.McpServer.Tests/` | サーバーを実プロセスで起動するxUnitテスト、`Core/`のCoreの単体テスト、Excel入口と固定コピーの検査、手動復旧スクリプトの検査、ツール定義のスナップショット |
 | `tests/XlWright.RealExcel.Tests/` | 製品の実Excelのシナリオ。固定コピーから人が実行する |
-| `tests/fixtures/` | Git管理する基準ブック。現在はマクロなしの`lifecycle.xlsx` |
+| `tests/fixtures/` | Git管理する基準ブック。マクロなしの`lifecycle.xlsx`と、実験ごとの`s9/`・`s10/`・`s11/`・`s14/` |
 
 本体と利用プロジェクトの責務は [設計文書](architecture.md) に従います。
 本体リポジトリに、利用プロジェクトの `project.json` や実ブックを先に生成しないでください。
@@ -117,6 +117,7 @@ R3のCoreは、COMの境界の外をExcelなしで試験できる形で作りま
 | MCPのプロトコル | xUnitからサーバーを実プロセスで起動 | `npm run check` |
 | Excel入口の検査 | xUnitから合成リポジトリでSpike0の`--preflight`を実行。Excelのコードへ到達しない | `npm run check` |
 | 製品の固定コピーの検査 | xUnitから合成リポジトリでRealExcelのシナリオを実行。現在のシナリオはExcelへ到達しない | `npm run check` |
+| 手動復旧スクリプトの検査 | xUnitから合成の記録で`Show-OwnedExcel.ps1`の`-CheckOnly`を実行。ウィンドウの探索へ到達しない | `npm run check` |
 | 公開内容 | Inspector CLI、スキーマ検査、スナップショット | `npm run check` |
 | 実Excel | 固定コピーの実験とRealExcelのシナリオ | 承認後に人が実行 |
 
@@ -220,7 +221,7 @@ Spikeの実Excel実験は、人がコンソールで起動します。承認の�
 5. エージェントが、終了コード、診断、所有記録、基準ブックのハッシュを照合し、結果を[Spike-0の記録方法](spike-0.md#結果の残し方)に従って残します。
 
 `npm run prepare:experiment`は、最新の全工程の通過と同じソース・ビルドだけをコピーします。
-出力先は`.xlwright/development/prepared/<id>/`です。
+出力先は`.xlwright/development/prepared/experiment-<id>/`です。
 `manifest.json`に、check run、commit、作業ツリーの差分有無、基準ブック、全ファイルとソースのハッシュを記録します。
 通過の記録がない場合、ソースかビルドが記録と異なる場合、統合チェックの実行中は拒否します。
 
@@ -261,6 +262,7 @@ dotnet .xlwright/development/prepared/product-<id>/bin/XlWright.RealExcel.Tests/
 #### 表示要求の手動復旧スクリプト
 
 非表示の所有Excelを人へ見せるときは、[scripts/Show-OwnedExcel.ps1](../scripts/Show-OwnedExcel.ps1)を使います。
+合成の記録で拒否を確認しただけで、実機では実行していません。
 個別承認の後だけ実行し、先に`-CheckOnly`で確認します。
 
 ```powershell

@@ -102,9 +102,11 @@ T14で[PoC-1への移行](notes/spike-0-results.md#t14-poc-1への移行判定20
 
 1. 6操作の提供範囲・JSON Schema・envelope・省略時の挙動・状態遷移・未対応要求の拒否を確定し、承認を得ます。製品ツールはこの後に実装します。T16で[API契約](api.md#poc-1の提供範囲)に確定しました。
 2. Spike0の検証済みの処理をCoreへ移します。候補は`ExecutionGate`、`OwnershipRecord`、`RecordTransition`、`EndSafety`、`StaRunner`と、対応する非COMの確認です。T17で移しました。Spike0の実装と自己チェックは実験の記録として残します。
-3. MCP → 専用STA → 専用Excelで1セルを読み書きして終了する縦断を作り、AIクライアントから実Excelへ届くことを確認します。
-4. PoC-1の6操作へ広げます。
-5. L4〜L10とS13を確認します。
+3. 製品の実Excel経路を用意します。T18で用意しました。
+4. MCP → 専用STA → 専用Excelで1セルを読み書きして終了する縦断を作り、接続を維持するxUnitのシナリオで人が確認します（T19）。
+5. Claude Codeから縦断を確認し、S13を観測します（T13）。
+6. PoC-1の6操作へ広げ、合格条件1〜9とL9・L10を確認します（T20）。
+7. L4〜L8のExcel依存条件を確認します（T12）。
 
 製品ツールは次の経路で検証します。
 

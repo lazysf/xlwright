@@ -122,7 +122,7 @@ nuspecのrepository commitは`9a327829ef066c44a0d737c58bf3c7617d7c701c`でした
 | Microsoft.Extensions.DependencyInjection.Abstractions | 10.0.13 | MIT |
 | xunit.v3（テスト専用） | 4.0.2 | Apache-2.0 |
 
-SDKは.NET 10向けアセットを使用します。直接依存と推移依存の版・content hashはサーバーとテストプロジェクトの`packages.lock.json`に記録しています。
+SDKは.NET 10向けアセットを使用します。直接依存と推移依存の版・content hashはCore、サーバー、2つのテストプロジェクトの`packages.lock.json`に記録しています。
 xunit.v3の推移依存はApache-2.0またはMITです。製品のサーバーはこれらに依存しません。
 テストはDLLを直接実行し、xUnitのIn-Process Runnerを使います。この経路はMicrosoft.Testing.Platformを起動しません。
 推移依存のテレメトリ拡張は`dotnet test`やIDEの経路で登録されます。その経路の通信は未確認のため、テストは`npm run check`で実行します。

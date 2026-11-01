@@ -12,7 +12,7 @@ R3を対象とします。チェックは、記載した完了条件を満たし
 ### 停止時点の状態
 
 T13を終えた時点で、2026-11-01に作業を止めています。再開の入口は、下記のT20です。
-その前に、T13のS13の不一致への対応をユーザーが判断します。
+S13の不一致は、PoC-1の契約を変えずに扱うとユーザーが判断しました。[設計への反映](docs/notes/spike-0-results.md#設計への反映)を参照します。
 
 - コード: `2795c12`。この後の変更は文書だけです。
 - 最後に通った`npm run check`: run `ed97bfd6733347dcb671a759b90b3ce7`、テスト271件。
@@ -29,7 +29,7 @@ T13を終えた時点で、2026-11-01に作業を止めています。再開の�
 - [x] **T19の前提を実装する。** 2026-11-01に、公開範囲を`ExcelSession`の窓口に限り、開発モードを[ADR 0009](docs/adr/0009-development-mode-without-excel.md)、Excelの型参照を[ADR 0008](docs/adr/0008-embedded-office-pia.md)に決めました。5ツールとガード5件を実装し、スナップショットの差分とInspectorの拒否応答を確認しました。失敗の返し方は[ADR 0007](docs/adr/0007-error-as-direct-result.md)のとおりです。
 - [x] **T19 1セルの縦断を確認する。** 2026-11-01に、人が固定コピーから実行し、数値1セルの読み書き・保存・終了が成功しました。[結果](docs/notes/spike-0-results.md#t191セルの縦断2026-11-01)を参照します。
 - [x] **T13 Claude Codeから縦断とS13を確認する。** 2026-11-01に、Git管理外の`.mcp.json`で固定コピーを登録しました。MCP起動経路からのCOM生成、縦断、失敗テキストの受け渡しは成立しました。S13は仮説と不一致です。readyのまま会話を終えると所有Excelが残り、手動復旧しました。[結果](docs/notes/spike-0-results.md#t13-claude-codeからの縦断とs132026-11-01)を参照します。
-- [ ] **T20 6操作へ広げる。** PoC-1合格条件1〜9とL9・L10を確認します。既存Excelとの同時利用、所有Excelの予期しない終了、計算鮮度の契約の製品経路での検証、終了待ちが期限内に収まることを含みます（実機）。T19で送った`session_status`と`last_error`、`SERVERCALL_RETRYLATER`の再試行、タイムアウト時のウィンドウ診断もここで実装します。
+- [ ] **T20 6操作へ広げる。** PoC-1合格条件1〜9とL9・L10を確認します。既存Excelとの同時利用、所有Excelの予期しない終了、計算鮮度の契約の製品経路での検証、終了待ちが期限内に収まることを含みます（実機）。T13で決めた2点も確認します。EOFの後始末は、終了を待つ実ExcelのxUnitのシナリオで確認します。Claude Codeで会話を閉じて所有Excelが残った後、次の`session_start`が`EXCEL_NEEDS_REVIEW`で拒否することも確認します。T19で送った`session_status`と`last_error`、`SERVERCALL_RETRYLATER`の再試行、タイムアウト時のウィンドウ診断もここで実装します。
 - [ ] **T12 L4〜L8のExcel依存条件を確認する。** Quit後の残存、期限後の遅延完了、COM保留中のEOF、保存・Close等の遅延復帰を確認します（実機）。
 - [ ] **開発環境の後始末。** 2026-11-01にユーザーの判断で、文書から参照されない生成物を削除しました（`.xlwright/`は約2.1GBから約350MB）。残りは、`.xlwright/spike0/fixture-preparation/`の`s11r2/`と`s14-*/`にある`exported-S11Module.bas`、用途が未確認の`.xlwright/fixture-builder/`と`.xlwright/t11-discarded/`です。これらの扱いはユーザーが判断します。
 

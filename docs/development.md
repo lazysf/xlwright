@@ -47,9 +47,9 @@ Spike0のビルドには、Officeの既存PIAが必要です。固定版は[環�
 | パス | 用途 |
 | --- | --- |
 | `spikes/Spike0/` | 実機検証の実験コードと非COM自己チェック |
-| `src/XlWright.Core/`（未作成） | MCPに依存しない中核処理 |
+| `src/XlWright.Core/` | MCPに依存しない中核処理。現在はSpike0から移した実行枠・所有記録・終了安全確認・常駐STA |
 | `src/XlWright.McpServer/` | stdio接続基盤と開発モードの`dev_status`。製品のExcel操作APIは未実装 |
-| `tests/XlWright.McpServer.Tests/` | サーバーを実プロセスで起動するxUnitテストと、ツール定義のスナップショット |
+| `tests/XlWright.McpServer.Tests/` | サーバーを実プロセスで起動するxUnitテスト、`Core/`のCoreの単体テスト、ツール定義のスナップショット |
 | `tests/fixtures/` | Git管理する基準ブック。現在はマクロなしの`lifecycle.xlsx` |
 
 本体と利用プロジェクトの責務は [設計文書](architecture.md) に従います。

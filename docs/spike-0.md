@@ -101,7 +101,7 @@ S5・S6・S7・S15はR4に残します。この確認をS6の合格とは扱い�
 T14で[PoC-1への移行](notes/spike-0-results.md#t14-poc-1への移行判定2026-11-01)を判定しました。
 
 1. 6操作の提供範囲・JSON Schema・envelope・省略時の挙動・状態遷移・未対応要求の拒否を確定し、承認を得ます。製品ツールはこの後に実装します。T16で[API契約](api.md#poc-1の提供範囲)に確定しました。
-2. Spike0の検証済みの処理をCoreへ移します。候補は`ExecutionGate`、`OwnershipRecord`、`RecordTransition`、`EndSafety`、`StaRunner`と、対応する非COMの確認です。
+2. Spike0の検証済みの処理をCoreへ移します。候補は`ExecutionGate`、`OwnershipRecord`、`RecordTransition`、`EndSafety`、`StaRunner`と、対応する非COMの確認です。T17で移しました。Spike0の実装と自己チェックは実験の記録として残します。
 3. MCP → 専用STA → 専用Excelで1セルを読み書きして終了する縦断を作り、AIクライアントから実Excelへ届くことを確認します。
 4. PoC-1の6操作へ広げます。
 5. L4〜L10とS13を確認します。

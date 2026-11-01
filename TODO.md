@@ -14,8 +14,8 @@ R3を対象とします。チェックは、記載した完了条件を満たし
 T13を終えた時点で、2026-11-01に作業を止めています。再開の入口は、下記のT20です。
 S13の不一致は、PoC-1の契約を変えずに扱うとユーザーが判断しました。[設計への反映](docs/notes/spike-0-results.md#設計への反映)を参照します。
 
-- コード: `2795c12`。この後の変更は文書だけです。
-- 最後に通った`npm run check`: run `ed97bfd6733347dcb671a759b90b3ce7`、テスト271件。
+- コード: `2795c12`。この後の変更は、文書とSpike0のプローブ`spikes/Spike0/InspectMcpShutdown.ps1`だけです。製品のコードは変わっていません。
+- 最後に通った`npm run check`: run `de5c947416a740d5af0be5e96456124d`、テスト271件。プローブのcommit時のhookで実行しました。
 - 固定コピー: `.xlwright/development/prepared/product-5e44d110a7354f11b7b5ff9a87a3f6dc/`。T13に使いました。
 - Claude Codeの登録はありません。T13の`.mcp.json`と`.claude/settings.local.json`は消しました。
 - `origin`へは一度もpushしていません。mainの全commitはこの端末にしかありません。pushは人がterminalで行います。

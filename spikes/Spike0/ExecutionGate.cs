@@ -86,6 +86,16 @@ internal sealed class ExecutionGate(TimeProvider? clock = null)
         }
     }
 
+    internal void RevokeForDiagnosticFailure()
+    {
+        lock (sync)
+        {
+            stopReason = "diagnostic-failure";
+            state = "isolated";
+            // The worker, not the observer, clears busy after its active call unwinds.
+        }
+    }
+
     internal void RequestShutdown()
     {
         lock (sync)

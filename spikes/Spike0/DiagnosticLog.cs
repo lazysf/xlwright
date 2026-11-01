@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Spike0;
 
-internal sealed class DiagnosticLog(string path) : IDisposable
+internal sealed class DiagnosticLog(string path, S11Evidence? timing = null, TextWriter? output = null) : IDisposable
 {
     private readonly object sync = new();
     private readonly StreamWriter writer = new(new FileStream(path, FileMode.CreateNew,
@@ -19,8 +19,16 @@ internal sealed class DiagnosticLog(string path) : IDisposable
                 snapshot = gate.Snapshot,
                 detail
             });
-            writer.WriteLine(line);
-            Console.WriteLine(line);
+            if (timing is null)
+            {
+                writer.WriteLine(line);
+                (output ?? Console.Out).WriteLine(line);
+            }
+            else
+            {
+                timing.Measure("diagnostic-file", () => writer.WriteLine(line));
+                timing.Measure("diagnostic-stdout", () => (output ?? Console.Out).WriteLine(line));
+            }
         }
     }
 

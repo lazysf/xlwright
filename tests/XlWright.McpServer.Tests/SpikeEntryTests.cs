@@ -74,6 +74,7 @@ public sealed class SpikeEntryTests : IDisposable
         "--excel-s1", "--excel-s2", "--excel-s3", "--excel-s4",
         "--excel-s9-release", "--excel-s9-limit", "--excel-s9-deadline",
         "--excel-s10-a2", "--excel-s10-b", "--excel-s10-c",
+        "--excel-s11r2-baseline", "--excel-s11r2-protected-view", "--excel-s11r2-wait", "--excel-s11r2-modal", "--excel-s11r2-shell2",
         "--excel-s14-auto", "--excel-s14-manual", "--excel-s14-mode-change");
 
     [Theory(Timeout = 60000)]

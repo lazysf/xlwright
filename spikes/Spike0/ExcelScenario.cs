@@ -8,7 +8,7 @@ namespace Spike0;
 // This is one lifecycle experiment, not the Core or a reusable session service.
 internal sealed partial class ExcelScenario(string workbookPath, OwnershipRecordFile record,
     ExecutionGate gate, DiagnosticLog log, string? unmanagedPath = null, string? recordFault = null,
-    string? startupCase = null, string? cellCase = null, string? calculationCase = null, S9Probe? s9 = null)
+    string? startupCase = null, string? cellCase = null, string? calculationCase = null, S9Probe? s9 = null, S11Probe? s11 = null)
 {
     private static readonly TimeSpan SessionTimeout = TimeSpan.FromSeconds(120);
     private readonly List<object> references = [];
@@ -35,13 +35,16 @@ internal sealed partial class ExcelScenario(string workbookPath, OwnershipRecord
         try
         {
             Start();
-            if (s9 is not null) ProbeS9();
+            if (s11 is not null) { EditKnownCell(); ProbeS11(); }
+            else if (s9 is not null) ProbeS9();
             else if (calculationCase is not null) ProbeCalculation();
             else if (cellCase is not null) ProbeCells();
             else if (startupCase is null) EditKnownCell();
             else ProbeStartup();
             if (unmanagedPath is not null) OpenUnmanagedCopy();
             End(save: true);
+            if (s11?.Scenario == "protected-view")
+                throw new InvalidOperationException("Protected View unexpectedly allowed termination; do not retry.");
             if (unmanagedPath is not null)
                 throw new InvalidOperationException("L3 unexpectedly allowed termination; do not retry.");
             if (recordFault is not null)
@@ -211,6 +214,7 @@ internal sealed partial class ExcelScenario(string workbookPath, OwnershipRecord
                 !StringComparer.OrdinalIgnoreCase.Equals(identity.Name, "EXCEL"))
                 throw new InvalidOperationException("New Excel ownership could not be established.");
         });
+        s11?.Identify(identity!, new nint(hwnd));
         if (recordFault == "owned")
         {
             // Approved exception for this fixed case only: show Excel before the owned record so a person can
@@ -328,7 +332,7 @@ internal sealed partial class ExcelScenario(string workbookPath, OwnershipRecord
                     {
                         closeStarted = true;
                         log.Write("close.started", gate);
-                        workbook.Close(SaveChanges: false);
+                        MeasureS11("close-call", () => workbook.Close(SaveChanges: false));
                         workbook = null;
                     });
                 gate.Step("restore-close-alerts", () => application!.DisplayAlerts = originalAlerts);
@@ -341,32 +345,36 @@ internal sealed partial class ExcelScenario(string workbookPath, OwnershipRecord
             }), () => gate.Step("quit", () =>
             {
                 log.Write("quit.started", gate);
-                application!.Quit();
+                MeasureS11("quit-call", () => application!.Quit());
                 quitReturned = true;
             }));
         }
         gate.Step("release-owned-references", () =>
         {
             for (int index = references.Count - 1; index >= 0; index--)
-                Marshal.FinalReleaseComObject(references[index]);
+            {
+                int current = index;
+                MeasureS11("release-reference", () => Marshal.FinalReleaseComObject(references[current]));
+            }
             references.Clear();
             seenReferences.Clear();
             workbook = null;
             workbooks = null;
             application = null;
         });
-        bool exited = gate.Step("wait-process-exit", () => process!.WaitForExit(
-            Math.Max(1, (int)Math.Ceiling(gate.Remaining.TotalMilliseconds))));
+        bool exited = false;
+        gate.Step("wait-process-exit", () => MeasureS11("wait-process-exit", () => exited = process!.WaitForExit(
+            Math.Max(1, (int)Math.Ceiling(gate.Remaining.TotalMilliseconds)))));
         if (!exited) throw new WorkStoppedException();
         exitConfirmed = true;
         if (!recordReleased)
         {
             log.Write("record-completed.started", gate);
-            RecordTransition.Run(gate, record, new(1, "completed"), () => gate.Step("release-record-lock", () =>
+            MeasureS11("record-completed", () => RecordTransition.Run(gate, record, new(1, "completed"), () => gate.Step("release-record-lock", () =>
             {
                 record.Dispose();
                 recordReleased = true;
-            }));
+            })));
         }
         gate.Complete("closed");
     }

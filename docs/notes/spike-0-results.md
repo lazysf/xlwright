@@ -3,6 +3,65 @@
 - Date: 2026-11-01
 - 出典: [検証コード](../../spikes/Spike0/Program.cs)、[準備記録](spike-0-preparation.md)、下記の実行ログ・保存ファイル・所有記録・OSプロセス照会、ユーザーによる実行・終了コード・整合性SID・DCOMイベント抽出結果の報告。
 
+## T15 VBA経路の最小確認（2026-11-01）
+
+遅延バインドのVBIDE操作で、`probe.xlsm`のコピーへ標準モジュールを1個Importできました。
+マクロの実行、保存、通常終了まで成立しました。判定は仮説を支持です。
+これはS5・S6・S7・S15の合格ではありません。
+
+- 環境: Excel 16.0 ビルド20527（64-bit）。ユーザーが通常のコンソールで実行しました。
+- 再現: 固定コピーの`Spike0.dll --excel-t15-vba`を1回だけ実行します。実行印は`.xlwright/spike0/t15-vba.attempt`です。
+- 検証コード: [VbaPathProbe.cs](../../spikes/Spike0/VbaPathProbe.cs)、[ExcelVbaPathProbe.cs](../../spikes/Spike0/ExcelVbaPathProbe.cs)。check runは`f5b5f25dabed4e9d889097ddf446d27e`、実行IDは`6a8fda0fb3044da29c2a9b3a545f0572`です。
+
+### 実行時の設定
+
+| 項目 | 値 |
+| --- | --- |
+| HKCUの`AccessVBOM` | 1 |
+| HKCUの`VBAWarnings` | 1 |
+| 調べた3か所のポリシーの`AccessVBOM` | なし |
+
+`AccessVBOM`と`VBAWarnings`は、T15の着手時点で既に1でした。
+この値を設定した時期と経緯は、リポジトリに記録がなく不明です。
+`VBAWarnings`を1以外にした状態での実行は未確認です。
+T15の後、ユーザーがトラスト センターで両方の設定を戻しました。
+戻した後の照会では、`AccessVBOM`は0、`VBAWarnings`は2でした。
+
+### 観測
+
+| 段階 | 観測 |
+| --- | --- |
+| `VBProject`の取得 | 成功。`Protection`は0、部品は3個 |
+| `VBComponents.Import` | 約29ms。名前`T15Module`、種類1（標準モジュール）、部品は4個 |
+| `Application.Run` | 約46ms。COMの読み戻しでA2は15（Double） |
+| 保存 | `Saved`はtrue |
+| Close・Quit・終了待ち | 約59ms・約1ms・約2.65秒 |
+
+終了コードは0です。
+ウィンドウ観測は5回で、`#32770`は0件でした。
+
+### 保存ファイルの照合
+
+保存したコピーのA2は数値15でした。パッケージのパート構成は基準ブックと同じです。
+`vbaProject.bin`のCFBストリームを読み、`T15Module`ストリームと、PROJECTストリームの`Module=T15Module`を確認しました。
+保存したブックを開き直してマクロを再実行することは、T15の範囲外で未確認です。
+
+### 後始末
+
+対象Excelの終了を確認しました。所有記録は`completed`、共有ガードは不在です。
+基準ブックのハッシュは`lifecycle.xlsx`・`probe.xlsm`とも固定値と一致し、Git差分はありません。
+
+### 設計への影響と未確認
+
+VBEを前提にしたP0の設計を見直す根拠は出ていません。
+VBIDE PIAを追加せず、IDispatchの遅延バインドで標準モジュールを追加できます。
+マクロの実行は既存のExcel PIAの`Application.Run`です。
+`dynamic`は採らず`InvokeMember`を使っています。DLRの型情報キャッシュがExcelへの参照を残す可能性を避けるためです。この可能性は実測していません。
+
+- アクセス拒否時のエラー値は未観測です。公開情報の6068と`0x800A17B4`がExcelのCOM経由で返るかは未確認です。
+- 同名モジュールの置換、文字コード、属性、エラー時の挙動はR4の対象です。
+- 今回の約2.65秒から、T11の約60秒の終了待ちについて結論は出しません。
+
 ## T11 s11r2の全体の評価（2026-11-01）
 
 ユーザーは、下記の実測を根拠にT11を限定評価として完了することを承認しました。

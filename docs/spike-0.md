@@ -75,11 +75,16 @@ S6では標準のVBIDE操作を優先し、独自パーサーや反映基盤を�
 
 ### VBA経路の最小確認
 
-T15はR2の最後に行います。VBEへのアクセスは製品の前提であり、未確認です。
+T15はR2の最後に行います。VBEへのアクセスは製品の前提です。
+T15は完了しました。判定は[結果記録](notes/spike-0-results.md#t15-vba経路の最小確認2026-11-01)を参照してください。
 
 1. 人が「VBAプロジェクト オブジェクト モデルへのアクセスを信頼する」の状態を確認します。この設定は[既定で無効](https://support.microsoft.com/en-gb/office/enable-or-disable-macros-in-microsoft-365-files-12b036fd-d140-4e74-b45e-16fed1a7e5c6)で、[Microsoftが危険性を警告しています](https://learn.microsoft.com/en-us/office/vba/library-reference/concepts/security-notes-for-microsoft-office-solution-developers)。
 2. 無効の場合、有効化は個別に承認します。
 3. Spike0の1ケースで、`probe.xlsm`のコピーへ標準モジュールを1個Importし、マクロを1回呼び、結果を保存して通常終了します。VBIDE PIAは追加せず、遅延バインドを使います。
+
+入口は`--excel-t15-vba`で、実行印は`.xlwright/spike0/t15-vba.attempt`です。
+Excelの生成と実行印の作成より前にAccessVBOMを読み、無効なら開始しません。
+マクロはLifecycleシートのA2へ15を書き、保存後のファイルからこの値を確認します。
 
 設定は確認の間だけ有効にして戻すことを既定とします。有効のまま運用するかはT14で判断します。
 組織の設定などで使えない場合とImportが成立しない場合は、再送せず記録し、VBEを前提にしたP0の設計を人が見直します。

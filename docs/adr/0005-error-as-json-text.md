@@ -1,6 +1,7 @@
 # 0005: 製品ツールの失敗を、McpExceptionの1行のJSONで返す
 
 - Status: Accepted
+- Amended-By: 0007
 
 2026-11-01に、T16でユーザーが承認しました。
 PoC-1の6操作の失敗は`isError: true`とし、`structuredContent`を付けません。

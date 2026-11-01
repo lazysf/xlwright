@@ -18,6 +18,7 @@ Toolsの要件はdraftの本文で確認しました。
 - `isError`と未知のツールは、どちらも終了コード5でした。
 - 削除前の`dev_excel_smoke_status`で、`ArgumentException("Unknown receipt.")`の応答は`An error occurred invoking 'dev_excel_smoke_status'.`でした。投げた文言は応答に含まれませんでした。
 - 同じ箇所を一時的に`McpException`へ変えると、応答に`Unknown receipt.`が含まれました。
+- 2026-11-01に、`McpServerTool`のサブクラスから投げた`McpException`を確認しました。応答のテキストは`An error occurred invoking '<tool>':`で始まりました。製品ツールは`CallToolResult`を直接返します。[ADR 0007](../adr/0007-error-as-direct-result.md)を参照してください。
 
 ## 開発フローへ取り入れた理由
 
@@ -57,5 +58,4 @@ Toolsの要件はdraftの本文で確認しました。
 ## 未確認
 
 - 対象のAIクライアントが使うプロトコル世代。
-- `McpException`の文言の扱いは、上記の1箇所でだけ確認しました。全経路の保証ではありません。
 - mcpdoをxlwrightの開発サーバーへ接続した場合の挙動。実行していません。

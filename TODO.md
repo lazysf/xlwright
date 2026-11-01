@@ -11,31 +11,23 @@ R3を対象とします。チェックは、記載した完了条件を満たし
 
 ### 停止時点の状態
 
-R3のT18を終えた時点で、2026-11-01に作業を止めています。再開の入口は、下記の「T19の前提を実装する」です。
+T19を終えた時点で、2026-11-01に作業を止めています。再開の入口は、下記のT13です。
 
-- コード: `095ef99`。この後の変更は文書だけです。
-- 最後に通った`npm run check`: run `7db13f79bb1143d7878edf4edad566ff`、テスト131件。ソースは`095ef99`から変わっていません。
+- コード: T19までの変更は、作業ツリーにあり未commitです。commitの基準は`d664f9e`です。
+- 最後に通った`npm run check`: run `cfb821a152b14b6f9278d87fb0acf4b2`、テスト271件。
+- 固定コピー: `.xlwright/development/prepared/product-8cc5eca6afe1411c8dc55b0d868f688c/`。独立レビューの修正を含むT19の再実行に使いました。
 - `origin`へは一度もpushしていません。mainの全commitはこの端末にしかありません。pushは人がterminalで行います。
-- 2026-11-01の照会で、EXCELとXlWright.McpServerのプロセスは0件でした。
+- 同じ時点の照会で、EXCELとXlWright.McpServerのプロセスは0件でした。
 
 ### 項目
 
 - [x] **T16 6操作の公開契約を確定する。** 提供範囲、JSON Schema、envelope、省略時の挙動、状態遷移、未対応要求の拒否を確定し、承認を得ます。製品ツールはこの後に実装します。2026-11-01にユーザーが承認し、[API契約](docs/api.md#poc-1の提供範囲)、[ADR 0005](docs/adr/0005-error-as-json-text.md)、[ADR 0006](docs/adr/0006-project-json-config.md)へ反映しました。SDKでの成立は[未確認](docs/api.md#未確認)のとおりT17以降で確認します。
 - [x] **T17 検証済みの処理をCoreへ移す。** Spike0の`ExecutionGate`・`OwnershipRecord`・`RecordTransition`・`EndSafety`・`StaRunner`を移し、非COMの確認をxUnitへ移します。T12のうち記録更新・期限・応答の確定・次回開始の判定は、Coreの非COMテストで確認します。2026-11-01に`src/XlWright.Core/`へ移し、T16の契約のcode・detailに合わせました。StaRunnerは常駐の`StaThread`にしました。Spike0は変えていません。`npm run check`の全工程が通過しました（run `9fd1af6574e746a8a566f1f7f5b7ddc3`、テスト119件）。McpServerからCoreへの参照はまだありません。
 - [x] **T18 製品の実Excel経路を用意する。** 固定コピーにサーバーとテストを含め、接続を維持するxUnitのシナリオを`npm run check`から除外します。固定コピー以外を実行させない検査の置き場を決めます。表示要求を送る手動復旧スクリプトも用意します。2026-11-01に、シナリオを別のテストプロジェクト`tests/XlWright.RealExcel.Tests/`に置き、`npm run prepare:product`と`scripts/Show-OwnedExcel.ps1`を加えました。`npm run check`の全工程が通過しました（run `2d05a04e53b84a409ee01743f9036843`、テスト131件）。エージェントが固定コピーを作り、コピーの接続シナリオが通ることを確認しました（Excelは起動しない）。表示要求のスクリプトは、合成の記録での拒否だけを確認しています。実機での実行は未実施です。
-- [ ] **T19の前提を実装する。** 製品ツールは`dev_status`だけで、McpServerはCoreを参照していません。次をすべて満たしてからT19へ進みます。
-  - 判断: Coreの公開範囲を決めます。Coreの型はすべて`internal`で、`InternalsVisibleTo`はテストだけを対象にしています。
-  - 判断: 開発モード（`--development`、`dev_status`）を製品ビルドに含めるかを決めます。`Program.BuildHash`はsingle-file publishでは例外になります。
-  - 実装: McpServerからCoreを参照し、T19が使う5ツールを実装します。
-  - 確認: `npm run snapshot:tools`でツール定義のスナップショットを更新し、差分を確認します。引数をツール側で検査する形がSDK 2.3.0で組めるかを確かめ、[API契約の未確認](docs/api.md#未確認)を更新します。
-  - ガード: `tests/XlWright.RealExcel.Tests/PreparedCopy.cs`の場所の確認を直します。リポジトリを`prepared`から導いて同じ`prepared`と比べているため、`.xlwright/development/prepared/product-*`の形ならどこに置いても通ります。
-  - ガード: 製品シナリオに共有ガード`active-smoke.json`を作らせます。現在は存在しないことを確認するだけで、製品シナリオ同士やSpike0との同時実行を止められません。
-  - ガード: `scripts/prepare-experiment.mjs`が出すmanifestを`PreparedCopy.Verify`に通すテストを加えます。現在`npm run check`はこのスクリプトを実行しません。
-  - ガード: `scripts/build-guard.mjs`の鮮度の確認をCoreの変更にも広げます。現在はMcpServerのソースだけを見ています。
-  - ガード: `scripts/Show-OwnedExcel.ps1`に`#requires -PSEdition Desktop`を加えます。PowerShell 7でも起動しますが、正しい記録まで拒否します。
-- [ ] **T19 1セルの縦断を確認する。** session_start → range_set → range_get → session_save → session_end を、人が実行します（実機）。
+- [x] **T19の前提を実装する。** 2026-11-01に、公開範囲を`ExcelSession`の窓口に限り、開発モードを[ADR 0009](docs/adr/0009-development-mode-without-excel.md)、Excelの型参照を[ADR 0008](docs/adr/0008-embedded-office-pia.md)に決めました。5ツールとガード5件を実装し、スナップショットの差分とInspectorの拒否応答を確認しました。失敗の返し方は[ADR 0007](docs/adr/0007-error-as-direct-result.md)のとおりです。
+- [x] **T19 1セルの縦断を確認する。** 2026-11-01に、人が固定コピーから実行し、数値1セルの読み書き・保存・終了が成功しました。[結果](docs/notes/spike-0-results.md#t191セルの縦断2026-11-01)を参照します。
 - [ ] **T13 Claude Codeから縦断とS13を確認する。** Git管理外のlocal scopeで固定コピーを登録し、MCP起動経路からのCOM生成も確認します（実機）。
-- [ ] **T20 6操作へ広げる。** PoC-1合格条件1〜9とL9・L10を確認します。既存Excelとの同時利用、所有Excelの予期しない終了、計算鮮度の契約の製品経路での検証、終了待ちが期限内に収まることを含みます（実機）。
+- [ ] **T20 6操作へ広げる。** PoC-1合格条件1〜9とL9・L10を確認します。既存Excelとの同時利用、所有Excelの予期しない終了、計算鮮度の契約の製品経路での検証、終了待ちが期限内に収まることを含みます（実機）。T19で送った`session_status`と`last_error`、`SERVERCALL_RETRYLATER`の再試行、タイムアウト時のウィンドウ診断もここで実装します。
 - [ ] **T12 L4〜L8のExcel依存条件を確認する。** Quit後の残存、期限後の遅延完了、COM保留中のEOF、保存・Close等の遅延復帰を確認します（実機）。
 - [ ] **開発環境の後始末。** 2026-11-01にユーザーの判断で、文書から参照されない生成物を削除しました（`.xlwright/`は約2.1GBから約350MB）。残りは、`.xlwright/spike0/fixture-preparation/`の`s11r2/`と`s14-*/`にある`exported-S11Module.bas`、用途が未確認の`.xlwright/fixture-builder/`と`.xlwright/t11-discarded/`です。これらの扱いはユーザーが判断します。
 

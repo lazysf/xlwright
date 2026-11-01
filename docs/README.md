@@ -18,6 +18,9 @@
 - [adr/0004-process-scoped-session.md](adr/0004-process-scoped-session.md): セッションをサーバープロセス単位に保ち、`session_id`を導入しない判断。
 - [adr/0005-error-as-json-text.md](adr/0005-error-as-json-text.md): 製品ツールの失敗を`McpException`の1行のJSONで返す判断。
 - [adr/0006-project-json-config.md](adr/0006-project-json-config.md): 利用プロジェクトの設定を`project.json`にする判断。
+- [adr/0007-error-as-direct-result.md](adr/0007-error-as-direct-result.md): 製品ツールの失敗を`CallToolResult`で直接返す判断。
+- [adr/0008-embedded-office-pia.md](adr/0008-embedded-office-pia.md): CoreのExcel型を既存PIAの埋込みで参照する判断。
+- [adr/0009-development-mode-without-excel.md](adr/0009-development-mode-without-excel.md): 開発モードを製品ビルドに含め、Excelを起動しない判断。
 
 調査記録は仕様の正本とは区別します。
 

@@ -16,9 +16,9 @@ API契約と実機検証の仮説は、それぞれの正式文書で管理し�
 プレビュー版は選択しません。
 選択規則は [Microsoftのglobal.jsonリファレンス](https://learn.microsoft.com/en-us/dotnet/core/tools/global-json) に従います。
 
-現在のC#プロジェクトはSpike0、Core、MCP接続基盤、MCPテスト、実Excelのシナリオです。製品のExcel操作APIは未実装で、McpServerはCoreをまだ参照していません。
+現在のC#プロジェクトはSpike0、Core、McpServer、MCPテスト、実Excelのシナリオです。製品ツールは`session_status`を除く5つを実装しています。
 Spike0とCoreは.NET 10のWindows Desktop共有フレームワークを使います。
-Spike0のビルドには、Officeの既存PIAが必要です。固定版は[環境の確認結果](notes/verification-environment.md)を参照してください。
+Spike0とCoreのビルドには、Officeの既存PIAが必要です。固定版は[環境の確認結果](notes/verification-environment.md)を参照してください。
 同じ理由で、GitHubの標準ランナーではビルドできないためCIを置いていません。
 
 ## 配置方針
@@ -47,9 +47,9 @@ Spike0のビルドには、Officeの既存PIAが必要です。固定版は[環�
 | パス | 用途 |
 | --- | --- |
 | `spikes/Spike0/` | 実機検証の実験コードと非COM自己チェック |
-| `src/XlWright.Core/` | MCPに依存しない中核処理。現在はSpike0から移した実行枠・所有記録・終了安全確認・常駐STA |
-| `src/XlWright.McpServer/` | stdio接続基盤と開発モードの`dev_status`。製品のExcel操作APIは未実装 |
-| `tests/XlWright.McpServer.Tests/` | サーバーを実プロセスで起動するxUnitテスト、`Core/`のCoreの単体テスト、Excel入口と固定コピーの検査、手動復旧スクリプトの検査、ツール定義のスナップショット |
+| `src/XlWright.Core/` | MCPに依存しない中核処理。McpServerへ公開するのは`ExcelSession`と結果・エラーの型だけで、STA・実行枠・COMの実装はinternalです |
+| `src/XlWright.McpServer/` | stdioの製品ツールと開発モードの`dev_status` |
+| `tests/XlWright.McpServer.Tests/` | サーバーを実プロセスで起動するxUnitテスト、`Core/`のCoreの単体テスト（`IExcelDriver`の偽の実装を含む）、Excel入口と固定コピーの検査、手動復旧スクリプトの検査、ツール定義のスナップショット |
 | `tests/XlWright.RealExcel.Tests/` | 製品の実Excelのシナリオ。固定コピーから人が実行する |
 | `tests/fixtures/` | Git管理する基準ブック。マクロなしの`lifecycle.xlsx`と、実験ごとの`s9/`・`s10/`・`s11/`・`s14/` |
 
@@ -116,7 +116,7 @@ R3のCoreは、COMの境界の外をExcelなしで試験できる形で作りま
 | Coreの単体（R3から） | xUnit | `npm run check` |
 | MCPのプロトコル | xUnitからサーバーを実プロセスで起動 | `npm run check` |
 | Excel入口の検査 | xUnitから合成リポジトリでSpike0の`--preflight`を実行。Excelのコードへ到達しない | `npm run check` |
-| 製品の固定コピーの検査 | xUnitから合成リポジトリでRealExcelのシナリオを実行。現在のシナリオはExcelへ到達しない | `npm run check` |
+| 製品の固定コピーの検査 | xUnitから合成リポジトリでRealExcelの接続シナリオだけを実行。Excelへ到達しない | `npm run check` |
 | 手動復旧スクリプトの検査 | xUnitから合成の記録で`Show-OwnedExcel.ps1`の`-CheckOnly`を実行。ウィンドウの探索へ到達しない | `npm run check` |
 | 公開内容 | Inspector CLI、スキーマ検査、スナップショット | `npm run check` |
 | 実Excel | 固定コピーの実験とRealExcelのシナリオ | 承認後に人が実行 |
@@ -172,7 +172,7 @@ CLIの終了コードは、0が成功、5がツールの`isError`または未知
 必要なときだけ`npm run inspect:web`でGUIを起動します。
 画面でxlwrightへ接続し、Toolsから引数・応答を確認します。
 ProtocolでJSON-RPC、Consoleでサーバーの標準エラーを調査できます。
-起動と`dev_status`はExcelを操作しません。
+Inspectorは`--development`で起動するため、Excelを起動しません。`session_start`は設定の検証までを確認できます。
 
 [scripts/inspector.mjs](../scripts/inspector.mjs)は公式CLI・GUIへの薄い起動処理です。
 標準機能の`--config`による読取り専用設定を使います。
@@ -201,9 +201,8 @@ Hotloadによる自動差替えは採用しません。
 
 - ツール定義は、モデルが読む指示として書きます。説明には用途、副作用、失敗後に再試行できるかを書きます。
 - 入力の検証失敗と業務上の失敗は、`isError`のツール実行エラーで返します。文言には次に取る行動を含めます。
-- モデルへ伝える失敗は`McpException`で返します。C# SDKの応答に`ArgumentException`の文言は含まれず、`McpException`の文言は含まれることを確認しています。
-- 製品ツールの失敗の文言は、[API契約](api.md#応答の形)の1行のJSONとします。
-- 製品ツールの引数は、SDKの型変換に任せずツール側で検査し、同じ形の失敗で返します。SDKの既定の失敗文言は詳細を含まないためです。
+- 製品ツールの失敗は、[API契約](api.md#応答の形)の1行のJSONを持つ`isError: true`の`CallToolResult`で返します。`McpException`の文言にはSDKが接頭辞を付けるためです。
+- 製品ツールの引数は、`McpServerTool`のサブクラスで生の`Arguments`を受け取って検査し、同じ形の失敗で返します。SDKの既定の失敗文言は詳細を含まないためです。
 - 注釈の`ReadOnly`・`Destructive`・`Idempotent`・`OpenWorld`は全ツールで明示します。注釈を安全制御の根拠には数えません。
 - 結果は`outputSchema`に沿う`structuredContent`で返し、同じJSONをテキストでも返します。
 - 大きな応答になり得るツールには、範囲や項目を絞る引数を設けます。上限超過のエラーには絞り方を含めます。
@@ -244,20 +243,25 @@ Spike0のExcel入口は、次の検査を通らなければ開始しません。
 製品の実Excelのシナリオは`tests/XlWright.RealExcel.Tests/`に置きます。
 `npm run check`はこのプロジェクトをビルドしますが、実行しません。
 人は、上記の手順2で`npm run prepare:experiment`の代わりに`npm run prepare:product`を使い、表示されたコマンドを手順4で実行します。
+このコマンドは実Excelを起動するシナリオも実行します。
 
 ```powershell
 dotnet .xlwright/development/prepared/product-<id>/bin/XlWright.RealExcel.Tests/release/XlWright.RealExcel.Tests.dll
 ```
 
 `npm run prepare:product`は、サーバーとシナリオの出力を`.xlwright/development/prepared/product-<id>/bin/`へビルドと同じ配置でコピーします。
-コピーの条件と`manifest.json`の内容はSpike0と同じです。基準ブックのハッシュは含めません。
+コピーの条件と`manifest.json`の内容はSpike0と同じです。基準ブックのハッシュは含めず、作成時のリポジトリの絶対パスを含めます。
 シナリオは、どのテストより先に次の検査を行います。検査に失敗すると全テストが失敗します。
 
-- `product-<id>/`の下から起動され、全ファイルが`manifest.json`と一致すること。
+- `product-<id>/`の下から起動され、`manifest.json`のリポジトリと現在の位置が一致し、全ファイルが一致すること。
 - 共有ガード`.xlwright/mcp-development/active-smoke.json`が存在しないこと。
 
 シナリオはコピー内のサーバーを起動し、接続を維持したまま要求を送ります。
-現在のシナリオは接続の確認だけで、Excelを起動しません。
+接続のシナリオは`--development`で起動し、Excelを起動しません。
+
+`VerticalSliceTests`はT19の縦断です。`--development`なしで起動し、実Excelを操作します。
+シナリオはガードを作り、`.xlwright/development/real-excel/<run>/`へ基準ブックのコピーと`project.json`を作ります。
+正常終了を確認した後だけガードを消します。失敗時は残り、人の確認まで次の実行を止めます。
 
 #### 表示要求の手動復旧スクリプト
 
@@ -283,8 +287,8 @@ powershell.exe -NoProfile -File scripts/Show-OwnedExcel.ps1 -RecordPath <所有�
 ## 継続利用するMCP開発環境
 
 stdio接続基盤です。経緯は[ADR 0002](adr/0002-development-mcp-foundation.md)と[ADR 0003](adr/0003-inspector-centered-development.md)を参照してください。
-引数なしでは開発用ツールを公開せず、Excel操作を行いません。製品のExcel操作APIは未実装です。
-`--development`で起動すると`dev_status`だけを公開します。
+引数なしでは製品ツールだけを公開し、`session_start`で専用Excelを起動します。
+`--development`で起動すると`dev_status`も公開し、`session_start`は設定の検証の後に`NOT_IMPLEMENTED`で止まります。Excelは起動しません。理由は[ADR 0009](adr/0009-development-mode-without-excel.md)にあります。
 
 `dev_status`は入力なしで、起動識別子とサーバーのSHA-256を返します。Excelを操作しません。
 

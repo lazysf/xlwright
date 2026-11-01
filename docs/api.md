@@ -56,8 +56,8 @@ T16で2026-11-01にユーザーが承認した契約です。製品ツールの�
 `outputSchema`は成功の形だけを記述します。ルートには`additionalProperties`を指定せず、後続の項目追加を互換に保ちます。
 
 失敗は`isError: true`とし、`structuredContent`を付けません。
-テキストは次の形の1行のJSONで、`McpException`の文言として返します。
-選んだ理由は[ADR 0005](adr/0005-error-as-json-text.md)にあります。
+テキストは次の形の1行のJSONだけです。
+選んだ理由は[ADR 0005](adr/0005-error-as-json-text.md)と[ADR 0007](adr/0007-error-as-direct-result.md)にあります。
 
 ```json
 {
@@ -122,14 +122,15 @@ inputSchemaは`additionalProperties: false`とします。
 
 | 操作 | 成功の出力（`session`以外） | 注釈 RO / D / I / OW |
 | --- | --- | --- |
-| `session_start` | `workbook` | false / false / false / false |
+| `session_start` | `workbook` | false / false / false / true |
 | `session_status` | `workbook`（未確定ならnull）、`last_error`（なければnull） | true / false / true / false |
-| `range_get` | `sheet`、`address`、要求した`values`・`formulas` | false / false / true / false |
-| `range_set` | `sheet`、`address` | false / true / true / false |
+| `range_get` | `sheet`、`address`、要求した`values`・`formulas` | false / false / true / true |
+| `range_set` | `sheet`、`address` | false / true / true / true |
 | `session_save` | `workbook` | false / true / true / false |
 | `session_end` | `workbook`（`state`はclosed） | false / true / false / false |
 
 注釈はreadOnly・destructive・idempotent・openWorldの順です。
+`session_start`・`range_get`・`range_set`は、ブックのコードと数式が外部へ接続し得るため、openWorldをtrueとします。
 `range_get`は`Application.Calculate()`でブックの計算結果を変え、それが保存で残り得るため、readOnlyをfalseとします。
 `session_save`はディスク上のファイルを上書きするため、destructiveをtrueとします。
 
@@ -147,9 +148,9 @@ inputSchemaは`additionalProperties: false`とします。
 
 | 操作 | 条件 | code / detail | 状態 |
 | --- | --- | --- | --- |
-| `session_start` | 相対パス | `INVALID_REQUEST` / `INVALID_ARGUMENT` | 変更しない |
+| `session_start` | ローカルドライブの絶対パス以外（相対パス、UNC、`\\?\`等のデバイスパス、代替データストリームの指定） | `INVALID_REQUEST` / `INVALID_ARGUMENT` | 変更しない |
 | `session_start` | 設定ファイルがない | `NOT_FOUND` / `CONFIG_NOT_FOUND` | closed |
-| `session_start` | 設定の構文・キー・値・拡張子の不正、`workspace`・`dist`の重なり | `INVALID_REQUEST` / `INVALID_CONFIG` | closed |
+| `session_start` | 設定の構文・キー・値・拡張子の不正、ローカルドライブ以外のパス、`workspace`・`dist`の重なり | `INVALID_REQUEST` / `INVALID_CONFIG` | closed |
 | `session_start` | 主ブック・VBAソース・テストのディレクトリがない | `NOT_FOUND` / `PATH_NOT_FOUND` | closed |
 | `session_start` | 主ブックが読取専用 | `CONFLICT` / `WORKBOOK_READ_ONLY` | closed |
 | `session_start` | 主ブックを他のプロセスが使用中 | `CONFLICT` / `WORKBOOK_LOCKED` | closed |
@@ -267,9 +268,11 @@ PoC-1で使う`detail`は次のとおりです。
 
 ### 未確認
 
-- `McpException`の文言がそのままテキストになることは、1箇所でだけ確認しました。[調査記録](notes/mcp-best-practices.md#対象の版と実測)を参照してください。
-- 引数をツール側で検査する形を、SDK 2.3.0で組めるかは未確認です。
 - 単一セルでの計算鮮度の手順と読戻しの照合は、製品経路で未検証です。
+- `session_status`は未実装です。T19の5ツールの失敗の文言は、このツールを案内します。
+
+引数をツール側で検査する形は、SDK 2.3.0の`McpServerTool`のサブクラスで組めることを確認しました。
+Excelを起動しない範囲の応答は、`tests/XlWright.McpServer.Tests/`とInspectorで確認しています。
 
 ## 共通規約
 

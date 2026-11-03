@@ -24,6 +24,12 @@
 
 設定を変えた後に、アプリは再起動していない見込みです。会話のプロセスの親の`claude.exe`の生成時刻が、設定を変えた時刻より前でした。人には確認していません。
 
+プロジェクトの設定の形は、アプリを再起動した後にも試しました（2026-11-03）。ユーザーの設定から`plugins/xlwright-dev`を外し、`.claude/settings.local.json`の`env.CLAUDE_CODE_PLUGIN_DIRS`にだけ書いてから、人がアプリを再起動しました。最上位の`claude.exe`の生成時刻は、設定を書いた後でした。このリポジトリの新しい会話でも、判定は不一致でした。xlwrightのツールは現れず、`XlWright.McpServer`のプロセスも無く、会話のシェルの`CLAUDE_CODE_PLUGIN_DIRS`はユーザーの設定の値でした。
+
+- デスクトップアプリのCodeのプロジェクトの環境の`.env`に`CLAUDE_CODE_PLUGIN_DIRS`を書く形: 支持（2026-11-03）。値は`~/.claude/mods/usage-band;~/projects/xlwright/plugins/xlwright-dev`です。ユーザーの設定は`~/.claude/mods/usage-band`だけにし、`.claude/settings.local.json`には`env`を書かず、人がアプリを再起動しました。このリポジトリの新しい会話に`mcp__plugin_xlwright-dev_xlwright__server_info`が現れ、`build_id`は`latest.json`のビルドと一致しました。サーバーは、再起動の後に生成された`claude.exe`の子でした。`~`で始まるパスは、この形でも読み込まれました。
+- 会話のシェルの`CLAUDE_CODE_PLUGIN_DIRS`は、`.env`の値の`~`を展開したものでした。ユーザーの設定の値とはつながっていませんでした。
+- `.env`の形では、ほかのプロジェクトの新しい会話に、xlwrightのツールは現れず、サーバーのプロセスも増えませんでした。人が新しい会話を開いて確かめました。
+
 ### 新しい会話だけで新しい版が読まれるか
 
 支持。
@@ -46,6 +52,7 @@
 ## 後始末とGit差分
 
 - プロジェクトの`.claude/settings.local.json`は、効かなかったため消した。
-- ユーザーの設定の`CLAUDE_CODE_PLUGIN_DIRS`の追加は、人の承認を得て行い、残している。戻すには、追加した`;~/projects/xlwright/plugins/xlwright-dev`を消す。
+- ユーザーの設定の`CLAUDE_CODE_PLUGIN_DIRS`への追加は、人の承認を得て行い、プロジェクトの環境の`.env`の形を確かめる前に人が外した。今は`.env`の形で読み込んでいる。
+- 再起動の後に試した`.claude/settings.local.json`の`env`は、効かなかったため消した。
 - 動いている会話のビルドのフォルダの名前の変更も、このとき試した（[記録](build-folder-rename.md)）。
 - Gitの差分は、確認の入口の`.mcp.json`の書き出し、プラグインのマニフェスト、`.gitignore`、文書の更新です。

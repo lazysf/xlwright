@@ -56,16 +56,12 @@ hookの設定は [prek.toml](../prek.toml)、Markdownのルールは [.markdownl
 ## 開発版のプラグイン
 
 確認の入口が最後に通したビルドを、Claude Codeの会話から使うためのプラグインです。設計は[サーバーとビルドとプラグイン](architecture.md#サーバーとビルドとプラグイン)にあります。
-ユーザーの設定`~/.claude/settings.json`へ書き込むため、入れるのは人です（または人の承認を得て行います）。確認の入口を1回通してから、`env`の`CLAUDE_CODE_PLUGIN_DIRS`に`~/<リポジトリまでのパス>/plugins/xlwright-dev`を加えます。ほかの値がある時は、`;`で区切って後ろに足します。
+デスクトップアプリの設定に書くため、入れるのは人です。確認の入口を1回通してから、Codeのこのリポジトリのプロジェクトの環境の`.env`に、次の1行を書きます。ユーザーの設定の`env`に`CLAUDE_CODE_PLUGIN_DIRS`がある時は、その値も`;`で区切って含めます。会話の`CLAUDE_CODE_PLUGIN_DIRS`は、`.env`の値になったためです。
 
-```json
-{
-  "env": {
-    "CLAUDE_CODE_PLUGIN_DIRS": "~/projects/xlwright/plugins/xlwright-dev"
-  }
-}
+```text
+CLAUDE_CODE_PLUGIN_DIRS=~/<リポジトリまでのパス>/plugins/xlwright-dev
 ```
 
-新しく始めた会話に、`mcp__plugin_xlwright-dev_xlwright__server_info`が現れます。開いたままの会話は、始めた時のビルドを使い続けます（[記録](notes/dev-plugin-loading.md)）。
-この設定は、すべてのプロジェクトの会話で開発版のサーバーを起動します。開発版のサーバーには`--project`としてこのリポジトリの完全なパスが渡るため、ほかのプロジェクトのアプリでは開始できません。
-戻すには、加えたパスを消します。
+アプリを再起動してから、新しく始めた会話に`mcp__plugin_xlwright-dev_xlwright__server_info`が現れます。開いたままの会話は、始めた時のビルドを使い続けます（[記録](notes/dev-plugin-loading.md)）。
+開発版のサーバーは、このリポジトリの会話でだけ起動します。
+戻すには、`.env`の行を消します。

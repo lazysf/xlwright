@@ -351,7 +351,9 @@ xlwrightが止まって知らせる時に、人が取る手順です。段階2�
 - 開発版のプラグインは`xlwright-dev`、利用する版のプラグインは`xlwright`という名前にします。どちらも、プラグインの中のMCPサーバーの名前は`xlwright`です。
 - Claude Codeはツールに`mcp__plugin_<プラグイン名>_<サーバー名>__`を付けます（[MCP](https://code.claude.com/docs/en/mcp.md)）。そのため、ツールの名前は`mcp__plugin_xlwright-dev_xlwright__<ツール名>`と`mcp__plugin_xlwright_xlwright__<ツール名>`に分かれます。事前の許可の設定は、この名前で書きます。
 - 開発版の入れ方: `plugins/xlwright-dev/`を、`--plugin-dir`と同じ形で読み込ませます。プラグインはその場所のまま読み込まれ、`${CLAUDE_PLUGIN_ROOT}`はこのフォルダを指します（[プラグインの読み込み](https://code.claude.com/docs/en/plugins/loading.md)）。プラグインの`plugin.json`には`version`を書きません。確認の入口が通ると、`plugins/xlwright-dev/.mcp.json`（Git管理外）を書き出します。中身は、`dotnet`で`${CLAUDE_PLUGIN_ROOT}/../../.xlwright/builds/<build-id>/XlWright.McpServer.dll`を起動し、`--project`にこのリポジトリの完全なパスを渡すものです。
-- 人は、ユーザーの設定`~/.claude/settings.json`の`env.CLAUDE_CODE_PLUGIN_DIRS`に、`plugins/xlwright-dev`の絶対パスか`~`で始まるパスを加えます。リポジトリの外の設定のため、人が行うか、人の承認を得て行います。デスクトップアプリの画面ではローカルのフォルダのマーケットプレイスを追加できず、プロジェクトの設定の`env`では読み込まれませんでした（[記録](notes/dev-plugin-loading.md)）。この設定は、すべてのプロジェクトの会話で開発版のサーバーを起動します。そのため開発版は、`--project`に`${CLAUDE_PROJECT_DIR}`ではなくこのリポジトリを渡し、ほかのプロジェクトのアプリでの開始を[パスの制限](#パスの制限)で拒否させます。サーバーが起動しても、Excelは`session_start`まで起動しません。
+- 人は、デスクトップアプリのCodeのこのリポジトリのプロジェクトの環境の`.env`に、`CLAUDE_CODE_PLUGIN_DIRS`として`plugins/xlwright-dev`の絶対パスか`~`で始まるパスを書きます。アプリの設定のため、人が行います。デスクトップアプリの画面ではローカルのフォルダのマーケットプレイスを追加できず、プロジェクトの設定ファイルの`env`では、アプリを再起動しても読み込まれませんでした（[記録](notes/dev-plugin-loading.md)）。
+- 確認済み（段階0と段階1、[記録](notes/dev-plugin-loading.md)）: プロジェクトの環境の`.env`の形では、このリポジトリの新しい会話にだけ開発版のサーバーが起動し、ほかのプロジェクトの会話には起動しなかった。ユーザーの設定の`env`に書く形でも読み込まれたが、すべてのプロジェクトの会話でサーバーが起動した。
+- 開発版は、`--project`に`${CLAUDE_PROJECT_DIR}`ではなくこのリポジトリを渡します。ほかのプロジェクトの会話で読み込まれた時も、ほかのプロジェクトのアプリでの開始を[パスの制限](#パスの制限)で拒否させるためです。サーバーが起動しても、Excelは`session_start`まで起動しません。
 - 確認済み（段階0、[記録](notes/dev-plugin-loading.md)）: 新しい会話は、確認の入口が最後に通したビルドを読み、開いたままの会話は前のビルドを使い続けた。
 - 利用する版は、.NETの実行環境を同梱する自己完結の形で発行し、プラグインに入れます。別の端末で.NETを入れる手順を省くためです（[提供形態](requirements.md#利用環境と提供形態)）。
 - 未確認（段階4）: 会社のPCの管理設定が、プラグインの入手元を制限していないか。GitHubから配布物を取得できるか。成立しない時は、リポジトリを手元に写し、ローカルのフォルダのマーケットプレイスとして追加します。

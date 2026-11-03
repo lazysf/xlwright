@@ -39,6 +39,7 @@
 - [notes/mcp-reload-study.md](notes/mcp-reload-study.md): 標準再読込み・Kitsune・Hotloadの調査、Inspector中心の開発環境を採用する根拠、プラグインによる開発版の更新。
 - [notes/mcp-server-development-handoff.md](notes/mcp-server-development-handoff.md): dotfilesへ持ち出すための、MCPサーバー開発環境の知見と標準化候補。単独で読める引継ぎ資料。
 - [notes/mcp-best-practices.md](notes/mcp-best-practices.md): MCPサーバーの設計・開発の公式資料の調査、実測、現在の実装との差、Claude Codeでの呼出しと結果の制限。
+- [notes/existing-excel-mcp-servers.md](notes/existing-excel-mcp-servers.md): Excelを扱う既存のMCPサーバーの調査と、xlwrightの要件との差。
 
 [PROJECT_OVERVIEW_V22.md](../references/PROJECT_OVERVIEW_V22.md) は初期の参考資料です。
 正式文書に未移行の記述を、自動的に現行仕様として採用しないでください。

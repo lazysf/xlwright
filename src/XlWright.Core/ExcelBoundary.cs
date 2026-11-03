@@ -38,6 +38,13 @@ public interface IExcel
     /// <summary>The full paths of open workbooks and protected view windows; null for a workbook without a path.</summary>
     IReadOnlyList<string?> OpenWorkbookPaths();
 
+    /// <summary>
+    /// Removes every standard and class module of the main workbook, then imports <paramref name="modules"/> in order
+    /// and checks each imported name and type. Returns the removed names that are not in <paramref name="modules"/>.
+    /// Throws <see cref="VbaSyncException"/> for the failures docs/api.md "vba_sync" names.
+    /// </summary>
+    IReadOnlyList<string> SyncVba(IReadOnlyList<VbaModule> modules);
+
     /// <summary>Closes every workbook without saving, asks Excel to quit, and releases the references.</summary>
     void CloseAllAndQuit();
 
@@ -57,6 +64,14 @@ public interface IOwnedProcess : IDisposable
 
     /// <summary>Terminates the process through the handle opened when it was found.</summary>
     void Terminate();
+}
+
+/// <summary>A vba_sync failure: the detail of docs/api.md "vba_sync" and the modules imported before it.</summary>
+public sealed class VbaSyncException(string detail, IReadOnlyList<string> done, string message) : Exception(message)
+{
+    public string Detail { get; } = detail;
+
+    public IReadOnlyList<string> Done { get; } = done;
 }
 
 /// <summary>What ownership is decided from (docs/architecture.md "所有の確定").</summary>

@@ -5,7 +5,7 @@ using Xunit;
 
 namespace XlWright.McpServer.Tests;
 
-// session_start, session_status, session_end, and workbook_save on a --no-excel server (docs/api.md, stage 1).
+// session_start, session_status, session_end, workbook_save, and vba_sync on a --no-excel server (docs/api.md, stage 1).
 public sealed class SessionToolsTests : IAsyncLifetime
 {
     private readonly TempRepository _repo = new();
@@ -35,6 +35,7 @@ public sealed class SessionToolsTests : IAsyncLifetime
     [InlineData("session_status", true, false, true, false, null)]
     [InlineData("session_end", false, true, false, false, "save")]
     [InlineData("workbook_save", false, true, true, false, null)]
+    [InlineData("vba_sync", false, true, true, false, null)]
     public async Task ListsTheToolWithItsAnnotationsAndSchemas(
         string name, bool readOnly, bool destructive, bool idempotent, bool openWorld, string? required)
     {
@@ -113,6 +114,7 @@ public sealed class SessionToolsTests : IAsyncLifetime
         { "session_end", new() { ["save"] = "yes" } },
         { "session_end", new() { ["save"] = true, ["force"] = true } },
         { "workbook_save", new() { ["path"] = "Other.xlsm" } },
+        { "vba_sync", new() { ["modules"] = "Calc" } },
     };
 
     [Theory]
@@ -134,10 +136,12 @@ public sealed class SessionToolsTests : IAsyncLifetime
         Assert.Equal("NO_SESSION", error.GetProperty("detail").GetString());
     }
 
-    [Fact]
-    public async Task SaveReportsThatThereIsNoSession()
+    [Theory]
+    [InlineData("workbook_save")]
+    [InlineData("vba_sync")]
+    public async Task ReportsThatThereIsNoSession(string tool)
     {
-        var error = await Failure("workbook_save", new());
+        var error = await Failure(tool, new());
 
         Assert.Equal("CONFLICT", error.GetProperty("code").GetString());
         Assert.Equal("NO_SESSION", error.GetProperty("detail").GetString());

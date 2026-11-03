@@ -31,7 +31,8 @@ builder.Services
     .WithStdioServerTransport()
     .WithTools<ServerInfoTool>()
     .WithTools(new SessionTools(options, session).Create())
-    .WithTools(new RangeTools(session).Create());
+    .WithTools(new RangeTools(session).Create())
+    .WithTools(new VbaTools(session).Create());
 
 await builder.Build().RunAsync();
 return 0;

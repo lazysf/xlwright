@@ -5,7 +5,7 @@ Windows上の実Excelを操作し、VBAソースの反映、マクロ実行、�
 
 ## 現在の状態
 
-リポジトリを片付け、開発をしなおしているところです。[ロードマップ](ROADMAP.md)の段階0を終え、段階1を作っています。今のサーバーは、`server_info`と、専用のExcelでの`session_start`・`session_status`・`session_end`・`workbook_save`・`range_read`・`range_write`を持ちます。確認の入口と開発版のプラグインがあります。
+リポジトリを片付け、開発をしなおしているところです。[ロードマップ](ROADMAP.md)の段階0を終え、段階1を作っています。今のサーバーは、`server_info`と、専用のExcelでの`session_start`・`session_status`・`session_end`・`workbook_save`・`range_read`・`range_write`・`vba_sync`を持ちます。確認の入口と開発版のプラグインがあります。
 
 要件と設計は [docs/](docs/README.md)、開発の順序は [ROADMAP.md](ROADMAP.md)、今の周期の作業は [TODO.md](TODO.md) で管理しています。
 AIエージェント向けのリポジトリ固有ルールは [AGENTS.md](AGENTS.md) にあります。

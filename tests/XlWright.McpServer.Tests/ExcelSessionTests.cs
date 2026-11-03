@@ -490,6 +490,101 @@ public sealed class ExcelSessionTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncReportsTheModulesAndTheRemovedOnesAndDeletesTheConvertedFiles()
+    {
+        _repo.AddApp("apps/sales", "src/modules/Calc.bas", "src/classes/Counter.cls");
+        await _session.StartAsync(_app);
+        _launcher.Excel.Removed.Add("Old");
+
+        var outcome = await _session.SyncAsync();
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal("ready", outcome.Session.State);
+        Assert.Equal("SyncVba Calc,XlWright,Counter", _launcher.Excel.Calls[^1]);
+        Assert.Equal(
+            """[{"name":"Calc","type":"standard"},{"name":"XlWright","type":"standard"},{"name":"Counter","type":"class"}]""",
+            outcome.Result!["modules"]!.ToJsonString());
+        Assert.Equal("""["Old"]""", outcome.Result["removed"]!.ToJsonString());
+        Assert.All(_launcher.Excel.Synced!, m => Assert.False(File.Exists(m.ImportPath)));
+    }
+
+    [Fact]
+    public async Task SyncRejectsAMainWorkbookWithoutMacros()
+    {
+        _repo.AddApp("apps/plain", "Plain.xlsx");
+        await _session.StartAsync(AppFolder.Resolve(_repo.Root, "apps/plain").Folder!);
+
+        var outcome = await _session.SyncAsync();
+
+        AssertFailure(outcome, "INVALID_REQUEST", "NOT_MACRO_ENABLED", "ready");
+        Assert.DoesNotContain(_launcher.Excel.Calls, c => c.StartsWith("SyncVba"));
+    }
+
+    [Fact]
+    public async Task SyncRejectsAnInvalidSourceWithoutTouchingExcel()
+    {
+        _repo.AddApp("apps/sales", "src/modules/Calc.cls");
+        await _session.StartAsync(_app);
+
+        var outcome = await _session.SyncAsync();
+
+        AssertFailure(outcome, "INVALID_REQUEST", "SOURCE_INVALID", "ready");
+        Assert.DoesNotContain(_launcher.Excel.Calls, c => c.StartsWith("SyncVba"));
+    }
+
+    [Theory]
+    [InlineData("VBA_ACCESS_NOT_TRUSTED", "CONFLICT")]
+    [InlineData("VBA_PROJECT_LOCKED", "CONFLICT")]
+    [InlineData("SYNC_FAILED", "EXCEL_ERROR")]
+    public async Task SyncReportsWhatExcelRefused(string detail, string code)
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.SyncThrows = new VbaSyncException(detail, ["Calc"], "refused");
+
+        var outcome = await _session.SyncAsync();
+
+        AssertFailure(outcome, code, detail, "ready");
+        Assert.Contains("refused", outcome.Failure!.Message);
+        if (detail == "SYNC_FAILED")
+        {
+            Assert.Equal("""["Calc"]""", outcome.Failure.Data!["done"]!.ToJsonString());
+        }
+    }
+
+    [Fact]
+    public async Task SyncReportsAnUnexpectedFailureAsSyncFailed()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.SyncThrows = new InvalidOperationException("broken");
+
+        var outcome = await _session.SyncAsync();
+
+        AssertFailure(outcome, "EXCEL_ERROR", "SYNC_FAILED", "ready");
+        Assert.Contains("broken", outcome.Failure!.Message);
+        Assert.NotNull(outcome.Failure.Data!["done"]);
+    }
+
+    [Fact]
+    public async Task SyncTimeoutTerminatesTheOwnedExcel()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.SyncBlock = Block.UntilTerminated;
+
+        var outcome = await _session.SyncAsync();
+
+        AssertFailure(outcome, "STATE_UNKNOWN", "TIMEOUT", "closed");
+        Assert.Equal(1, _launcher.Process.Terminations);
+    }
+
+    [Fact]
+    public async Task SyncWithoutASessionIsAConflict()
+    {
+        var outcome = await _session.SyncAsync();
+
+        AssertFailure(outcome, "CONFLICT", "NO_SESSION", "closed");
+    }
+
+    [Fact]
     public async Task EndWithoutASessionIsAConflict()
     {
         var outcome = await _session.EndAsync(save: false);

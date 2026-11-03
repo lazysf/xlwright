@@ -116,6 +116,23 @@ internal sealed class FakeExcel : IExcel
         return true;
     }
 
+    public List<string> Removed { get; } = [];
+
+    public Exception? SyncThrows { get; set; }
+
+    public Block SyncBlock { get; set; } = Block.None;
+
+    public IReadOnlyList<VbaModule>? Synced { get; private set; }
+
+    public IReadOnlyList<string> SyncVba(IReadOnlyList<VbaModule> modules)
+    {
+        Record("SyncVba " + string.Join(",", modules.Select(m => m.Name)));
+        Synced = modules;
+        Process.WaitIf(SyncBlock);
+        if (SyncThrows is not null) throw SyncThrows;
+        return Removed;
+    }
+
     private bool Range(string call, string sheet, CellRange range)
     {
         Record($"{call} {sheet}!{range.Address}");

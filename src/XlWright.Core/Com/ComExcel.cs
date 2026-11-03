@@ -35,6 +35,9 @@ internal sealed class ComExcel(dynamic app) : IExcel
 {
     private const int AutomationSecurityLow = 1; // msoAutomationSecurityLow
     private const int CalculationDone = 0; // xlDone
+    private const int StdModule = 1; // vbext_ct_StdModule
+    private const int ClassModule = 2; // vbext_ct_ClassModule
+    private const int ProjectLocked = 1; // vbext_pp_locked
 
     private dynamic? _app = app;
     private dynamic? _main;
@@ -165,6 +168,101 @@ internal sealed class ComExcel(dynamic app) : IExcel
         }
 
         return paths;
+    }
+
+    // A full replace (docs/architecture.md "VBAの反映"). Import renames a module whose name is taken, and turns a
+    // name it cannot use into Module1, without an exception, so each imported name is checked (docs/notes/vba-sync.md).
+    public IReadOnlyList<string> SyncVba(IReadOnlyList<VbaModule> modules)
+    {
+        dynamic project;
+        try
+        {
+            project = Main.VBProject;
+        }
+        catch (COMException)
+        {
+            // AccessVBOM 0 fails with 0x800A03EC, which Excel also returns for other failures (docs/notes/workbook-save-open.md).
+            throw new VbaSyncException("VBA_ACCESS_NOT_TRUSTED", [],
+                "Excel does not allow programs to access the VBA project. Ask the person to turn on " +
+                "\"Trust access to the VBA project object model\" (File > Options > Trust Center > Trust Center Settings > Macro Settings), then call again.");
+        }
+
+        var done = new List<string>();
+        var step = "removing the modules";
+        try
+        {
+            if ((int)project.Protection == ProjectLocked)
+            {
+                throw new VbaSyncException("VBA_PROJECT_LOCKED", [],
+                    "The VBA project of the main workbook is protected. Ask the person to unlock it in the VBA editor, then call again.");
+            }
+
+            dynamic components = project.VBComponents;
+            try
+            {
+                var removed = new List<string>();
+                for (var i = (int)components.Count; i >= 1; i--)
+                {
+                    dynamic component = components.Item(i);
+                    try
+                    {
+                        int type = component.Type;
+                        if (type is StdModule or ClassModule)
+                        {
+                            string name = component.Name;
+                            components.Remove(component);
+                            if (!modules.Any(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                removed.Add(name);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        Release(component);
+                    }
+                }
+
+                foreach (var module in modules)
+                {
+                    step = "importing " + module.Name;
+                    dynamic imported = components.Import(module.ImportPath);
+                    try
+                    {
+                        string name = imported.Name;
+                        int type = imported.Type;
+                        var expected = module.Kind == VbaModuleKind.Class ? ClassModule : StdModule;
+                        if (!name.Equals(module.Name, StringComparison.Ordinal) || type != expected)
+                        {
+                            components.Remove(imported);
+                            throw new VbaSyncException("SYNC_FAILED", done.ToList(),
+                                $"{module.Name} was imported as {name} (type {type}). Its name is taken by a sheet or workbook module, or Excel cannot use it; rename the module.");
+                        }
+                    }
+                    finally
+                    {
+                        Release(imported);
+                    }
+
+                    done.Add(module.Name);
+                }
+
+                removed.Sort(StringComparer.Ordinal);
+                return removed;
+            }
+            finally
+            {
+                Release(components);
+            }
+        }
+        catch (Exception e) when (e is not VbaSyncException)
+        {
+            throw new VbaSyncException("SYNC_FAILED", done.ToList(), $"Excel failed while {step}: {e.Message}");
+        }
+        finally
+        {
+            Release(project);
+        }
     }
 
     // Events stay off while xlwright closes workbooks, so Workbook_BeforeClose cannot stop or change the close

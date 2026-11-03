@@ -143,6 +143,41 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         AssertNothingLeft(pid);
     }
 
+    // Needs "Trust access to the VBA project object model" (AccessVBOM 1).
+    [Fact]
+    public async Task SyncsReplacesAndRefusesARenamedModule()
+    {
+        _repo.AddApp("apps/macro");
+        var app = Path.Combine(_repo.Root, "apps", "macro");
+        MinimalWorkbook.Write(Path.Combine(app, "Macro.xlsm"));
+        Source(app, "src/modules/Calc.bas", "Option Explicit\n' 日本語のコメント\nPublic Function Name() As String\n    Name = \"日本語\"\nEnd Function\n");
+        Source(app, "src/classes/Counter.cls", "Option Explicit\nPublic Value As Long\n");
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/macro" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+
+        var first = Success(await Call("vba_sync", new()));
+
+        Assert.Equal("""[{"name":"Calc","type":"standard"},{"name":"XlWright","type":"standard"},{"name":"Counter","type":"class"}]""",
+            first.GetProperty("modules").GetRawText());
+        Assert.Equal("[]", first.GetProperty("removed").GetRawText());
+        Assert.True(File.Exists(Path.Combine(app, "src", "modules", "XlWright.bas")));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(Path.Combine(app, ".xlwright", "sync")));
+
+        File.Delete(Path.Combine(app, "src", "modules", "Calc.bas"));
+        var second = Success(await Call("vba_sync", new()));
+        Assert.Equal("""["Calc"]""", second.GetProperty("removed").GetRawText());
+
+        // Sheet1 is the sheet module's name, so Import renames the module to Sheet11 (docs/notes/vba-sync.md).
+        Source(app, "src/modules/Sheet1.bas", "Option Explicit\n");
+        var renamed = Body(await Call("vba_sync", new()));
+        Assert.Equal("SYNC_FAILED", renamed.GetProperty("error").GetProperty("detail").GetString());
+        Assert.Equal("[]", renamed.GetProperty("error").GetProperty("data").GetProperty("done").GetRawText());
+        Assert.Equal("ready", renamed.GetProperty("session").GetProperty("state").GetString());
+
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(pid);
+    }
+
     [Fact]
     public async Task EndsTheExcelWhenTheWorkbookOpensReadOnly()
     {
@@ -182,6 +217,13 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         }
 
         return result;
+    }
+
+    private static void Source(string app, string file, string text)
+    {
+        var path = Path.Combine(app, file);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, text, new System.Text.UTF8Encoding(false));
     }
 
     private Task<CallToolResult> Call(string tool, Dictionary<string, object?> arguments) =>

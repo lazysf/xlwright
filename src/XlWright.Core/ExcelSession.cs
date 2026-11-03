@@ -100,6 +100,61 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
             : SheetNotFound(sheet);
     });
 
+    public Task<SessionOutcome> SyncAsync() => Run("vba_sync", NoSession, async () =>
+    {
+        var active = _active!;
+        if (!Path.GetExtension(active.App.WorkbookName).Equals(".xlsm", StringComparison.OrdinalIgnoreCase))
+        {
+            return Fail(ToolFailure.InvalidRequest, "NOT_MACRO_ENABLED",
+                $"{active.App.WorkbookName} is not a macro-enabled workbook (.xlsm), so it cannot hold VBA.");
+        }
+
+        var (modules, invalid) = VbaSources.Prepare(active.App, VbaSources.SystemAnsiEncoding(), ServerIdentity.Current.Version);
+        if (invalid is not null)
+        {
+            return (null, invalid);
+        }
+
+        try
+        {
+            var syncing = active.Worker.Run(() => active.Excel.SyncVba(modules!));
+            if (!await Completes(syncing, timeouts.Sync))
+            {
+                return await AfterTimeout(active, syncing, "Syncing the VBA modules did not finish within the time limit.");
+            }
+
+            if (syncing.IsFaulted)
+            {
+                return syncing.Exception!.InnerException switch
+                {
+                    VbaSyncException { Detail: "SYNC_FAILED" } e => SyncFailed(e.Message, e.Done),
+                    VbaSyncException e => Fail(ToolFailure.Conflict, e.Detail, e.Message),
+                    var e => SyncFailed($"Syncing the VBA modules failed: {e!.Message}", []),
+                };
+            }
+
+            var listed = new JsonArray();
+            foreach (var module in modules!)
+            {
+                listed.Add(new JsonObject { ["name"] = module.Name, ["type"] = module.Kind == VbaModuleKind.Class ? "class" : "standard" });
+            }
+
+            return (new JsonObject { ["modules"] = listed, ["removed"] = new JsonArray(syncing.Result.Select(name => (JsonNode?)name).ToArray()) }, null);
+        }
+        finally
+        {
+            // Prepare always adds XlWright, so there is a first module. When an Import timed out, Excel may still
+            // hold a file; the folder then stays under .xlwright/sync/, which holds only converted copies.
+            try
+            {
+                Directory.Delete(Path.GetDirectoryName(modules![0].ImportPath)!, recursive: true);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    });
+
     public void Dispose()
     {
         lock (_gate)
@@ -348,6 +403,11 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
     // Called under the lock by Run.
     private (JsonObject?, ToolFailure?)? NoSession() =>
         _active is null ? Fail(ToolFailure.Conflict, "NO_SESSION", "There is no session. Start one with session_start.") : null;
+
+    // Nothing is saved, so the next sync replaces every module again (docs/architecture.md "VBAの反映").
+    private static (JsonObject?, ToolFailure?) SyncFailed(string message, IReadOnlyList<string> done) =>
+        Fail(ToolFailure.ExcelError, "SYNC_FAILED", message + " The workbook was not saved; fix the cause and call vba_sync again.",
+            new JsonObject { ["done"] = new JsonArray(done.Select(name => (JsonNode?)name).ToArray()) });
 
     private static (JsonObject?, ToolFailure?) SheetNotFound(string sheet) =>
         Fail(ToolFailure.NotFound, "SHEET_NOT_FOUND", $"The main workbook has no sheet named \"{sheet}\". Check the sheet name.");

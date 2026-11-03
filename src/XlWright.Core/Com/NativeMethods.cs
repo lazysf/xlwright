@@ -30,6 +30,9 @@ internal static class NativeMethods
     [DllImport("ntdll.dll")]
     public static extern int NtQueryInformationProcess(SafeProcessHandle handle, int infoClass, IntPtr buffer, int length, out int returnLength);
 
+    [DllImport("kernel32.dll")]
+    public static extern uint GetACP();
+
     [DllImport("ole32.dll")]
     public static extern int CoRegisterMessageFilter(IOleMessageFilter? newFilter, out IOleMessageFilter? oldFilter);
 }

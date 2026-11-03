@@ -28,12 +28,11 @@ public sealed class ServerInfoTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ListsOnlyServerInfoWithItsAnnotations()
+    public async Task ListsServerInfoWithItsAnnotations()
     {
         var tools = await Client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken);
 
-        var tool = Assert.Single(tools);
-        Assert.Equal("server_info", tool.Name);
+        var tool = Assert.Single(tools, t => t.Name == "server_info");
         var annotations = tool.ProtocolTool.Annotations;
         Assert.NotNull(annotations);
         Assert.True(annotations.ReadOnlyHint);

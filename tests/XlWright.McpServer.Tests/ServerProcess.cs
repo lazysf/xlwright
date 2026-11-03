@@ -8,13 +8,16 @@ internal static class ServerProcess
 {
     public static string DllPath { get; } = Path.Combine(AppContext.BaseDirectory, "XlWright.McpServer.dll");
 
-    public static Task<McpClient> ConnectAsync(CancellationToken cancellationToken)
+    public static Task<McpClient> ConnectAsync(CancellationToken cancellationToken) =>
+        ConnectAsync(Directory.GetCurrentDirectory(), cancellationToken);
+
+    public static Task<McpClient> ConnectAsync(string project, CancellationToken cancellationToken, bool noExcel = true)
     {
         var transport = new StdioClientTransport(new StdioClientTransportOptions
         {
             Name = "xlwright",
             Command = "dotnet",
-            Arguments = [DllPath, "--project", Directory.GetCurrentDirectory(), "--no-excel"],
+            Arguments = noExcel ? [DllPath, "--project", project, "--no-excel"] : [DllPath, "--project", project],
         });
         return McpClient.CreateAsync(transport, cancellationToken: cancellationToken);
     }

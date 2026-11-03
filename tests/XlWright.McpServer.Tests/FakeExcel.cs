@@ -1,0 +1,131 @@
+using XlWright.Core;
+
+namespace XlWright.McpServer.Tests;
+
+// Stands in for Excel behind the Core boundary. Each call is recorded; a call can be made to throw or to block
+// until the fake process is terminated (or forever, to leave a pending call).
+internal sealed class FakeLauncher : IExcelLauncher
+{
+    public FakeLauncher() => Excel.Process = Process;
+
+    public FakeExcel Excel { get; } = new();
+
+    public FakeProcess Process { get; } = new();
+
+    public Block LaunchBlock { get; set; } = Block.None;
+
+    public int Launches { get; private set; }
+
+    public LaunchedExcel Launch()
+    {
+        Launches++;
+        Process.WaitIf(LaunchBlock);
+        return new LaunchedExcel(Excel, Process);
+    }
+}
+
+internal enum Block
+{
+    None,
+    UntilTerminated,
+    Forever,
+}
+
+internal sealed class FakeExcel : IExcel
+{
+    private readonly List<string> _calls = [];
+
+    public FakeProcess Process { get; set; } = null!;
+
+    public IReadOnlyList<string> Calls
+    {
+        get { lock (_calls) return _calls.ToList(); }
+    }
+
+    public bool OpensReadOnly { get; set; }
+
+    public Exception? OpenThrows { get; set; }
+
+    public Exception? SaveThrows { get; set; }
+
+    public Block OpenBlock { get; set; } = Block.None;
+
+    public Block SaveBlock { get; set; } = Block.None;
+
+    public List<string?> ExtraWorkbooks { get; } = [];
+
+    public bool QuitEndsProcess { get; set; } = true;
+
+    private string? _main;
+
+    public void TakeControl() => Record("TakeControl");
+
+    public bool Open(string path)
+    {
+        Record("Open " + path);
+        Process.WaitIf(OpenBlock);
+        if (OpenThrows is not null) throw OpenThrows;
+        _main = path;
+        return OpensReadOnly;
+    }
+
+    public void Save()
+    {
+        Record("Save");
+        Process.WaitIf(SaveBlock);
+        if (SaveThrows is not null) throw SaveThrows;
+    }
+
+    public IReadOnlyList<string?> OpenWorkbookPaths()
+    {
+        Record("OpenWorkbookPaths");
+        return (_main is null ? [] : new[] { _main }).Concat(ExtraWorkbooks).ToList();
+    }
+
+    public Block QuitBlock { get; set; } = Block.None;
+
+    public void CloseAllAndQuit()
+    {
+        Record("CloseAllAndQuit");
+        Process.WaitIf(QuitBlock);
+        if (QuitEndsProcess) Process.Exit();
+    }
+
+    public void ReleaseReferences() => Record("ReleaseReferences");
+
+    private void Record(string call)
+    {
+        lock (_calls) _calls.Add(call);
+    }
+}
+
+internal sealed class FakeProcess : IOwnedProcess
+{
+    private readonly ManualResetEventSlim _exited = new();
+
+    public ProcessFacts Facts { get; set; } = new(4242, "EXCEL.EXE", DateTime.MaxValue, "\"EXCEL.EXE\" /automation -Embedding");
+
+    public bool TerminateEnds { get; set; } = true;
+
+    public int Terminations { get; private set; }
+
+    public void Exit() => _exited.Set();
+
+    public bool WaitForExit(TimeSpan timeout) => _exited.Wait(timeout);
+
+    public void Terminate()
+    {
+        Terminations++;
+        if (TerminateEnds) _exited.Set();
+    }
+
+    public void WaitIf(Block block)
+    {
+        if (block == Block.UntilTerminated) _exited.Wait();
+        if (block == Block.Forever) Thread.Sleep(Timeout.Infinite);
+    }
+
+    public void Dispose()
+    {
+    }
+}

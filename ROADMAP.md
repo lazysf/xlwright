@@ -110,7 +110,7 @@
 確かめること:
 
 - `ForceDisable`で開いた既存のブックからの取り出し（[VBAの反映](docs/architecture.md#vbaの反映)）。
-- プラグインの入手元の制限、GitHubからの取得、PIAの利用条件（[サーバーとビルドとプラグイン](docs/architecture.md#サーバーとビルドとプラグイン)）。
+- プラグインの入手元の制限、GitHubからの取得（[サーバーとビルドとプラグイン](docs/architecture.md#サーバーとビルドとプラグイン)）。
 
 作るもの:
 

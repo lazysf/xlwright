@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Tests that start a real Excel (docs/architecture.md "本体の部品の境界"). Not in xlwright.slnx, so the check
+    entry point and the commit hook never run them. How to run them is in docs/development.md.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XlWright.McpServer\XlWright.McpServer.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\XlWright.McpServer.Tests\ServerProcess.cs" Link="ServerProcess.cs" />
+    <Compile Include="..\XlWright.McpServer.Tests\TempRepository.cs" Link="TempRepository.cs" />
+  </ItemGroup>
+</Project>

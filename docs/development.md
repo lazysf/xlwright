@@ -33,6 +33,12 @@ powershell -NoProfile -File scripts\check.ps1
 確認の入口を通らないビルド（`dotnet build`や`dotnet test`を直接実行した時）は、`build_id`が`unknown`になります。
 テストはMicrosoft.Testing.Platformで実行します（[global.json](../global.json)）。直接実行する時は`dotnet test --solution xlwright.slnx`です。
 
+実Excelを起動するテスト（`tests/XlWright.RealExcel.Tests`）は、`xlwright.slnx`に入れていないため、確認の入口とcommitのhookでは動きません。専用のExcelを起動して終了させます。日常のExcelには接続せず、実行の前からあるExcelのプロセスが変わらないことと、テストが起動したExcelが残らないことを確かめます。
+
+```powershell
+dotnet test --project tests\XlWright.RealExcel.Tests
+```
+
 Markdownのチェック:
 
 ```powershell

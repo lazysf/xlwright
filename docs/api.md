@@ -36,7 +36,7 @@
 
 - `message`には、次に取る行動を書きます。
 - `data`は、ツールごとの補足です。`STATE_UNKNOWN`以外では省略できます。部分的に変更した時の処理済みの部分、止まって知らせる時の引継ぎの情報（記録したPIDと生成時刻、所有記録のパス、人が取る手順）、診断の記録のパスを入れます。中身は各ツールの契約で定めます。
-- `code`は次の6つです。`detail`の値は、各ツールの契約で定めます。
+- `code`は次の6つです。`detail`の値は、各ツールの契約で定めます。契約が`detail`の値を定めない失敗では、`detail`を省きます。
 
 | `code` | 意味 | セッション |
 | --- | --- | --- |
@@ -120,6 +120,6 @@
 
 - 用途: サーバーの名前、版、ビルドの識別子を返します。AIエージェントと人が、どのビルドが動いているかを確かめるために使います。
 - 引数: ありません。引数を渡すと`INVALID_REQUEST`で拒否します。
-- 結果: `{"name":"xlwright","version":"0.1.0","build_id":"<commitの短いハッシュ>[-dirty]-<ビルドの時刻（UTC、yyyyMMddTHHmmssZ）>"}`。`-dirty`は、作業ツリーに差分がある時だけ付きます。
+- 結果: `{"name":"xlwright","version":"0.1.0","build_id":"<commitの短いハッシュ>[-dirty]-<ビルドの時刻（UTC、yyyyMMddTHHmmssZ）>"}`。`-dirty`は、作業ツリーに差分がある時だけ付きます。確認の入口を通らないビルドでは、`build_id`は`unknown`です。
 - 注釈: `ReadOnly`は真、`Destructive`は偽、`Idempotent`は真、`OpenWorld`は偽です。
 - Excelに触れず、`--no-excel`でも同じに答えます。

@@ -64,7 +64,7 @@ apps/sales/                  アプリのフォルダ（リポジトリの中。
 
 - アプリのフォルダは、サーバーの引数`--project`が指すリポジトリの中に限ります。
 - フォルダの中かどうかは、正規化した完全なパスを、末尾の区切り文字まで含めた前方一致で比べます。大文字と小文字は区別しません。`apps\sales`と`apps\sales2`を取り違えないためです。
-- プラグインは`--project`に`${CLAUDE_PROJECT_DIR}`を渡します。既定の値を付けた`${CLAUDE_PROJECT_DIR:-.}`は、プラグインの設定では展開されず`.`になりました。サーバーは、相対パスを作業ディレクトリを基準に解決します。
+- 利用する版のプラグインは`--project`に`${CLAUDE_PROJECT_DIR}`を渡します。開発版は、このリポジトリの完全なパスを渡します（[サーバーとビルドとプラグイン](#サーバーとビルドとプラグイン)）。既定の値を付けた`${CLAUDE_PROJECT_DIR:-.}`は、プラグインの設定では展開されず`.`になりました。サーバーは、相対パスを作業ディレクトリを基準に解決します。
 - 確認済み（段階0、[記録](notes/dev-plugin-loading.md)）: プラグインのサーバーで、`${CLAUDE_PROJECT_DIR}`はリポジトリの完全なパスに展開された。
 - UNC、デバイスパス（`\\?\`・`\\.\`で始まるパス）、ネットワークドライブ（`DriveType.Network`）は、パスに触れる前に拒否します（[利用の前提](requirements.md#利用の前提)）。
 - 未確認（段階2）: 同期しているフォルダ（OneDriveなど）のブックで、`Workbook.FullName`がローカルのパスを返すか。成立しない時は、同期フォルダの中のアプリを開始で拒否する案を人が判断し、利用の前提に書きます。
@@ -181,7 +181,7 @@ apps/sales/                  アプリのフォルダ（リポジトリの中。
 - 2で止まる時は、所有記録を`owned`のまま残して排他を外し、セッションを閉じて知らせます。人が[引継ぎ](#人への引継ぎ)の手順でExcelを確かめられるようにするためです。次の開始の片付けが、あらためて照合します。
 - 2で止まる時と、4・5で終了を確かめられない時は、`session_end`は`CONFLICT`を返し、`data`に保存の結果と引継ぎの情報を入れます。結果が分かっているため、`STATE_UNKNOWN`は使いません。
 - 報告の前にセッションを終えることは、プラグインのスキルでAIエージェントへの手順として渡します（[サーバーとビルドとプラグイン](#サーバーとビルドとプラグイン)）。
-- 未確認（段階1）: Quitの後、プロセスが終わるまでにかかる時間と、人が閉じた後もプロセスが残ることがあるか。記録して、[期限](#期限と大きさの上限)の値を決めます。
+- 未確認（段階1）: Quitの後、プロセスが終わるまでにかかる時間。記録して、[期限](#期限と大きさの上限)の値を決めます。
 
 ## 状態と結果不明
 
@@ -330,8 +330,8 @@ xlwrightが止まって知らせる時に、人が取る手順です。段階2�
 - 確認済み（段階0、[記録](notes/build-folder-rename.md)）: 開いた会話が使っているビルドのフォルダは、名前の変更が`IOException`で失敗した。
 - 開発版のプラグインは`xlwright-dev`、利用する版のプラグインは`xlwright`という名前にします。どちらも、プラグインの中のMCPサーバーの名前は`xlwright`です。
 - Claude Codeはツールに`mcp__plugin_<プラグイン名>_<サーバー名>__`を付けます（[MCP](https://code.claude.com/docs/en/mcp.md)）。そのため、ツールの名前は`mcp__plugin_xlwright-dev_xlwright__<ツール名>`と`mcp__plugin_xlwright_xlwright__<ツール名>`に分かれます。事前の許可の設定は、この名前で書きます。
-- 開発版の入れ方: `plugins/xlwright-dev/`を、`--plugin-dir`と同じ形で読み込ませます。プラグインはその場所のまま読み込まれ、`${CLAUDE_PLUGIN_ROOT}`はこのフォルダを指します（[プラグインの読み込み](https://code.claude.com/docs/en/plugins/loading.md)）。プラグインの`plugin.json`には`version`を書きません。確認の入口が通ると、`plugins/xlwright-dev/.mcp.json`（Git管理外）を書き出します。中身は、`dotnet`で`${CLAUDE_PLUGIN_ROOT}/../../.xlwright/builds/<build-id>/XlWright.McpServer.dll`を起動し、`--project ${CLAUDE_PROJECT_DIR}`を渡すものです。
-- 人は、ユーザーの設定`~/.claude/settings.json`の`env.CLAUDE_CODE_PLUGIN_DIRS`に、`plugins/xlwright-dev`の絶対パスか`~`で始まるパスを加えます。リポジトリの外の設定のため、人が行うか、人の承認を得て行います。デスクトップアプリの画面ではローカルのフォルダのマーケットプレイスを追加できず、プロジェクトの設定の`env`では読み込まれませんでした（[記録](notes/dev-plugin-loading.md)）。この設定は、すべてのプロジェクトの会話で開発版のサーバーを起動します。
+- 開発版の入れ方: `plugins/xlwright-dev/`を、`--plugin-dir`と同じ形で読み込ませます。プラグインはその場所のまま読み込まれ、`${CLAUDE_PLUGIN_ROOT}`はこのフォルダを指します（[プラグインの読み込み](https://code.claude.com/docs/en/plugins/loading.md)）。プラグインの`plugin.json`には`version`を書きません。確認の入口が通ると、`plugins/xlwright-dev/.mcp.json`（Git管理外）を書き出します。中身は、`dotnet`で`${CLAUDE_PLUGIN_ROOT}/../../.xlwright/builds/<build-id>/XlWright.McpServer.dll`を起動し、`--project`にこのリポジトリの完全なパスを渡すものです。
+- 人は、ユーザーの設定`~/.claude/settings.json`の`env.CLAUDE_CODE_PLUGIN_DIRS`に、`plugins/xlwright-dev`の絶対パスか`~`で始まるパスを加えます。リポジトリの外の設定のため、人が行うか、人の承認を得て行います。デスクトップアプリの画面ではローカルのフォルダのマーケットプレイスを追加できず、プロジェクトの設定の`env`では読み込まれませんでした（[記録](notes/dev-plugin-loading.md)）。この設定は、すべてのプロジェクトの会話で開発版のサーバーを起動します。そのため開発版は、`--project`に`${CLAUDE_PROJECT_DIR}`ではなくこのリポジトリを渡し、ほかのプロジェクトのアプリでの開始を[パスの制限](#パスの制限)で拒否させます。サーバーが起動しても、Excelは`session_start`まで起動しません。
 - 確認済み（段階0、[記録](notes/dev-plugin-loading.md)）: 新しい会話は、確認の入口が最後に通したビルドを読み、開いたままの会話は前のビルドを使い続けた。
 - 利用する版は、.NETの実行環境を同梱する自己完結の形で発行し、プラグインに入れます。別の端末で.NETを入れる手順を省くためです（[提供形態](requirements.md#利用環境と提供形態)）。
 - 未確認（段階4）: 会社のPCの管理設定が、プラグインの入手元を制限していないか。GitHubから配布物を取得できるか。成立しない時は、リポジトリを手元に写し、ローカルのフォルダのマーケットプレイスとして追加します。

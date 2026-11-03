@@ -61,4 +61,5 @@ hookの設定は [prek.toml](../prek.toml)、Markdownのルールは [.markdownl
 ```
 
 新しく始めた会話に、`mcp__plugin_xlwright-dev_xlwright__server_info`が現れます。開いたままの会話は、始めた時のビルドを使い続けます（[記録](notes/dev-plugin-loading.md)）。
+この設定は、すべてのプロジェクトの会話で開発版のサーバーを起動します。開発版のサーバーには`--project`としてこのリポジトリの完全なパスが渡るため、ほかのプロジェクトのアプリでは開始できません。
 戻すには、加えたパスを消します。

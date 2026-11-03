@@ -1,5 +1,6 @@
 # The check entry point. Runs every check an agent needs, in the order that
-# docs/architecture.md "サーバーとビルドとプラグイン" defines, and stops at the first failure.
+# docs/architecture.md (the server, build, and plugin section) defines, and stops at the first failure.
+# Keep this file ASCII only: Windows PowerShell 5.1 reads a UTF-8 file without BOM as the ANSI code page.
 # Requires Windows PowerShell 5.1, the .NET SDK in global.json, and `npm ci`.
 #
 # Usage (from any folder):
@@ -71,7 +72,9 @@ try {
     $utf8 = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText((Join-Path $repo '.xlwright\builds\latest.json'), $latest, $utf8)
 
-    # Point the development plugin at this build. Claude Code expands the ${...} placeholders.
+    # Point the development plugin at this build. Claude Code expands ${CLAUDE_PLUGIN_ROOT}.
+    # --project is this repository, not ${CLAUDE_PROJECT_DIR}: the user settings load the plugin in
+    # every project's conversation, and the path limit keeps sessions inside this repository.
     $mcp = [ordered]@{
         mcpServers = [ordered]@{
             xlwright = [ordered]@{
@@ -79,7 +82,7 @@ try {
                 args = @(
                     ('${CLAUDE_PLUGIN_ROOT}/../../.xlwright/builds/' + $buildId + '/XlWright.McpServer.dll'),
                     '--project',
-                    '${CLAUDE_PROJECT_DIR}'
+                    $repo
                 )
             }
         }

@@ -123,3 +123,137 @@
 - 結果: `{"name":"xlwright","version":"0.1.0","build_id":"<commitの短いハッシュ>[-dirty]-<ビルドの時刻（UTC、yyyyMMddTHHmmssZ）>"}`。`-dirty`は、作業ツリーに差分がある時だけ付きます。確認の入口を通らないビルドでは、`build_id`は`unknown`です。
 - 注釈: `ReadOnly`は真、`Destructive`は偽、`Idempotent`は真、`OpenWorld`は偽です。
 - Excelに触れず、`--no-excel`でも同じに答えます。
+
+### 段階1のツールに共通の扱い
+
+段階1の8つのツールの契約は、人が承認しました（2026-11-03）。
+
+- 引数の名前と`detail`の値は、英小文字の`snake_case`と英大文字の`SNAKE_CASE`です。
+- `session_start`と`session_status`のほかは、セッションが`closed`の時に`CONFLICT`・`detail: NO_SESSION`で拒否します。
+- `session_status`のほかは、実行中（`busy`が真）の時に待たせず、`CONFLICT`・`detail: BUSY`で拒否します。
+- 成功の結果には、どれも`session`（`{"state":…,"busy":…}`）を含めます。
+- 期限は[設計の期限の表](architecture.md#期限と大きさの上限)のとおりです。期限が切れた時は`STATE_UNKNOWN`・`detail: TIMEOUT`です。
+- `STATE_UNKNOWN`の`data`には、`excel_ended`と`restartable`に加えて、専用のExcelを残して止まった時は`excel`（`pid`と`started_at_utc`）と人が取る手順を入れます。
+- 失敗の`data.log`に、診断の記録のパスを入れます（[失敗の返し方と記録](architecture.md#失敗の返し方と記録)）。
+- 保留中のCOM呼出しが残って、このサーバーで新しいセッションを始められない時は、`session_start`を`CONFLICT`・`detail: SERVER_UNUSABLE`で拒否し、会話を閉じて新しい会話で始めるよう`message`に書きます（[状態と結果不明](architecture.md#状態と結果不明)）。
+- 段階1には、アプリの排他と次の開始での片付けがありません（段階2で作ります）。
+
+### `session_start`（段階1）
+
+- 用途: アプリのフォルダを渡して、専用のExcelを起動し、主ブックを開きます。
+- 引数: `app`（文字列、必須）。アプリのフォルダです。リポジトリ（サーバーの`--project`）からの相対パスか、絶対パスです。
+- 結果: `{"session":{"state":"ready","busy":false},"app":"apps/sales","workbook":"Sales.xlsm","excel":{"pid":12345,"started_at_utc":"…"}}`。`app`はリポジトリからの相対パスで、区切りは`/`です。
+- 失敗:
+
+| `code` | `detail` | 場合 |
+| --- | --- | --- |
+| `INVALID_REQUEST` | `PATH_NOT_ALLOWED` | リポジトリの外、UNC、デバイスパス、ネットワークドライブ（[パスの制限](architecture.md#パスの制限)） |
+| `NOT_FOUND` | `APP_NOT_FOUND` | フォルダが無い |
+| `INVALID_REQUEST` | `NO_WORKBOOK` | 直下に主ブックが無い（主ブックの無いセッションは段階4） |
+| `INVALID_REQUEST` | `MULTIPLE_WORKBOOKS` | 直下にブックが2つ以上ある。`data.workbooks`に名前の一覧 |
+| `INVALID_REQUEST` | `NOT_IMPLEMENTED` | `--no-excel`で動いている。上の検査の後に返す |
+| `CONFLICT` | `SESSION_ACTIVE` | このサーバーで既にセッションを始めている |
+| `CONFLICT` | `SERVER_UNUSABLE` | 上の共通の扱いのとおり |
+| `CONFLICT` | `WORKBOOK_READ_ONLY` | 開いた主ブックの`ReadOnly`が真。専用のExcelは終えて、`closed`に戻る |
+| `EXCEL_ERROR` | `OPEN_FAILED` | Excelが主ブックを開けなかった。専用のExcelは終えて、`closed`に戻る |
+| `STATE_UNKNOWN` | `OWNERSHIP_NOT_CONFIRMED` | 起動したExcelの所有を確定できなかった。そのExcelには触らず、`excel_ended`は偽 |
+| `STATE_UNKNOWN` | `TIMEOUT` | 開始の期限（120秒）が切れた |
+
+- 注釈: `ReadOnly`は偽、`Destructive`は偽、`Idempotent`は偽、`OpenWorld`は偽です。
+- `.xlsx`の主ブックでも始められます。`vba_sync`と`macro_run`は拒否します。
+
+### `session_status`（段階1）
+
+- 用途: セッションの状態と、実行中の操作を返します。COMを使わないため、マクロの実行中も答えます。
+- 引数: ありません。
+- 結果: セッションがある時は`{"session":{"state":"ready","busy":true},"app":"apps/sales","workbook":"Sales.xlsm","operation":{"tool":"macro_run","elapsed_ms":12345}}`。`operation`は実行中の時だけ付きます。セッションが無い時は`{"session":{"state":"closed","busy":false}}`です。
+- 失敗: 引数を渡した時の`INVALID_REQUEST`だけです。
+- 注釈: `ReadOnly`は真、`Destructive`は偽、`Idempotent`は真、`OpenWorld`は偽です。
+
+### `session_end`（段階1）
+
+- 用途: 主ブックを保存するか決めて閉じ、専用のExcelを終えます（[終了](architecture.md#終了)）。報告の前に呼びます。
+- 引数: `save`（真偽値、必須）。偽なら、前の保存からの変更を捨てます。
+- 結果: `{"session":{"state":"closed","busy":false},"saved":true}`。
+- 失敗:
+
+| `code` | `detail` | 場合 |
+| --- | --- | --- |
+| `EXCEL_ERROR` | `SAVE_FAILED` | 保存に失敗した。閉じずに`ready`のまま。`save`を偽にして呼び直せる |
+| `CONFLICT` | `FOREIGN_WORKBOOK` | アプリのフォルダの外のブックが開いている。専用のExcelを残して`closed`にし、`data`に保存の結果と引継ぎの情報を入れる |
+| `CONFLICT` | `EXIT_NOT_CONFIRMED` | プロセスの終了を確かめられなかった。`data`は上と同じ |
+| `STATE_UNKNOWN` | `TIMEOUT` | 保存の期限（120秒）が切れた。主ブックのファイルが保存の前と後のどちらかは分からない |
+
+- 注釈: `ReadOnly`は偽、`Destructive`は真、`Idempotent`は偽、`OpenWorld`は偽です。
+
+### `workbook_save`（段階1）
+
+- 用途: 主ブックを上書き保存します。セッションは続きます。
+- 引数: ありません。
+- 結果: `{"session":{"state":"ready","busy":false},"workbook":"Sales.xlsm"}`。
+- 失敗: `EXCEL_ERROR`・`SAVE_FAILED`（`ready`のまま）、`STATE_UNKNOWN`・`TIMEOUT`（120秒）。
+- 注釈: `ReadOnly`は偽、`Destructive`は真、`Idempotent`は真、`OpenWorld`は偽です。
+
+### `range_read`（段階1）
+
+- 用途: 1つのシートの1つの範囲の値か数式を読みます。読む前に再計算し、計算を終えた値を返します（[起動時の設定](architecture.md#起動時の設定)）。
+- 引数: `sheet`（文字列、必須）、`range`（A1形式、必須。例`A1:C10`）、`content`（`"values"`か`"formulas"`、既定は`"values"`）。
+- 結果: `{"session":{…},"sheet":"Data","range":"A1:C2","values":[[1,"a",true],[null,{"error":"#DIV/0!"},2.5]]}`。`content`が`"formulas"`の時は`values`の代わりに`formulas`（文字列の2次元の配列、英語の関数名のA1形式）を返します。
+- 値: 数値、文字列、真偽値、空は`null`、セルのエラーは`{"error":"#N/A"}`の形です。日付は、シリアル値の数値で返します（`Value2`）。
+- 失敗: `NOT_FOUND`・`SHEET_NOT_FOUND`、`INVALID_REQUEST`・`INVALID_RANGE`、`INVALID_REQUEST`・`TOO_LARGE`（応答が20,000文字を超える。範囲の絞り方を`message`に書く）、`STATE_UNKNOWN`・`TIMEOUT`（30秒）。
+- 注釈: `ReadOnly`は真、`Destructive`は偽、`Idempotent`は真、`OpenWorld`は偽です。
+
+### `range_write`（段階1）
+
+- 用途: 1つのシートの1つの範囲に、値か数式を書くか、中身を消します。保存はしません。
+- 引数: `sheet`（文字列、必須）、`range`（A1形式、必須）。加えて、次のどれか1つが必須です。
+  - `values`: 2次元の配列。要素は数値、文字列、真偽値、`null`（空にする）。
+  - `formulas`: 文字列の2次元の配列。英語の関数名のA1形式です（`Range.Formula`）。
+  - `clear`: `true`。値と数式を消し、書式は残します（`ClearContents`）。
+- 配列の行と列の数は、範囲の大きさと一致させます。
+- `values`の文字列は、人がセルに入力した時と同じにExcelが解釈します。`"1/2"`は日付に、`"001"`は数値になりえます。`=`で始まる文字列は、`INVALID_REQUEST`・`VALUE_LOOKS_LIKE_FORMULA`で拒否し、`formulas`を使うよう`message`に書きます。
+- 書く間は`EnableEvents`を偽にします。`Worksheet_Change`などのイベントは動きません。
+- 結果: `{"session":{…},"sheet":"Data","range":"A1:C2","cells":6}`。
+- 失敗: `NOT_FOUND`・`SHEET_NOT_FOUND`、`INVALID_REQUEST`・`INVALID_RANGE`、`INVALID_REQUEST`・`SHAPE_MISMATCH`、`INVALID_REQUEST`・`VALUE_LOOKS_LIKE_FORMULA`、`EXCEL_ERROR`・`WRITE_FAILED`（シートの保護など。書けた範囲は分からないため、`message`で読み直しを求める）、`STATE_UNKNOWN`・`TIMEOUT`（30秒）。
+- 注釈: `ReadOnly`は偽、`Destructive`は真、`Idempotent`は真、`OpenWorld`は偽です。
+
+### `vba_sync`（段階1）
+
+- 用途: `src/modules/*.bas`と`src/classes/*.cls`を主ブックへ全置換で反映します（[VBAの反映](architecture.md#vbaの反映)）。ソースに無い標準・クラスモジュールは、ブックから消えます。保存はしません。
+- 引数: ありません。
+- 反映の前に、`src/modules/XlWright.bas`を[xlwrightのVBAのモジュール](architecture.md#xlwrightのvbaのモジュール)のとおりに書きます。
+- 結果: `{"session":{…},"modules":[{"name":"Calc","type":"standard"},{"name":"Counter","type":"class"}],"removed":["Old"]}`。
+- 失敗:
+
+| `code` | `detail` | 場合 |
+| --- | --- | --- |
+| `INVALID_REQUEST` | `NOT_MACRO_ENABLED` | 主ブックが`.xlsx` |
+| `INVALID_REQUEST` | `SOURCE_INVALID` | ブックに触れる前の検査で拒否した。`data.file`・`data.line`・`data.reason`。理由は、ANSIに変換できない文字、`VB_Name`とファイル名の食い違い、拡張子とフォルダの食い違い、入れ子のフォルダ、`XlWright`という名前のほかのモジュール |
+| `INVALID_REQUEST` | `WORKBOOK_MODULES_NOT_SUPPORTED` | `src/workbook/`にファイルがある（段階3） |
+| `CONFLICT` | `VBA_ACCESS_NOT_TRUSTED` | 「VBA プロジェクト オブジェクト モデルへのアクセスを信頼する」が無効。人に設定を求める`message` |
+| `CONFLICT` | `VBA_PROJECT_LOCKED` | VBAのプロジェクトが保護されている |
+| `EXCEL_ERROR` | `SYNC_FAILED` | 途中で失敗した。`data.done`に処理済みのモジュール。保存していないため、次の反映がやり直す |
+| `STATE_UNKNOWN` | `TIMEOUT` | 30秒の期限が切れた |
+
+- 注釈: `ReadOnly`は偽、`Destructive`は真、`Idempotent`は真、`OpenWorld`は偽です。
+
+### `macro_run`（段階1）
+
+- 用途: `vba_sync`と同じ反映をしてから、主ブックのマクロを実行し、戻り値を返します（[マクロの実行](architecture.md#マクロの実行)）。マクロが終わるか上限を過ぎるまで応答しません。保存はしません。
+- 引数:
+  - `macro`（文字列、必須）: `<モジュール>.<プロシージャ>`の形です。ブックの修飾（`!`・`'`・`[`・パスの区切り）を含む名前は拒否します。修飾はxlwrightが付けます。
+  - `args`（配列、任意）: 引数。要素は数値、文字列、真偽値です。30個までです。
+  - `timeout_seconds`（整数、任意）: 1〜1200、既定は300です。
+- 結果: `{"session":{…},"macro":"Calc.Twice","return":42,"elapsed_ms":15,"sync":{"modules":[…],"removed":[…]}}`。戻り値は数値・文字列・真偽値・`null`です。それ以外の型の時は、`return`を`null`にして`return_type`に型の名前を返します。戻り値が大きい時は要約し、全体を`<アプリ>/.xlwright/results/<id>.json`へ書いて`result_file`にそのパスを返します。
+- 失敗: `vba_sync`の失敗（反映の前に止まった時は実行しない）に加えて、次です。
+
+| `code` | `detail` | 場合 |
+| --- | --- | --- |
+| `INVALID_REQUEST` | `INVALID_MACRO_NAME` | `macro`の形が違う |
+| `NOT_FOUND` | `MACRO_NOT_FOUND` | マクロが無い |
+| `EXCEL_ERROR` | `MACRO_ERROR` | マクロの実行時エラーを、xlwrightのVBAのモジュールが捕まえた。`data.number`・`data.description`。`ready`のまま |
+| `STATE_UNKNOWN` | `DIALOG` | マクロの実行中にダイアログで止まった。専用のExcelを終えて`closed`。`data.dialog`に題名と本文。前の保存からの変更は失われる |
+| `STATE_UNKNOWN` | `TIMEOUT` | 実行の上限を過ぎた。専用のExcelを終えて`closed`。前の保存からの変更は失われる |
+
+- ダイアログの文字は応答にだけ返し、診断の記録には書きません。
+- 注釈: `ReadOnly`は偽、`Destructive`は真、`Idempotent`は偽、`OpenWorld`は真です。マクロはアプリのフォルダの外にも触れうるためです。

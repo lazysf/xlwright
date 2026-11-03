@@ -1,7 +1,7 @@
 # T3 検証環境と初回コンソールの依存
 
 - Date: 2026-11-01
-- 出典: `dotnet --version`、`dotnet --list-sdks`、`dotnet --info`、Office登録情報、PIAのファイル情報・メタデータ・SHA-256、[開発ガイド](../development.md)、[Spike-0](../spike-0.md)。
+- 出典: `dotnet --version`、`dotnet --list-sdks`、`dotnet --info`、Office登録情報、PIAのファイル情報・メタデータ・SHA-256、[開発ガイド](../development.md)、Spike-0（`bdd2bb4`時点の`docs/spike-0.md`。削除済み）。
 
 ## 対象と利用可否
 
@@ -30,7 +30,7 @@ T3の環境確認ではExcelの起動・接続・終了、設定変更は行っ�
 | --- | --- | --- |
 | ユーザー側のExcel Security設定 | T3の環境では`HKCU\Software\Microsoft\Office\16.0\Excel\Security`の読取りが拒否されました。T15の後の読取りでは、AccessVBOMは0、VBAWarningsは2でした。[T15の結果](spike-0-results.md#t15-vba経路の最小確認2026-11-01)を参照してください | マクロなしブックの通常操作ではVBIDEにアクセスしません。マクロ許可・VBIDEアクセスを初回準備の条件にしません |
 | Excel Securityのポリシー | 調べたHKCU・HKLMの`Software\Policies\Microsoft\Office\16.0\Excel\Security`キーは見つかりませんでした | 他の管理経路を含む制限の不存在は証明していません。組織設定を変更・迂回しません |
-| AutomationSecurity・イベント抑止・DisplayAlerts | T3では専用Excelを生成せず、インスタンスの値と効果を確認していません | [起動とコード実行の境界](../architecture.md#起動とコード実行の境界)に従うコードはT4で準備しています。効果はT5以降の該当検証で確認します |
+| AutomationSecurity・イベント抑止・DisplayAlerts | T3では専用Excelを生成せず、インスタンスの値と効果を確認していません | 起動とコード実行の境界（`bdd2bb4`時点の`docs/architecture.md`。削除済み）に従うコードはT4で準備しています。効果はT5以降の該当検証で確認します |
 | Protected Viewと終了安全確認 | T4の通常終了は実機結果を参照してください。混入・照会不能時の拒否は未確認です | 設定を緩和せず、T2の拒否条件を検証します |
 
 VBIDE設定はVBA操作の前に確認します。マクロの実行や起動設定の効果はS10等で評価します。

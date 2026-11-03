@@ -5,7 +5,7 @@
 
 2026-11-01に、T16でユーザーが承認しました。
 PoC-1の6操作の失敗は`isError: true`とし、`structuredContent`を付けません。
-テキストは`error`と`session`を持つ1行のJSONで、`McpException`の文言として返します。形は[API契約](../api.md#応答の形)にあります。
+テキストは`error`と`session`を持つ1行のJSONで、`McpException`の文言として返します。形はAPI契約（`bdd2bb4`時点の`docs/api.md`。削除済み）にあります。
 
 ## 背景
 

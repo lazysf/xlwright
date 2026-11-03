@@ -1,7 +1,7 @@
 # MCPサーバーの設計・開発の調査
 
-- Date: 2026-11-01
-- 出典: [Tools仕様](https://modelcontextprotocol.io/specification/draft/server/tools)、[2026-07-28の変更点](https://modelcontextprotocol.io/specification/2026-07-28/changelog)、[Security Best Practices](https://modelcontextprotocol.io/specification/draft/basic/security_best_practices)、[Local Server Security](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/local-server-security)、[Inspector CLI](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector/cli)、[Inspector Recipes](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector/recipes)、[mcpdo](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector/mcpdo)、[Protocol eras](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector/protocol-eras)、[Tasks拡張](https://modelcontextprotocol.io/extensions/tasks/overview)、[conformance](https://github.com/modelcontextprotocol/conformance)、[C# SDK](https://github.com/modelcontextprotocol/csharp-sdk)、[McpServerToolAttribute](https://csharp.sdk.modelcontextprotocol.io/api/ModelContextProtocol.Server.McpServerToolAttribute.html)、[Writing effective tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents)、ローカルの実行結果。
+- Date: 2026-11-02
+- 出典: [Claude CodeのMCP](https://code.claude.com/docs/en/mcp.md)、[Tools仕様](https://modelcontextprotocol.io/specification/draft/server/tools)、[2026-07-28の変更点](https://modelcontextprotocol.io/specification/2026-07-28/changelog)、[Security Best Practices](https://modelcontextprotocol.io/specification/draft/basic/security_best_practices)、[Local Server Security](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/local-server-security)、[Inspector CLI](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector/cli)、[Inspector Recipes](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector/recipes)、[mcpdo](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector/mcpdo)、[Protocol eras](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector/protocol-eras)、[Tasks拡張](https://modelcontextprotocol.io/extensions/tasks/overview)、[conformance](https://github.com/modelcontextprotocol/conformance)、[C# SDK](https://github.com/modelcontextprotocol/csharp-sdk)、[McpServerToolAttribute](https://csharp.sdk.modelcontextprotocol.io/api/ModelContextProtocol.Server.McpServerToolAttribute.html)、[Writing effective tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents)、ローカルの実行結果。
 
 日々の手順と基準の正本は[開発ガイド](../development.md#mcpツールの実装基準)です。
 本書は、その形にした理由と現在の実装との差を記録します。
@@ -37,7 +37,7 @@ Toolsの要件はdraftの本文で確認しました。
 開発用の`dev_status`は、注釈を基準どおり明示しています。SDKの既定では`Destructive`と`OpenWorld`がtrueのためです。
 結果はJSON文字列のテキストだけで、`outputSchema`はありません。開発用の識別情報なので、基準の対象とする製品ツールとは分けています。
 
-[api.md](../api.md#共通規約)は、セッションをサーバープロセス単位で持ち、`session_id`を引数に取りません。プロトコルのセッションには依存しませんが、明示的なハンドルを渡す2026-07-28の案内とは異なります。
+api.md（`bdd2bb4`時点の`docs/api.md`。削除済み）は、セッションをサーバープロセス単位で持ち、`session_id`を引数に取りません。プロトコルのセッションには依存しませんが、明示的なハンドルを渡す2026-07-28の案内とは異なります。
 仕様は、プロトコルのセッションを廃止しました。
 接続ごとの暗黙の状態に頼らず、明示的なハンドルを引数で渡す設計を案内しています。
 この案内は非規範です。stdioのサーバーは1プロセスに1クライアントなので、現在の契約が直ちに動かなくなるとは確認していません。
@@ -45,6 +45,24 @@ Toolsの要件はdraftの本文で確認しました。
 
 ハンドルへ変えても、stdioではサーバープロセスが終わると状態が失われます。
 接続ごとに終了するInspector CLIでは、セッションをまたぐ操作を検証できません。
+
+## Claude Codeでの呼出しと結果の制限（2026-11-02）
+
+[Claude CodeのMCP](https://code.claude.com/docs/en/mcp.md)の文書で、2026-11-02に確かめた事実です。実機では確かめていません。
+
+- ツール呼出しの上限は`MCP_TOOL_TIMEOUT`で決まり、既定は約28時間です。サーバーごとの`timeout`が、これより優先します。
+- 進捗の通知は、この上限を延ばしません。
+- 応答も進捗の通知も無い呼出しは、無応答の期間で打ち切られます。期間はstdioのサーバーで30分です。進捗の通知は、この判定では応答に数えます。
+- 会話の中の呼出しが2分を超えると、バックグラウンドの作業へ移ります。
+- ツールの結果は、既定で25,000トークンに制限されます。10,000トークンを超えると警告が出ます。
+- 50,000文字を超える成功の結果は、ファイルへ逃がされます。
+- MCPのツールの定義は、既定で後から読み込まれます。最初に読むのは、ツールの名前とサーバーの説明だけです。
+
+これらの事実を、次の判断に使っています。
+
+- マクロとテストの実行を、終わるまで応答を待つ形にしたこと（[ADR 0014](../adr/0014-synchronous-macro-run.md)）。実行時間の上限を、30分の無応答の打ち切りより短くしました。
+- 応答の大きさの上限（[API](../api.md#成功と失敗)）。
+- ツールを読む・変えるで分け、名前を予測できる形にしたこと（[ADR 0013](../adr/0013-read-and-edit-tools.md)）。
 
 ## 今は取り入れないもの
 

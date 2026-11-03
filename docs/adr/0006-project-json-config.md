@@ -1,10 +1,11 @@
 # 0006: 利用プロジェクトの設定をproject.jsonにする
 
-- Status: Accepted
+- Status: Superseded
+- Superseded-By: 0012
 
 2026-11-01に、T16でユーザーが承認しました。
 利用プロジェクトの設定ファイルを`project.yaml`から`project.json`へ変えます。
-キー・既定値・検証の規則は変えません。規則は[設計](../architecture.md#ブックとソース)にあります。
+キー・既定値・検証の規則は変えません。規則は設計（`bdd2bb4`時点の`docs/architecture.md`。削除済み）にあります。
 
 ## 背景
 

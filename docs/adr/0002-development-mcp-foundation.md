@@ -1,6 +1,7 @@
 # 0002: 継続利用するMCP接続基盤をR1で整備する
 
-- Status: Accepted
+- Status: Superseded
+- Superseded-By: 0011
 - Amended-By: 0003
 
 2026-10-29に、製品へ育てるstdioサーバーと開発用登録をR1で整備する方針が承認されました。

@@ -5,7 +5,7 @@
 要件と設計の正本は [docsの索引](README.md) から参照してください。
 本書はリポジトリでの作業手順を扱います。
 API契約と実機検証の仮説は、それぞれの正式文書で管理します。
-実施済みの実験の手順と経過は[Spike-0の実機手順](spike-0-runbook.md)にあります。
+実施済みの実験の手順と経過はSpike-0の実機手順（`bdd2bb4`時点の`docs/spike-0-runbook.md`。削除済み）にあります。
 
 ## セットアップ
 
@@ -30,9 +30,9 @@ Spike0とCoreのビルドには、Officeの既存PIAが必要です。固定版�
 | `AGENTS.md` | AIエージェント向けのリポジトリ固有ルール |
 | `docs/README.md` | 現在の正式文書への入口 |
 | `references/PROJECT_OVERVIEW_V22.md` | 取り込んだ初期の参考資料 |
+| `docs/architecture.md` | 仕組みの方式と部品の境界 |
+| `docs/api.md` | MCPのツールの共通の規約と一覧 |
 | `docs/development.md` | セットアップと開発手順 |
-| `docs/spike-0.md` | 次工程の実施計画と結果記録の方法 |
-| `docs/spike-0-runbook.md` | 実施済みの実験の手順と経過 |
 | `global.json` | .NET SDKの選択 |
 | `.editorconfig` | C#と設定ファイルの編集形式 |
 | `prek.toml` | commit前のチェック |
@@ -53,7 +53,7 @@ Spike0とCoreのビルドには、Officeの既存PIAが必要です。固定版�
 | `tests/XlWright.RealExcel.Tests/` | 製品の実Excelのシナリオ。固定コピーから人が実行する |
 | `tests/fixtures/` | Git管理する基準ブック。マクロなしの`lifecycle.xlsx`と、実験ごとの`s9/`・`s10/`・`s11/`・`s14/` |
 
-本体と利用プロジェクトの責務は [設計文書](architecture.md) に従います。
+本体とアプリの責務は[設計](architecture.md)に従います。
 本体リポジトリに、利用プロジェクトの `project.json` や実ブックを先に生成しないでください。
 
 ## 作業と検証
@@ -66,7 +66,7 @@ Spike0とCoreのビルドには、Officeの既存PIAが必要です。固定版�
 ### 実装の進め方
 
 1. 正式文書の該当箇所と受け入れ条件を確認します。
-2. 実機依存の仮説は[Spike-0](spike-0.md)で確認します。
+2. 実機依存の仮説はSpike-0（`bdd2bb4`時点の`docs/spike-0.md`。削除済み）で確認します。
 3. その結果に基づいて、対象工程のコードと必要なテストを追加します。
 4. 下記の自己修正ループで、完了条件を満たすまで修正します。
 5. 差分を確認し、基準フィクスチャや対象外ファイルへの意図しない変更がないか検査します。
@@ -201,7 +201,7 @@ Hotloadによる自動差替えは採用しません。
 
 - ツール定義は、モデルが読む指示として書きます。説明には用途、副作用、失敗後に再試行できるかを書きます。
 - 入力の検証失敗と業務上の失敗は、`isError`のツール実行エラーで返します。文言には次に取る行動を含めます。
-- 製品ツールの失敗は、[API契約](api.md#応答の形)の1行のJSONを持つ`isError: true`の`CallToolResult`で返します。`McpException`の文言にはSDKが接頭辞を付けるためです。
+- 製品ツールの失敗は、[API](api.md#成功と失敗)の1行のJSONを持つ`isError: true`の`CallToolResult`で返します。`McpException`の文言にはSDKが接頭辞を付けるためです。
 - 製品ツールの引数は、`McpServerTool`のサブクラスで生の`Arguments`を受け取って検査し、同じ形の失敗で返します。SDKの既定の失敗文言は詳細を含まないためです。
 - 注釈の`ReadOnly`・`Destructive`・`Idempotent`・`OpenWorld`は全ツールで明示します。注釈を安全制御の根拠には数えません。
 - 結果は`outputSchema`に沿う`structuredContent`で返し、同じJSONをテキストでも返します。
@@ -217,7 +217,7 @@ Spikeの実Excel実験は、人がコンソールで起動します。承認の�
 2. エージェントが`npm run check`を通し、`npm run prepare:experiment`で固定コピーを作ります。
 3. エージェントが、使用するブック、変更・終了する対象、副作用、停止条件を示して承認を得ます。
 4. 人がリポジトリ直下の通常のPowerShellで、表示されたコマンドを実行します。
-5. エージェントが、終了コード、診断、所有記録、基準ブックのハッシュを照合し、結果を[Spike-0の記録方法](spike-0.md#結果の残し方)に従って残します。
+5. エージェントが、終了コード、診断、所有記録、基準ブックのハッシュを照合し、結果をSpike-0の記録方法（`bdd2bb4`時点の`docs/spike-0.md`。削除済み）に従って残します。
 
 `npm run prepare:experiment`は、最新の全工程の通過と同じソース・ビルドだけをコピーします。
 出力先は`.xlwright/development/prepared/experiment-<id>/`です。
@@ -235,8 +235,8 @@ Spike0のExcel入口は、次の検査を通らなければ開始しません。
 
 失敗・結果不明では再送せず、証拠を保持します。
 未完了の所有記録がある場合は、証拠保全と手動復旧の承認を必要とします。
-手動復旧は[設計文書](architecture.md#初期の手動復旧)に従います。
-ガードがなければ、Spike0は[次回開始の規則](architecture.md#initial-lifecycle)で所有記録を更新します。置き換えた記録は`run.prepared`に残します。ガードを除去できるのは、対象と証拠を確認した後だけです。
+手動復旧は設計文書（`bdd2bb4`時点の`docs/architecture.md`。削除済み）に従います。
+ガードがなければ、Spike0は次回開始の規則（`bdd2bb4`時点の`docs/architecture.md`。削除済み）で所有記録を更新します。置き換えた記録は`run.prepared`に残します。ガードを除去できるのは、対象と証拠を確認した後だけです。
 
 #### 製品の固定コピー
 
@@ -328,7 +328,7 @@ T13で確認した手順です。結果は[T13の記録](notes/spike-0-results.m
 `Show-OwnedExcel.ps1`は全サーバーの不在を要求するため、手動復旧の前にもこの手順でサーバーを止めます。
 
 Claude Codeは、セッションの削除・アーカイブ・アプリの終了で標準入力を閉じ、約0.34秒後にサーバーを終了させます。EOFの後始末はこの間に終わらず、readyのまま会話を閉じると所有Excelが残ります。
-会話は`session_end`でclosedにしてから閉じます。所有Excelが残ったら、[手動復旧](architecture.md#初期の手動復旧)へ進みます。契約では、次の`session_start`は`EXCEL_NEEDS_REVIEW`で拒否します。製品経路での確認はT20です。
+会話は`session_end`でclosedにしてから閉じます。所有Excelが残ったら、手動復旧（`bdd2bb4`時点の`docs/architecture.md`。削除済み）へ進みます。契約では、次の`session_start`は`EXCEL_NEEDS_REVIEW`で拒否します。製品経路での確認はT20です。
 
 ## 実行時の生成物
 

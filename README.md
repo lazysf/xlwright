@@ -5,7 +5,7 @@ Windows上の実Excelを操作し、VBAソースの反映、マクロ実行、�
 
 ## 現在の状態
 
-リポジトリを片付け、開発をしなおしているところです。コードはまだありません。次は[ロードマップ](ROADMAP.md)の段階0です。
+リポジトリを片付け、開発をしなおしているところです。今は[ロードマップ](ROADMAP.md)の段階0で、`server_info`だけを持つ空のサーバーと確認の入口があります。
 
 要件と設計は [docs/](docs/README.md)、開発の順序は [ROADMAP.md](ROADMAP.md)、今の周期の作業は [TODO.md](TODO.md) で管理しています。
 AIエージェント向けのリポジトリ固有ルールは [AGENTS.md](AGENTS.md) にあります。
@@ -17,10 +17,10 @@ AIエージェント向けのリポジトリ固有ルールは [AGENTS.md](AGENT
 - Git
 - prek
 - nvm-windowsとNode.js（版は [.nvmrc](.nvmrc)）
+- .NET SDK（版は [global.json](global.json)）
 
 Windows向けのスクリプトとコマンドは、Windows PowerShell 5.1を前提とします。
 Excelを使う実機の確認の対象は、Microsoft 365 Excel 64-bit のデスクトップ版です。
-.NETの設定は、段階0でコードを作る時に加えます。
 
 リポジトリのルートで、Git hookを登録し、開発用のパッケージを入れます。
 

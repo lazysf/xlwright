@@ -68,8 +68,24 @@ try {
         build_id = $buildId
         server = ".xlwright/builds/$buildId/XlWright.McpServer.dll"
     } | ConvertTo-Json
-    [System.IO.File]::WriteAllText((Join-Path $repo '.xlwright\builds\latest.json'), $latest, (New-Object System.Text.UTF8Encoding $false))
-    Write-Host "All checks passed. Build $buildId is recorded in .xlwright\builds\latest.json."
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText((Join-Path $repo '.xlwright\builds\latest.json'), $latest, $utf8)
+
+    # Point the development plugin at this build. Claude Code expands the ${...} placeholders.
+    $mcp = [ordered]@{
+        mcpServers = [ordered]@{
+            xlwright = [ordered]@{
+                command = 'dotnet'
+                args = @(
+                    ('${CLAUDE_PLUGIN_ROOT}/../../.xlwright/builds/' + $buildId + '/XlWright.McpServer.dll'),
+                    '--project',
+                    '${CLAUDE_PROJECT_DIR}'
+                )
+            }
+        }
+    } | ConvertTo-Json -Depth 4
+    [System.IO.File]::WriteAllText((Join-Path $repo 'plugins\xlwright-dev\.mcp.json'), $mcp, $utf8)
+    Write-Host "All checks passed. Build $buildId is recorded in .xlwright\builds\latest.json and plugins\xlwright-dev\.mcp.json."
 }
 finally {
     Pop-Location

@@ -55,7 +55,82 @@ internal sealed class WindowsProcess : IOwnedProcess
         }
     }
 
+    // docs/architecture.md "失敗の返し方と記録": an XLMAIN of the process is disabled, and the process has a visible,
+    // enabled window that is not XLMAIN. A dialog a macro shows has no owner, or the VBE as owner (docs/notes/dialog-probe.md).
+    public DialogText? FindDialog()
+    {
+        if (_handle.IsInvalid)
+        {
+            return null;
+        }
+
+        var windows = new List<IntPtr>();
+        NativeMethods.EnumWindows((hwnd, _) =>
+        {
+            NativeMethods.GetWindowThreadProcessId(hwnd, out var pid);
+            if (pid == (uint)Facts.Pid)
+            {
+                windows.Add(hwnd);
+            }
+
+            return true;
+        }, IntPtr.Zero);
+
+        if (!windows.Any(hwnd => ClassOf(hwnd) == "XLMAIN" && !NativeMethods.IsWindowEnabled(hwnd)))
+        {
+            return null;
+        }
+
+        var dialog = windows.FirstOrDefault(hwnd =>
+            ClassOf(hwnd) != "XLMAIN" && NativeMethods.IsWindowVisible(hwnd) && NativeMethods.IsWindowEnabled(hwnd));
+        return dialog == IntPtr.Zero ? null : ReadDialog(dialog);
+    }
+
     public void Dispose() => _handle.Dispose();
+
+    // The title and the visible Static children, read with WM_GETTEXT within 500 ms in all, as ExcelMcp does,
+    // so a hung window cannot hold the watch; the caller ends the Excel whether or not the text was read.
+    private static DialogText ReadDialog(IntPtr dialog)
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var title = Text(dialog, watch);
+        var lines = new List<string>();
+        NativeMethods.EnumChildWindows(dialog, (hwnd, _) =>
+        {
+            if (ClassOf(hwnd) == "Static" && NativeMethods.IsWindowVisible(hwnd) && Text(hwnd, watch) is { Length: > 0 } text)
+            {
+                lines.Add(text);
+            }
+
+            return watch.ElapsedMilliseconds < ReadBudgetMs;
+        }, IntPtr.Zero);
+        return new DialogText(title, string.Join("\n", lines));
+    }
+
+    private const int ReadBudgetMs = 500;
+
+    private static string Text(IntPtr hwnd, System.Diagnostics.Stopwatch watch)
+    {
+        const uint WmGetText = 0x000D;
+        const uint SmtoAbortIfHung = 0x0002;
+        var remaining = ReadBudgetMs - (int)watch.ElapsedMilliseconds;
+        if (remaining <= 0)
+        {
+            return "";
+        }
+
+        var buffer = new StringBuilder(4096);
+        return NativeMethods.SendMessageTimeout(hwnd, WmGetText, buffer.Capacity, buffer, SmtoAbortIfHung, (uint)Math.Min(50, remaining), out _) == IntPtr.Zero
+            ? ""
+            : buffer.ToString().ReplaceLineEndings("\n").Trim();
+    }
+
+    private static string ClassOf(IntPtr hwnd)
+    {
+        var name = new StringBuilder(256);
+        _ = NativeMethods.GetClassName(hwnd, name, name.Capacity);
+        return name.ToString();
+    }
 
     private static string ImagePath(SafeProcessHandle handle)
     {

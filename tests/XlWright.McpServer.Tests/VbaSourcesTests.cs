@@ -86,6 +86,41 @@ public sealed class VbaSourcesTests : IDisposable
     }
 
     [Fact]
+    public void RewritesAnXlWrightModuleOfTheSameVersionWithOtherContent()
+    {
+        Source("src/modules/XlWright.bas", "' XlWright 0.1.0: edited\r\nOption Explicit\r\n");
+
+        Prepare();
+
+        Assert.Equal(VbaSources.XlWrightText("0.1.0"), File.ReadAllText(Path.Combine(_app.FullPath, "src", "modules", "XlWright.bas")));
+    }
+
+    [Fact]
+    public void TheXlWrightModuleTurnsObjectsArraysErrorsAndDatesIntoTypeNames()
+    {
+        var text = VbaSources.XlWrightText("0.1.0");
+
+        Assert.Contains("Public Function Result(ByVal value As Variant) As Variant", text);
+        Assert.Contains("IsObject(value)", text);
+        Assert.Contains("IsArray(value)", text);
+        Assert.Contains("vbError", text);
+        Assert.Contains("vbDate", text);
+    }
+
+    [Theory]
+    [InlineData("src/modules/XlWrightCall.bas")]
+    [InlineData("src/classes/xlwrightcall.cls")]
+    public void RejectsAModuleNamedLikeTheGeneratedOne(string file)
+    {
+        Source(file, "Option Explicit\r\n");
+
+        var failure = PrepareFailure();
+
+        Assert.Equal(file, failure.Data!["file"]!.GetValue<string>());
+        Assert.Contains("XlWrightCall", failure.Data["reason"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void LeavesAnXlWrightModuleFromANewerVersion()
     {
         Source("src/modules/XlWright.bas", "' XlWright 0.2.0: newer\r\nOption Explicit\r\n");

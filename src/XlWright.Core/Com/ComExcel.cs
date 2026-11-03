@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 
 namespace XlWright.Core.Com;
 
@@ -31,13 +32,14 @@ public sealed class ComExcelLauncher : IExcelLauncher
 /// The Excel operations of one session, through late binding (docs/architecture.md "本体の部品の境界").
 /// Every COM object it obtains is released explicitly: an unreleased intermediate object kept Excel running after Quit.
 /// </summary>
-internal sealed class ComExcel(dynamic app) : IExcel
+internal sealed partial class ComExcel(dynamic app) : IExcel
 {
     private const int AutomationSecurityLow = 1; // msoAutomationSecurityLow
     private const int CalculationDone = 0; // xlDone
     private const int StdModule = 1; // vbext_ct_StdModule
     private const int ClassModule = 2; // vbext_ct_ClassModule
     private const int ProjectLocked = 1; // vbext_pp_locked
+    private const int ProcedureKind = 0; // vbext_pk_Proc
 
     private dynamic? _app = app;
     private dynamic? _main;
@@ -211,7 +213,8 @@ internal sealed class ComExcel(dynamic app) : IExcel
                         {
                             string name = component.Name;
                             components.Remove(component);
-                            if (!modules.Any(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                            // A generated module that outlived its run is not the user's module, so it is not reported.
+                            if (!modules.Any(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) && name != MacroCall.ModuleName)
                             {
                                 removed.Add(name);
                             }
@@ -264,6 +267,126 @@ internal sealed class ComExcel(dynamic app) : IExcel
             Release(project);
         }
     }
+
+    public MacroResult RunMacro(MacroName macro, IReadOnlyList<object> args)
+    {
+        dynamic project = Main.VBProject;
+        try
+        {
+            dynamic components = project.VBComponents;
+            try
+            {
+                var (declaration, missing) = ((string?, string?))Declaration(components, macro);
+                if (missing is not null)
+                {
+                    return new MacroResult.NotFound(missing);
+                }
+
+                dynamic added = components.Add(StdModule);
+                try
+                {
+                    added.Name = MacroCall.ModuleName;
+                    dynamic code = added.CodeModule;
+                    try
+                    {
+                        code.AddFromString(MacroCall.Generate(macro, args.Count, FunctionDeclaration().IsMatch(declaration!)));
+                    }
+                    finally
+                    {
+                        Release(code);
+                    }
+
+                    // The workbook qualifier keeps Application.Run in the main workbook (docs/notes/vba-run.md).
+                    var qualifier = $"'{((string)Main.Name).Replace("'", "''")}'!";
+                    Array returned = App.Run(qualifier + MacroCall.ModuleName + ".Run", args.ToArray());
+                    var first = returned.GetLowerBound(0);
+                    return Convert.ToInt32(returned.GetValue(first)) switch
+                    {
+                        0 => new MacroResult.Returned(returned.GetValue(first + 1)),
+                        1 => new MacroResult.Failed(Convert.ToInt32(returned.GetValue(first + 1)),
+                            (string)returned.GetValue(first + 2)!, (string)returned.GetValue(first + 3)!),
+                        _ => new MacroResult.OfType((string)returned.GetValue(first + 1)!),
+                    };
+                }
+                finally
+                {
+                    try
+                    {
+                        components.Remove(added);
+                    }
+                    catch (Exception e) when (e is COMException or InvalidComObjectException)
+                    {
+                        // The Excel was ended after a dialog or the limit; the module went with it.
+                    }
+
+                    Release(added);
+                }
+            }
+            finally
+            {
+                Release(components);
+            }
+        }
+        finally
+        {
+            Release(project);
+        }
+    }
+
+    // The declaration line of a public Sub or Function of a standard module, or why there is none (docs/notes/macro-run.md).
+    private static (string? Declaration, string? Missing) Declaration(dynamic components, MacroName macro)
+    {
+        dynamic component;
+        try
+        {
+            component = components.Item(macro.Module);
+        }
+        catch (Exception e) when (e is COMException or IndexOutOfRangeException)
+        {
+            return (null, $"The main workbook has no module named {macro.Module}. Check the name, and sync with vba_sync if the module is new.");
+        }
+
+        try
+        {
+            if ((int)component.Type != StdModule)
+            {
+                return (null, $"{macro.Module} is not a standard module. macro_run runs a Public Sub or Function of a standard module.");
+            }
+
+            dynamic code = component.CodeModule;
+            try
+            {
+                int body;
+                try
+                {
+                    body = code.ProcBodyLine(macro.Procedure, ProcedureKind);
+                }
+                catch (COMException)
+                {
+                    return (null, $"{macro.Module} has no Sub or Function named {macro.Procedure}.");
+                }
+
+                string declaration = code.Lines(body, 1);
+                return PrivateDeclaration().IsMatch(declaration)
+                    ? (null, $"{macro} is Private. Make it Public to run it with macro_run.")
+                    : (declaration, null);
+            }
+            finally
+            {
+                Release(code);
+            }
+        }
+        finally
+        {
+            Release(component);
+        }
+    }
+
+    [GeneratedRegex(@"^\s*Private\s", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex PrivateDeclaration();
+
+    [GeneratedRegex(@"^\s*(?:(?:Public|Static)\s+)*Function\s", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex FunctionDeclaration();
 
     // Events stay off while xlwright closes workbooks, so Workbook_BeforeClose cannot stop or change the close
     // (docs/architecture.md "起動時の設定"). Quit and the release run even when a close fails.

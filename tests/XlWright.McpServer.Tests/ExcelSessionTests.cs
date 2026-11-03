@@ -585,6 +585,169 @@ public sealed class ExcelSessionTests : IDisposable
     }
 
     [Fact]
+    public async Task RunSyncsThenRunsAndReturnsTheValue()
+    {
+        await _session.StartAsync(_app);
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "Twice"), [21.0], TimeSpan.FromSeconds(5));
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal("ready", outcome.Session.State);
+        Assert.Equal(["SyncVba XlWright", "RunMacro Calc.Twice 21"], _launcher.Excel.Calls.Skip(2));
+        var result = outcome.Result!;
+        Assert.Equal("Calc.Twice", result["macro"]!.GetValue<string>());
+        Assert.Equal(42, result["return"]!.GetValue<double>());
+        Assert.Null(result["return_type"]);
+        Assert.True(result["elapsed_ms"]!.GetValue<long>() >= 0);
+        Assert.Equal("""{"modules":[{"name":"XlWright","type":"standard"}],"removed":[]}""", result["sync"]!.ToJsonString());
+    }
+
+    [Theory]
+    [InlineData("Collection")]
+    [InlineData("Date")]
+    public async Task RunNamesAReturnTypeItDoesNotReturn(string typeName)
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.MacroResult = new MacroResult.OfType(typeName);
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "Make"), [], TimeSpan.FromSeconds(5));
+
+        Assert.True(outcome.Result!.ContainsKey("return"));
+        Assert.Null(outcome.Result["return"]);
+        Assert.Equal(typeName, outcome.Result["return_type"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task RunNamesADotNetTypeItCannotReturn()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.MacroResult = new MacroResult.Returned(new DateTime(2026, 11, 3));
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "When"), [], TimeSpan.FromSeconds(5));
+
+        Assert.Equal("DateTime", outcome.Result!["return_type"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task RunWritesALargeReturnValueToAResultFile()
+    {
+        await _session.StartAsync(_app);
+        var large = new string('x', 30_000);
+        _launcher.Excel.MacroResult = new MacroResult.Returned(large);
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "Big"), [], TimeSpan.FromSeconds(5));
+
+        var result = outcome.Result!;
+        Assert.Equal(new string('x', 1_000), result["return"]!.GetValue<string>());
+        var file = result["result_file"]!.GetValue<string>();
+        Assert.StartsWith("apps/sales/.xlwright/results/", file);
+        var full = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(_repo.Root, file)))!;
+        Assert.Equal(large, full["return"]!.GetValue<string>());
+        Assert.Equal("Calc.Big", full["macro"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task RunDoesNotRunWhenTheSyncFails()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.SyncThrows = new VbaSyncException("SYNC_FAILED", [], "refused");
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "Twice"), [], TimeSpan.FromSeconds(5));
+
+        AssertFailure(outcome, "EXCEL_ERROR", "SYNC_FAILED", "ready");
+        Assert.DoesNotContain(_launcher.Excel.Calls, c => c.StartsWith("RunMacro"));
+    }
+
+    [Fact]
+    public async Task RunRejectsAMainWorkbookWithoutMacros()
+    {
+        _repo.AddApp("apps/plain", "Plain.xlsx");
+        await _session.StartAsync(AppFolder.Resolve(_repo.Root, "apps/plain").Folder!);
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "Twice"), [], TimeSpan.FromSeconds(5));
+
+        AssertFailure(outcome, "INVALID_REQUEST", "NOT_MACRO_ENABLED", "ready");
+    }
+
+    [Fact]
+    public async Task RunReportsAMissingMacro()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.MacroResult = new MacroResult.NotFound("Calc has no public Sub or Function named Missing.");
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "Missing"), [], TimeSpan.FromSeconds(5));
+
+        AssertFailure(outcome, "NOT_FOUND", "MACRO_NOT_FOUND", "ready");
+        Assert.Contains("named Missing", outcome.Failure!.Message);
+    }
+
+    [Fact]
+    public async Task RunReportsTheRunTimeErrorTheGeneratedModuleCaught()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.MacroResult = new MacroResult.Failed(11, "0 で除算しました。", "VBAProject");
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "DivZero"), [], TimeSpan.FromSeconds(5));
+
+        AssertFailure(outcome, "EXCEL_ERROR", "MACRO_ERROR", "ready");
+        Assert.Equal(11, outcome.Failure!.Data!["number"]!.GetValue<int>());
+        Assert.Equal("0 で除算しました。", outcome.Failure.Data["description"]!.GetValue<string>());
+        Assert.Equal("VBAProject", outcome.Failure.Data["source"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task RunEndsTheExcelWhenADialogStopsTheMacro()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.MacroBlock = Block.UntilTerminated;
+        _launcher.Process.Dialog = new DialogText("Microsoft Visual Basic", "実行時エラー '11':\n0 で除算しました。");
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "DivZero"), [], TimeSpan.FromSeconds(30));
+
+        AssertFailure(outcome, "STATE_UNKNOWN", "DIALOG", "closed");
+        Assert.Equal(1, _launcher.Process.Terminations);
+        Assert.True(outcome.Failure!.Data!["excel_ended"]!.GetValue<bool>());
+        Assert.Equal("Microsoft Visual Basic", outcome.Failure.Data["dialog"]!["title"]!.GetValue<string>());
+        Assert.Equal("実行時エラー '11':\n0 で除算しました。", outcome.Failure.Data["dialog"]!["text"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task RunEndsTheExcelWhenTheLimitPasses()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.MacroBlock = Block.UntilTerminated;
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "Forever"), [], TimeSpan.FromMilliseconds(700));
+
+        AssertFailure(outcome, "STATE_UNKNOWN", "TIMEOUT", "closed");
+        Assert.Equal(1, _launcher.Process.Terminations);
+        Assert.True(_launcher.Process.DialogChecks >= 2);
+    }
+
+    [Fact]
+    public async Task StatusReportsTheRunningMacro()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.MacroBlock = Block.UntilTerminated;
+
+        var running = _session.RunAsync(new MacroName("Calc", "Forever"), [], TimeSpan.FromMilliseconds(600));
+        await Task.Delay(300, TestContext.Current.CancellationToken);
+        var status = _session.Status();
+        await running;
+
+        Assert.True(status.Busy);
+        Assert.Equal("macro_run", status.Operation);
+    }
+
+    [Fact]
+    public async Task RunWithoutASessionIsAConflict()
+    {
+        var outcome = await _session.RunAsync(new MacroName("Calc", "Twice"), [], TimeSpan.FromSeconds(5));
+
+        AssertFailure(outcome, "CONFLICT", "NO_SESSION", "closed");
+    }
+
+    [Fact]
     public async Task EndWithoutASessionIsAConflict()
     {
         var outcome = await _session.EndAsync(save: false);

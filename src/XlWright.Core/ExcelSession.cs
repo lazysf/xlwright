@@ -16,6 +16,9 @@ public sealed record SessionOutcome(JsonObject? Result, ToolFailure? Failure, Se
 /// </summary>
 public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeouts) : IDisposable
 {
+    // docs/notes/dialog-probe.md: every dialog was found at the first 250 ms check.
+    private static readonly TimeSpan DialogInterval = TimeSpan.FromMilliseconds(250);
+
     private readonly object _gate = new();
     private string? _operation;
     private long _operationStarted;
@@ -100,9 +103,57 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
             : SheetNotFound(sheet);
     });
 
-    public Task<SessionOutcome> SyncAsync() => Run("vba_sync", NoSession, async () =>
+    public Task<SessionOutcome> SyncAsync() => Run("vba_sync", NoSession, () => SyncCore(_active!));
+
+    /// <summary>
+    /// Syncs, then runs the macro and waits up to <paramref name="limit"/>, checking for a dialog every 250 ms
+    /// (docs/architecture.md "マクロの実行"). A dialog or the limit ends the owned Excel.
+    /// </summary>
+    public Task<SessionOutcome> RunAsync(MacroName macro, IReadOnlyList<object> args, TimeSpan limit) => Run("macro_run", NoSession, async () =>
     {
         var active = _active!;
+        var (sync, syncFailure) = await SyncCore(active);
+        if (syncFailure is not null)
+        {
+            return (null, syncFailure);
+        }
+
+        var elapsed = Stopwatch.StartNew();
+        var running = active.Worker.Run(() => active.Excel.RunMacro(macro, args));
+        while (!await Completes(running, DialogInterval))
+        {
+            if (active.Process.FindDialog() is { } dialog)
+            {
+                return await AfterTimeout(active, running, $"{macro} stopped at a dialog.", "DIALOG",
+                    new JsonObject { ["dialog"] = new JsonObject { ["title"] = dialog.Title, ["text"] = dialog.Text } });
+            }
+
+            if (elapsed.Elapsed >= limit)
+            {
+                return await AfterTimeout(active, running, $"{macro} did not finish within {limit.TotalSeconds:0.###} seconds.");
+            }
+        }
+
+        if (running.IsFaulted)
+        {
+            // Excel refused the call itself, such as after an End statement (docs/notes/macro-run.md).
+            var error = running.Exception!.InnerException!;
+            return MacroError(macro, error.HResult, error.Message, "");
+        }
+
+        var time = (long)elapsed.Elapsed.TotalMilliseconds;
+        return running.Result switch
+        {
+            MacroResult.NotFound missing => Fail(ToolFailure.NotFound, "MACRO_NOT_FOUND", missing.Reason),
+            MacroResult.Failed failed => MacroError(macro, failed.Number, failed.Description, failed.Source),
+            MacroResult.OfType typed => (Returned(macro, null, typed.TypeName, time, sync!), null),
+            MacroResult.Returned returned => (ReturnedValue(active.App, macro, returned.Value, time, sync!), null),
+            _ => throw new InvalidOperationException("Unknown macro result."),
+        };
+    });
+
+    private async Task<(JsonObject?, ToolFailure?)> SyncCore(Active active)
+    {
         if (!Path.GetExtension(active.App.WorkbookName).Equals(".xlsm", StringComparison.OrdinalIgnoreCase))
         {
             return Fail(ToolFailure.InvalidRequest, "NOT_MACRO_ENABLED",
@@ -153,7 +204,44 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
             {
             }
         }
-    });
+    }
+
+    private static (JsonObject?, ToolFailure?) MacroError(MacroName macro, int number, string description, string source) =>
+        Fail(ToolFailure.ExcelError, "MACRO_ERROR",
+            $"{macro} raised run-time error {number}: {description} The session is still open; nothing was saved.",
+            new JsonObject { ["number"] = number, ["description"] = description, ["source"] = source });
+
+    // A return value too long for the response goes whole into <app>/.xlwright/results/<id>.json (docs/api.md "成功と失敗").
+    private static JsonObject ReturnedValue(AppFolder app, MacroName macro, object? value, long time, JsonObject sync)
+    {
+        var (json, typeName) = MacroCall.ReturnValue(value);
+        var result = Returned(macro, json, typeName, time, sync);
+        if (value is not string text || JsonValue.Create(text).ToJsonString().Length <= MacroCall.MaxReturnCharacters)
+        {
+            return result;
+        }
+
+        var id = Guid.NewGuid().ToString("N");
+        var folder = Path.Combine(app.FullPath, ".xlwright", "results");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, id + ".json"), new JsonObject { ["macro"] = macro.ToString(), ["return"] = text }.ToJsonString());
+        var summary = Returned(macro, JsonValue.Create(text[..MacroCall.SummaryCharacters]), null, time, sync);
+        summary["result_file"] = $"{app.RelativePath}/.xlwright/results/{id}.json";
+        return summary;
+    }
+
+    private static JsonObject Returned(MacroName macro, JsonNode? value, string? typeName, long time, JsonObject sync)
+    {
+        var result = new JsonObject { ["macro"] = macro.ToString(), ["return"] = value };
+        if (typeName is not null)
+        {
+            result["return_type"] = typeName;
+        }
+
+        result["elapsed_ms"] = time;
+        result["sync"] = sync.DeepClone();
+        return result;
+    }
 
     public void Dispose()
     {
@@ -355,7 +443,8 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
     }
 
     // A time limit passed: end the owned Excel without checking workbooks (docs/architecture.md "状態と結果不明").
-    private async Task<(JsonObject?, ToolFailure?)> AfterTimeout(Active active, Task pending, string what)
+    // A dialog ends the owned Excel the same way, with its own detail and the dialog in data.
+    private async Task<(JsonObject?, ToolFailure?)> AfterTimeout(Active active, Task pending, string what, string detail = "TIMEOUT", JsonObject? extra = null)
     {
         active.Process.Terminate();
         var ended = active.Process.WaitForExit(timeouts.TerminateExit);
@@ -368,10 +457,10 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
         Close(active);
         var lost = " The changes since the last save are lost.";
         return ended && returned
-            ? Unknown("TIMEOUT", excelEnded: true, restartable: true, null, what + " The dedicated Excel was ended." + lost + " You can start a new session.")
-            : Unknown("TIMEOUT", ended, restartable: false, ended ? null : active.Process.Facts,
+            ? Unknown(detail, excelEnded: true, restartable: true, null, what + " The dedicated Excel was ended." + lost + " You can start a new session.", extra)
+            : Unknown(detail, ended, restartable: false, ended ? null : active.Process.Facts,
                 what + (ended ? " The dedicated Excel was ended." + lost : " The dedicated Excel could not be ended.") +
-                " Close this conversation and start the session in a new one.");
+                " Close this conversation and start the session in a new one.", extra);
     }
 
     private void Close(Active active)
@@ -468,11 +557,17 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
     private static (JsonObject?, ToolFailure?) Fail(string code, string? detail, string message, JsonObject? data = null) =>
         (null, new ToolFailure(code, detail, message, data));
 
-    private static (JsonObject?, ToolFailure?) Unknown(string detail, bool excelEnded, bool restartable, ProcessFacts? leftRunning, string message)
+    private static (JsonObject?, ToolFailure?) Unknown(
+        string detail, bool excelEnded, bool restartable, ProcessFacts? leftRunning, string message, JsonObject? extra = null)
     {
         var data = leftRunning is null ? new JsonObject() : Handover(leftRunning);
         data["excel_ended"] = excelEnded;
         data["restartable"] = restartable;
+        foreach (var (name, value) in extra ?? [])
+        {
+            data[name] = value?.DeepClone();
+        }
+
         return Fail(ToolFailure.StateUnknown, detail, message, data);
     }
 }

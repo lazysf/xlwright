@@ -35,13 +35,30 @@ public static partial class VbaSources
     public static Encoding AnsiEncoding(int codePage) =>
         Encoding.GetEncoding(codePage, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
 
-    /// <summary>The text of src/modules/XlWright.bas. The first line carries the version that wrote it.</summary>
+    /// <summary>
+    /// The text of src/modules/XlWright.bas. The first line carries the version that wrote it. Result receives a
+    /// macro's return value as a ByVal Variant, so an object stays an object and its default member is not read;
+    /// a CVErr value and a Long both reach .NET as Int32 (docs/notes/macro-run.md).
+    /// </summary>
     public static string XlWrightText(string version) =>
-        $"' XlWright {version}: xlwright writes this module before each sync. Do not edit it.\r\nOption Explicit\r\n";
+        $"' XlWright {version}: xlwright writes this module before each sync. Do not edit it.\r\n" +
+        "Option Explicit\r\n" +
+        "\r\n" +
+        "' macro_run passes a macro's return value here: Array(0, value), or Array(2, type name) for a value it does not return.\r\n" +
+        "Public Function Result(ByVal value As Variant) As Variant\r\n" +
+        "    If IsObject(value) Or IsArray(value) Then\r\n" +
+        "        Result = Array(2, TypeName(value))\r\n" +
+        "    ElseIf VarType(value) = vbError Or VarType(value) = vbDate Then\r\n" +
+        "        Result = Array(2, TypeName(value))\r\n" +
+        "    Else\r\n" +
+        "        Result = Array(0, value)\r\n" +
+        "    End If\r\n" +
+        "End Function\r\n";
 
     /// <summary>
-    /// Checks every source before Excel is touched, writes XlWright.bas when it is missing or older than
-    /// <paramref name="version"/>, and writes the converted files under &lt;app&gt;/.xlwright/sync/&lt;id&gt;/.
+    /// Checks every source before Excel is touched, writes XlWright.bas when it is missing, older than
+    /// <paramref name="version"/>, or of the same version with other text, and writes the converted files under
+    /// &lt;app&gt;/.xlwright/sync/&lt;id&gt;/.
     /// The caller deletes that folder after the sync.
     /// </summary>
     public static (IReadOnlyList<VbaModule>? Modules, ToolFailure? Failure) Prepare(AppFolder app, Encoding ansi, string version)
@@ -80,6 +97,11 @@ public static partial class VbaSources
                 {
                     return Invalid(app, entry, null,
                         $"{name} is in src/{folder}/, which holds only {extension} files. Standard modules go in src/modules/*.bas and class modules in src/classes/*.cls.");
+                }
+
+                if (Path.GetFileNameWithoutExtension(name).Equals(MacroCall.ModuleName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Invalid(app, entry, null, $"{name}: the name {MacroCall.ModuleName} is kept for the module macro_run adds while it runs. Rename the module.");
                 }
 
                 if (kind == VbaModuleKind.Class && Path.GetFileNameWithoutExtension(name).Equals(XlWrightName, StringComparison.OrdinalIgnoreCase))
@@ -198,9 +220,17 @@ public static partial class VbaSources
             return true;
         }
 
-        using var reader = new StreamReader(path);
-        var match = VersionLine().Match(reader.ReadLine() ?? "");
-        return !match.Success || Version.Parse(match.Groups["version"].Value) < Version.Parse(version.Split('+')[0]);
+        // A development build keeps the version while the text changes, so the same version is compared by text.
+        var text = File.ReadAllText(path);
+        var match = VersionLine().Match(text);
+        if (!match.Success)
+        {
+            return true;
+        }
+
+        var written = Version.Parse(match.Groups["version"].Value);
+        var current = Version.Parse(version.Split('+')[0]);
+        return written < current || (written == current && text != XlWrightText(version));
     }
 
     private static (IReadOnlyList<VbaModule>?, ToolFailure? Failure) Invalid(AppFolder app, string path, int? line, string reason) =>

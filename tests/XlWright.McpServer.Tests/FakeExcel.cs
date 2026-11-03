@@ -133,6 +133,17 @@ internal sealed class FakeExcel : IExcel
         return Removed;
     }
 
+    public MacroResult MacroResult { get; set; } = new MacroResult.Returned(42);
+
+    public Block MacroBlock { get; set; } = Block.None;
+
+    public MacroResult RunMacro(MacroName macro, IReadOnlyList<object> args)
+    {
+        Record($"RunMacro {macro} {string.Join(",", args)}".TrimEnd());
+        Process.WaitIf(MacroBlock);
+        return MacroResult;
+    }
+
     private bool Range(string call, string sheet, CellRange range)
     {
         Record($"{call} {sheet}!{range.Address}");
@@ -156,6 +167,16 @@ internal sealed class FakeProcess : IOwnedProcess
     public bool TerminateEnds { get; set; } = true;
 
     public int Terminations { get; private set; }
+
+    public DialogText? Dialog { get; set; }
+
+    public int DialogChecks { get; private set; }
+
+    public DialogText? FindDialog()
+    {
+        DialogChecks++;
+        return Dialog;
+    }
 
     public void Exit() => _exited.Set();
 

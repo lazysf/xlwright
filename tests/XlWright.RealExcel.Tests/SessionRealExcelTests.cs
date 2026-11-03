@@ -178,6 +178,79 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         AssertNothingLeft(pid);
     }
 
+    // Needs AccessVBOM 1. The last call shows a MsgBox on the person's screen until the watch ends the Excel.
+    [Fact]
+    public async Task RunsMacrosAndReportsErrorsStatusAndADialog()
+    {
+        _repo.AddApp("apps/run");
+        var app = Path.Combine(_repo.Root, "apps", "run");
+        MinimalWorkbook.Write(Path.Combine(app, "Run.xlsm"));
+        Source(app, "src/modules/Calc.bas", """
+            Option Explicit
+
+            Public Function Twice(ByVal x As Long) As Long
+                Twice = x * 2
+            End Function
+
+            Public Function Greet(ByVal name As String) As String
+                Greet = "こんにちは、" & name
+            End Function
+
+            Public Sub DivZero()
+                Dim a As Double
+                a = 1 / 0
+            End Sub
+
+            Public Function Slow() As Long
+                Application.Wait Now + TimeSerial(0, 0, 3)
+                Slow = 1
+            End Function
+
+            Public Function Items() As Collection
+                Set Items = New Collection
+            End Function
+
+            Public Sub Ask()
+                MsgBox "本文です", vbOKOnly, "題名です"
+            End Sub
+            """);
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/run" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+
+        var twice = Success(await Call("macro_run", new() { ["macro"] = "Calc.Twice", ["args"] = new object[] { 21 } }));
+        Assert.Equal(42, twice.GetProperty("return").GetInt32());
+        Assert.Equal("Calc", twice.GetProperty("sync").GetProperty("modules")[0].GetProperty("name").GetString());
+        var greet = Success(await Call("macro_run", new() { ["macro"] = "Calc.Greet", ["args"] = new object[] { "世界" } }));
+        Assert.Equal("こんにちは、世界", greet.GetProperty("return").GetString());
+        var items = Success(await Call("macro_run", new() { ["macro"] = "Calc.Items" }));
+        Assert.Equal(JsonValueKind.Null, items.GetProperty("return").ValueKind);
+        Assert.Equal("Collection", items.GetProperty("return_type").GetString());
+
+        var error = Body(await Call("macro_run", new() { ["macro"] = "Calc.DivZero" }));
+        Assert.Equal("MACRO_ERROR", error.GetProperty("error").GetProperty("detail").GetString());
+        Assert.Equal(11, error.GetProperty("error").GetProperty("data").GetProperty("number").GetInt32());
+        Assert.Equal("ready", error.GetProperty("session").GetProperty("state").GetString());
+        var missing = Body(await Call("macro_run", new() { ["macro"] = "Calc.Missing" }));
+        Assert.Equal("MACRO_NOT_FOUND", missing.GetProperty("error").GetProperty("detail").GetString());
+
+        // session_status answers while a macro runs (docs/architecture.md "マクロの実行").
+        var slow = Call("macro_run", new() { ["macro"] = "Calc.Slow" });
+        await Task.Delay(1_000, TestContext.Current.CancellationToken);
+        var status = Success(await Call("session_status", new()));
+        Assert.True(status.GetProperty("session").GetProperty("busy").GetBoolean());
+        Assert.Equal("macro_run", status.GetProperty("operation").GetProperty("tool").GetString());
+        Assert.Equal(1, Success(await slow).GetProperty("return").GetInt32());
+
+        var dialog = Body(await Call("macro_run", new() { ["macro"] = "Calc.Ask" }));
+        Assert.Equal("DIALOG", dialog.GetProperty("error").GetProperty("detail").GetString());
+        var data = dialog.GetProperty("error").GetProperty("data");
+        Assert.Equal("題名です", data.GetProperty("dialog").GetProperty("title").GetString());
+        Assert.Contains("本文です", data.GetProperty("dialog").GetProperty("text").GetString());
+        Assert.True(data.GetProperty("excel_ended").GetBoolean());
+        Assert.Equal("closed", dialog.GetProperty("session").GetProperty("state").GetString());
+        AssertNothingLeft(pid);
+    }
+
     [Fact]
     public async Task EndsTheExcelWhenTheWorkbookOpensReadOnly()
     {

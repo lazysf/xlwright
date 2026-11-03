@@ -45,6 +45,13 @@ public interface IExcel
     /// </summary>
     IReadOnlyList<string> SyncVba(IReadOnlyList<VbaModule> modules);
 
+    /// <summary>
+    /// Checks that the macro is a public Sub or Function of a standard module, adds the module that calls it by
+    /// name, runs that module's Run with Application.Run, and removes the module (docs/architecture.md
+    /// "実行ごとに作るモジュール"). Blocks while the macro runs.
+    /// </summary>
+    MacroResult RunMacro(MacroName macro, IReadOnlyList<object> args);
+
     /// <summary>Closes every workbook without saving, asks Excel to quit, and releases the references.</summary>
     void CloseAllAndQuit();
 
@@ -64,6 +71,35 @@ public interface IOwnedProcess : IDisposable
 
     /// <summary>Terminates the process through the handle opened when it was found.</summary>
     void Terminate();
+
+    /// <summary>
+    /// A dialog that blocks the process, with its text, or null (docs/architecture.md "失敗の返し方と記録").
+    /// Reads windows only; it never touches COM.
+    /// </summary>
+    DialogText? FindDialog();
+}
+
+/// <summary>The title and the body text of a dialog. It goes only into the response, never into a log.</summary>
+public sealed record DialogText(string Title, string Text);
+
+/// <summary>What one macro_run call came to.</summary>
+public abstract record MacroResult
+{
+    private MacroResult()
+    {
+    }
+
+    /// <summary>No public Sub or Function of a standard module has that name.</summary>
+    public sealed record NotFound(string Reason) : MacroResult;
+
+    /// <summary>A run-time error the generated module caught.</summary>
+    public sealed record Failed(int Number, string Description, string Source) : MacroResult;
+
+    /// <summary>A return value; null for a Sub, Empty, or Null.</summary>
+    public sealed record Returned(object? Value) : MacroResult;
+
+    /// <summary>A return value that is not returned, by its VBA type name (an object, an array, a CVErr value, a Date).</summary>
+    public sealed record OfType(string TypeName) : MacroResult;
 }
 
 /// <summary>A vba_sync failure: the detail of docs/api.md "vba_sync" and the modules imported before it.</summary>

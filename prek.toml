@@ -15,4 +15,6 @@ repo = "local"
 hooks = [
     # Uses the markdownlint-cli2 installed by `npm ci` with the Node.js version in .nvmrc.
     { id = "markdownlint", name = "markdownlint", entry = "npx --no-install markdownlint-cli2", language = "system", types = ["markdown"] },
+    # The check entry point (docs/development.md). It builds, tests, and calls server_info through the Inspector.
+    { id = "check", name = "check entry point", entry = "powershell -NoProfile -File scripts/check.ps1", language = "system", pass_filenames = false, always_run = true },
 ]

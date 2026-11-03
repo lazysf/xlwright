@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <AssemblyMetadata Include="XlWrightBuildId" Value="$(XlWrightBuildId)" />
+  </ItemGroup>
+</Project>

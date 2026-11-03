@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>0.1.0</Version>
+    <!-- Keep the informational version equal to Version; the build id carries the commit. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <!-- The check entry point (scripts/check.ps1) passes -p:XlWrightBuildId. Other builds report "unknown". -->
+    <XlWrightBuildId Condition="'$(XlWrightBuildId)' == ''">unknown</XlWrightBuildId>
+  </PropertyGroup>
+</Project>

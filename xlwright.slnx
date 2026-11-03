@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/XlWright.Core/XlWright.Core.csproj" />
+    <Project Path="src/XlWright.McpServer/XlWright.McpServer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/XlWright.McpServer.Tests/XlWright.McpServer.Tests.csproj" />
+  </Folder>
+</Solution>

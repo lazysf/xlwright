@@ -12,7 +12,26 @@
 
 ## 確認の入口
 
-今ある入口は次のとおりです。ビルドとテストの入口は、段階0で作る時に書き足します。
+今ある入口は次のとおりです。
+
+すべての確認を1つのコマンドで行う:
+
+```powershell
+powershell -NoProfile -File scripts\check.ps1
+```
+
+[scripts/check.ps1](../scripts/check.ps1)は、次の順に進み、最初の失敗で止まります。
+
+1. ビルドの識別子を決めます。形は[server_info](api.md#server_info段階0)の`build_id`です。
+2. 依存を復元します。
+3. サーバーを`.xlwright/builds/<build-id>/`へビルドします。
+4. Excelを起動しないテスト（`tests/XlWright.McpServer.Tests`）を実行します。
+5. 今回のビルドを`--no-excel`で起動し、Inspectorで`tools/list`と`server_info`を呼びます。`build_id`が今回の識別子と一致するかを確かめます。
+6. Markdownをチェックし、`git diff --check HEAD`を行います。
+7. 通ったビルドを`.xlwright/builds/latest.json`に記録します。
+
+確認の入口を通らないビルド（`dotnet build`や`dotnet test`を直接実行した時）は、`build_id`が`unknown`になります。
+テストはMicrosoft.Testing.Platformで実行します（[global.json](../global.json)）。直接実行する時は`dotnet test --solution xlwright.slnx`です。
 
 Markdownのチェック:
 

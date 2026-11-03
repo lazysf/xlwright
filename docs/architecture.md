@@ -46,6 +46,7 @@ apps/sales/                  アプリのフォルダ（リポジトリの中。
     logs/<session-id>.jsonl  診断の記録
     results/<id>.json        応答に収まらない実行の結果
     test/<run-id>/           テストの写し
+    sync/<id>/               反映のために変換したモジュールのファイル。反映の後に消す
 ```
 
 - 開始では、アプリのフォルダだけを渡します。主ブックは、直下にある`.xlsm`か`.xlsx`です。2つ以上なら、開始で拒否します。
@@ -259,6 +260,9 @@ apps/sales/                  アプリのフォルダ（リポジトリの中。
 - VBIDEは、PIAを加えずに遅延バインドで扱います。
 - 確認済み（段階1、[記録](notes/vba-run.md)）: 標準・クラスモジュールを、遅延バインドの`VBComponents.Import`で取り込めた。`VBAWarnings`が2のままで取り込めた。Importは、ファイルをシステムのANSIコードページ（CP932）として読んだ。UTF-8のファイルの日本語は化けた。そのため、上のANSIへの変換を行います。
 - 確認済み（段階1、[記録](notes/vba-run.md)）: 外部のCOMから、標準・クラスモジュールを全削除して全取り込みできた。`Remove`はすぐに効き、名前に番号は付かなかった。`VB_PredeclaredId`・`VB_UserMemId`・`VB_Description`の属性は保たれた。
+- 確認済み（段階1、[記録](notes/vba-sync.md)）: ヘッダーの無い`.cls`は、標準モジュールとして取り込まれた。`VERSION 1.0 CLASS`から`END`までの4行を補うと、クラスモジュールになった。
+- 確認済み（段階1、[記録](notes/vba-sync.md)）: 名前が既にある時（シートのモジュールの`Sheet1`など）と、32文字の名前は、例外にならず、番号の付いた別の名前で取り込まれた。そのため、取り込んだ後に名前と種類を照合し、食い違えばそのモジュールを消して`SYNC_FAILED`を返します。
+- 反映のために変換したファイルは、`<アプリ>/.xlwright/sync/<id>/`に書き、取り込んだ後に消します。
 - 確認済み（段階1、[記録](notes/workbook-save-open.md)）: `AccessVBOM`が0の時、`Workbook.VBProject`の取得は`0x800A03EC`で失敗した。この値はExcelの一般的な失敗の値のため、値ではなく、`VBProject`の取得が失敗したことを、`AccessVBOM`が無効として拒否する`detail`に対応付けます。
 - 既存のブックから取り出す時は、アプリのフォルダへ写したブックを`AutomationSecurity=ForceDisable`で開きます。開く前に、ブックのパッケージに`xl/macrosheets/`があれば拒否します。`ForceDisable`がExcel 4.0のマクロを止めるかを、確かめていないためです。
 - 未確認（段階4）: `ForceDisable`で開いたブックで、イベントとUDFが動かず、VBAを取り出せるか。成立しない時は、止めて人と相談します。

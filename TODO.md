@@ -73,6 +73,25 @@
 - [x] 実Excelの結合テストを加えて通す。
 - [x] 文書を直し、確認の入口を通す。
 
+## 周期14（段階1）: VBAの反映
+
+作るもの: `vba_sync`。Importの形を実験で確かめ（[記録](docs/notes/vba-sync.md)）、`XlWright.bas`の書込みとソースの検査・変換をTDDし、偽物でセッションの規則を、実Excelの結合テストで全置換を確かめる。`XlWright.bas`の中身は版の行だけにし、実行の関数は`macro_run`の周期で加える。
+
+完了の条件:
+
+- テストで、APIの`NOT_MACRO_ENABLED`・`SOURCE_INVALID`（`data.file`・`data.line`・`data.reason`）・`WORKBOOK_MODULES_NOT_SUPPORTED`・`VBA_ACCESS_NOT_TRUSTED`・`VBA_PROJECT_LOCKED`・`SYNC_FAILED`（`data.done`）・`TIMEOUT`を返す。どれも、テストを先に書いて失敗を確かめてから作る。
+- 実Excelの結合テストで、日本語を含む標準・クラスモジュールを反映でき、ソースに無いモジュールが`removed`に出て消え、名前に番号が付いた時に`SYNC_FAILED`になり、終了の後に専用のExcelが残らない。
+- 確認の入口が通る。
+
+作業:
+
+- [x] Importの形を実験で確かめて記録する。
+- [x] `XlWright.bas`の書込みと、ソースの検査と変換を、Coreに作る。
+- [x] 反映をExcelの境界に加え、セッションの規則を偽物でTDDする。
+- [x] ツールを加え、入力と出力のスキーマを付ける。
+- [x] 実Excelの結合テストを加えて通す。
+- [x] 文書を直し、確認の入口を通す。
+
 ## 書き留めたこと
 
 周期の中で後へ回した事項を書きます。
@@ -97,3 +116,7 @@
 - `range_read`は、10,000セルを超える範囲を、Excelに触れる前に`TOO_LARGE`で拒否する。1つのセルが応答で2文字以上になり、20,000文字に収まらないため。
 - 名前の分からないセルのエラーの番号は、`{"error":"#ERROR(<番号>)"}`で返す。名前を付けたのは、Microsoftが`XlCVError`に挙げる8つと、実機で見た`#CALC!`だけ。
 - `range_write`の`formulas`は`Range.Formula`で書くため、`=SEQUENCE(2)`のような動的配列の数式はspillしない（[記録](docs/notes/range-values.md)）。`Formula2`を使うかは、契約の変更になるため人が判断する。
+- `vba_sync`は、`src/modules`と`src/classes`の`.`で始まるファイル（`.gitkeep`など）を飛ばし、`src/workbook/`の判定でも数えない。設計には無い扱いのため、人が確かめる。
+- `XlWright.bas`は、版の行が今の版より古い時だけ書き換える。同じ版のまま中身を変えると（開発中の`macro_run`の周期など）、既にあるファイルは書き換わらない。
+- 保護したVBAのプロジェクトの`Protection`の値と`VBA_PROJECT_LOCKED`は、実機で確かめていない（[記録](docs/notes/vba-sync.md#未確認)）。偽物のテストだけが通る。
+- 反映の期限が切れた時、`<アプリ>/.xlwright/sync/<id>/`はExcelがファイルを持ちうるため、消せずに残りうる。段階2の片付けと合わせて扱いを決める。

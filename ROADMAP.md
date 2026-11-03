@@ -63,11 +63,12 @@
 - 実行の間の状態の照会、`Application.Run`の実行先と受け渡し、捕捉されないエラーの返り方（[マクロの実行](docs/architecture.md#マクロの実行)）。
 - 遅延バインドでのImport、`AccessVBOM`が0の時のエラーの値、`VBAWarnings`が2の時のImport、VBEのImportが使う文字コード、外部のCOMからの全置換と属性（[VBAの反映](docs/architecture.md#vbaの反映)）。`AccessVBOM`の値を確かめた後に、人が設定を有効にします。
 - COMの参照を解放した時に専用のExcelが自ら終わるか、`AutomationSecurity`・`EnableEvents`・計算の完了の確かめ方（[起動時の設定](docs/architecture.md#起動時の設定)）。
+- マクロの実行中にダイアログで止まった時の見分け方と、文字の読み方（[失敗の返し方と記録](docs/architecture.md#失敗の返し方と記録)）。段階2から前倒ししました。
 
 作るもの:
 
 - ツール: `session_start`・`session_status`・`session_end`・`workbook_save`・`range_read`・`range_write`・`vba_sync`・`macro_run`（[API](docs/api.md#ツールの一覧)）。
-- 仕組み: アプリのフォルダの規約の検査、パスの制限、開始の順序の1・5・6、所有の確定（サーバーの中だけで持つ）、終了、実行時間の上限、結果不明での終了、診断の記録。
+- 仕組み: アプリのフォルダの規約の検査、パスの制限、開始の順序の1・5・6、所有の確定（サーバーの中だけで持つ）、終了、実行時間の上限、結果不明での終了、診断の記録、マクロの実行中のダイアログの見張りと、読んだ文字を応答に返すこと（[マクロの実行](docs/architecture.md#マクロの実行)）。
 - 上の確認で「成立しない時」に当たった場合の代わりの形（例: [xlwrightのVBAのモジュール](docs/architecture.md#xlwrightのvbaのモジュール)でエラーを捕まえる）。
 - 依頼の前の設定: 人が、開発版のツールを事前に許可します。完了の根拠の「人の操作なし」のためです。
 - ExcelMcpで読む先の当たり: `src/ExcelMcp.ComInterop/Session/`の`ExcelBatch.cs`・`OwnedProcessGuard.cs`・`ProcessTerminationPolicy.cs`・`ExcelShutdownService.cs`、`src/ExcelMcp.ComInterop/OleMessageFilter.cs`、`src/ExcelMcp.Core/Commands/`の`Range`と`Vba`。
@@ -82,14 +83,13 @@
 - サーバーが終わった後もExcelが残るか、残ったExcelへのウィンドウからの接続、ブックの無いExcelへの接続、照会の時間制限、強制終了の後に残るもの、人が読み取り専用で開けるか（[片付け](docs/architecture.md#残った専用のexcelの片付け)）。
 - 人が開くブックが専用のExcelに入らないこと（[日常のExcelとの分離](docs/architecture.md#日常のexcelとの分離)）。
 - 表示要求で人へ見せられるか、人が閉じた後もプロセスが残るか（[人への引継ぎ](docs/architecture.md#人への引継ぎ)）。
-- ダイアログで止まった時の見分け方（[失敗の返し方と記録](docs/architecture.md#失敗の返し方と記録)）。
 
 作るもの:
 
 - アプリの排他と所有記録のファイル、開始の順序の2〜4と起動前の印、次の開始での片付け（[実行時の状態と所有記録](docs/architecture.md#実行時の状態と所有記録)、[片付け](docs/architecture.md#残った専用のexcelの片付け)）。
 - 使用中の検出の残り（日常のExcelが主ブックを編集できる状態で開いている時、読み取り専用でしか開けない時）、人が開くブックを専用のExcelに入れないこと。
 - 人への引継ぎと、表示要求のスクリプト（[人への引継ぎ](docs/architecture.md#人への引継ぎ)）。
-- ダイアログで止まった時の診断の記録と、読んだダイアログの文字を応答に返すこと。
+- マクロの実行以外で、実行時間の上限を過ぎた時の、ウィンドウの状態の診断の記録。
 - AIエージェントへの手順を渡すプラグインのスキル。報告の前にセッションを終えること、マクロにアプリのフォルダの外のファイルを変更させないこと、アプリのフォルダの規約を含めます。
 - ExcelMcpで読む先の当たり: `src/ExcelMcp.ComInterop/Session/`の`RunningExcelWindows.cs`（`XLMAIN`から`EXCEL7`を辿る部分と`Connect`）と`ExcelDialogProbe.cs`。
 

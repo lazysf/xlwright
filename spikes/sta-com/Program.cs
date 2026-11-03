@@ -2,7 +2,7 @@
 // It starts dedicated Excel instances from .NET STA threads, confirms ownership, and ends them.
 // It only ends an Excel whose ownership it confirmed: a new PID, named EXCEL.EXE, created after the start request.
 //
-// Usage: dotnet run --project spikes\sta-com -- <start-stop|retry-later|release|pending-kill|all>
+// Usage: dotnet run --project spikes\sta-com -- <start-stop|retry-later|release|pending-kill|workbook|vba|all>
 
 using System.ComponentModel;
 using System.Diagnostics;
@@ -23,12 +23,14 @@ internal static class Program
             "retry-later" => new[] { "retry-later" },
             "release" => new[] { "release" },
             "pending-kill" => new[] { "pending-kill" },
-            "all" => new[] { "start-stop", "retry-later", "release", "pending-kill" },
+            "workbook" => new[] { "workbook" },
+            "vba" => new[] { "vba" },
+            "all" => new[] { "start-stop", "retry-later", "release", "pending-kill", "workbook", "vba" },
             _ => Array.Empty<string>(),
         };
         if (trials.Length == 0)
         {
-            Console.Error.WriteLine("Usage: StaCom <start-stop|retry-later|release|pending-kill|all>");
+            Console.Error.WriteLine("Usage: StaCom <start-stop|retry-later|release|pending-kill|workbook|vba|all>");
             return 64;
         }
 
@@ -56,6 +58,12 @@ internal static class Program
                         break;
                     case "pending-kill":
                         PendingKill();
+                        break;
+                    case "workbook":
+                        for (var i = 1; i <= 3; i++) WorkbookRound(i);
+                        break;
+                    case "vba":
+                        VbaTrials.Run();
                         break;
                 }
             }
@@ -222,6 +230,96 @@ internal static class Program
         });
     }
 
+    // Trial 5: create an .xlsm under .xlwright/spikes (not tracked by Git), save, close, reopen with
+    // AutomationSecurity=Low and EnableEvents=False, touch VBProject with AccessVBOM as it is, save, close, Quit.
+    private static void WorkbookRound(int round)
+    {
+        var label = $"workbook#{round}";
+        var folder = Path.Combine(RepositoryRoot(), ".xlwright", "spikes", "workbook");
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, "Spike.xlsm");
+        File.Delete(path);
+
+        RunSta(label, () =>
+        {
+            var filter = MessageFilter.Register(label);
+            var (app, owned) = StartAndOwn(label);
+            app.UserControl = true;
+            dynamic workbooks = app.Workbooks;
+            try
+            {
+                dynamic workbook = workbooks.Add();
+                WriteAndCalculate(label, app, workbook, input: 2);
+                var watch = Stopwatch.StartNew();
+                workbook.SaveAs(path, 52); // xlOpenXMLWorkbookMacroEnabled
+                Log($"{label}: SaveAs returned in {watch.ElapsedMilliseconds} ms");
+                watch.Restart();
+                workbook.Close(false);
+                Log($"{label}: Close returned in {watch.ElapsedMilliseconds} ms");
+                Marshal.FinalReleaseComObject(workbook);
+
+                app.AutomationSecurity = 1; // msoAutomationSecurityLow
+                app.EnableEvents = false;
+                Log($"{label}: AutomationSecurity={(int)app.AutomationSecurity}, EnableEvents={(bool)app.EnableEvents}");
+                watch.Restart();
+                workbook = workbooks.Open(path);
+                Log($"{label}: Open returned in {watch.ElapsedMilliseconds} ms; ReadOnly={(bool)workbook.ReadOnly}, FullName matches={string.Equals((string)workbook.FullName, path, StringComparison.OrdinalIgnoreCase)}");
+
+                try
+                {
+                    dynamic project = workbook.VBProject;
+                    Log($"{label}: VBProject accessible");
+                    Marshal.FinalReleaseComObject(project);
+                }
+                catch (COMException e)
+                {
+                    Log($"{label}: VBProject COMException 0x{e.HResult:X8}: {e.Message}");
+                }
+
+                WriteAndCalculate(label, app, workbook, input: 3);
+                watch.Restart();
+                workbook.Save();
+                Log($"{label}: Save returned in {watch.ElapsedMilliseconds} ms");
+                watch.Restart();
+                workbook.Close(false);
+                Log($"{label}: Close returned in {watch.ElapsedMilliseconds} ms");
+                Marshal.FinalReleaseComObject(workbook);
+                app.EnableEvents = true;
+            }
+            finally
+            {
+                Marshal.FinalReleaseComObject(workbooks);
+                QuitAndWait(label, app, owned);
+                filter.Report();
+                MessageFilter.Revoke();
+            }
+        });
+
+        File.Delete(path);
+    }
+
+    private static void WriteAndCalculate(string label, dynamic app, dynamic workbook, int input)
+    {
+        dynamic sheets = workbook.Worksheets;
+        dynamic sheet = sheets[1];
+        dynamic a1 = sheet.Range["A1"];
+        dynamic b1 = sheet.Range["B1"];
+        a1.Value2 = input;
+        b1.Formula = "=A1*21";
+        app.Calculate();
+        int state = app.CalculationState; // xlDone = 0, xlCalculating = 1, xlPending = 2
+        double value = b1.Value2;
+        Log($"{label}: A1={input}, after Calculate CalculationState={state}, B1={value}");
+        foreach (var o in new object[] { b1, a1, sheet, sheets }) Marshal.FinalReleaseComObject(o);
+    }
+
+    internal static string RepositoryRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "xlwright.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("repository root not found");
+    }
+
     // Trial 4: terminate the owned Excel while thread A has a pending call (Application.Wait 60 s).
     private static void PendingKill()
     {
@@ -288,7 +386,7 @@ internal static class Program
         owned.Dispose();
     }
 
-    private static (dynamic App, Owned Owned) StartAndOwn(string label)
+    internal static (dynamic App, Owned Owned) StartAndOwn(string label)
     {
         var requestedUtc = DateTime.UtcNow;
         var watch = Stopwatch.StartNew();
@@ -317,7 +415,7 @@ internal static class Program
         return (app, new Owned((int)pid, created, handle));
     }
 
-    private static void RequireNoWorkbooks(string label, dynamic app)
+    internal static void RequireNoWorkbooks(string label, dynamic app)
     {
         dynamic workbooks = app.Workbooks;
         dynamic protectedViews = app.ProtectedViewWindows;
@@ -329,7 +427,7 @@ internal static class Program
         if (workbookCount != 0 || protectedCount != 0) throw new NotOwnedException("the Excel has open workbooks");
     }
 
-    private static void QuitAndWait(string label, dynamic app, Owned owned)
+    internal static void QuitAndWait(string label, dynamic app, Owned owned)
     {
         RequireNoWorkbooks(label, app);
         var watch = Stopwatch.StartNew();
@@ -345,7 +443,7 @@ internal static class Program
         owned.Dispose();
     }
 
-    private static void RunSta(string label, Action action)
+    internal static void RunSta(string label, Action action)
     {
         Exception? failure = null;
         var thread = new Thread(() =>
@@ -420,6 +518,10 @@ internal sealed class NotOwnedException(string message) : Exception(message);
 internal sealed class Owned(int pid, DateTime createdUtc, SafeProcessHandle handle) : IDisposable
 {
     public bool WaitForExit(int milliseconds) => Native.WaitForSingleObject(handle, milliseconds) == 0;
+
+    public bool HasExited => WaitForExit(0);
+
+    public int Pid => pid;
 
     public int ExitCode() => Native.GetExitCodeProcess(handle, out var code) ? code : -1;
 

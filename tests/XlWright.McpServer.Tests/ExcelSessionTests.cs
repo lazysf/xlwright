@@ -319,6 +319,68 @@ public sealed class ExcelSessionTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveSavesAndKeepsTheSession()
+    {
+        await _session.StartAsync(_app);
+
+        var outcome = await _session.SaveAsync();
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal("ready", outcome.Session.State);
+        Assert.Equal("Sales.xlsm", outcome.Result!["workbook"]!.GetValue<string>());
+        Assert.Equal(["Save"], _launcher.Excel.Calls.Skip(2));
+    }
+
+    [Fact]
+    public async Task SaveWithoutASessionIsAConflict()
+    {
+        var outcome = await _session.SaveAsync();
+
+        AssertFailure(outcome, "CONFLICT", "NO_SESSION", "closed");
+    }
+
+    [Fact]
+    public async Task SaveKeepsTheSessionWhenSavingFails()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.SaveThrows = new InvalidOperationException("disk full");
+
+        var outcome = await _session.SaveAsync();
+
+        AssertFailure(outcome, "EXCEL_ERROR", "SAVE_FAILED", "ready");
+        Assert.Contains("disk full", outcome.Failure!.Message);
+        Assert.Equal(0, _launcher.Process.Terminations);
+    }
+
+    [Fact]
+    public async Task SaveTimeoutTerminatesTheOwnedExcel()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.SaveBlock = Block.UntilTerminated;
+
+        var outcome = await _session.SaveAsync();
+
+        AssertFailure(outcome, "STATE_UNKNOWN", "TIMEOUT", "closed");
+        Assert.Equal(1, _launcher.Process.Terminations);
+        Assert.True(outcome.Failure!.Data!["excel_ended"]!.GetValue<bool>());
+        Assert.True(outcome.Failure.Data["restartable"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task SaveIsRejectedWhileBusy()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.SaveBlock = Block.UntilTerminated;
+
+        var saving = _session.SaveAsync();
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+        var second = await _session.SaveAsync();
+        await saving;
+
+        AssertFailure(second, "CONFLICT", "BUSY", "ready", busy: true);
+    }
+
+    [Fact]
     public async Task EndWithoutASessionIsAConflict()
     {
         var outcome = await _session.EndAsync(save: false);

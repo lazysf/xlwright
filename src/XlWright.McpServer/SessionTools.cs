@@ -7,7 +7,7 @@ using XlWright.Core;
 namespace XlWright.McpServer;
 
 /// <summary>
-/// session_start, session_status, and session_end (docs/api.md, stage 1). With --no-excel there is no
+/// session_start, session_status, session_end, and workbook_save (docs/api.md, stage 1). With --no-excel there is no
 /// ExcelSession: session_start stops after the app folder checks, and there is never a session.
 /// </summary>
 internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
@@ -36,6 +36,12 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
                 "closes it, and ends the dedicated Excel. Call it before you report.",
             ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false,
         }, EndInput, EndOutput),
+        Tool(Save, new()
+        {
+            Name = "workbook_save",
+            Description = "Saves the main workbook over its file. The session stays open. Takes no arguments.",
+            ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false,
+        }, NoInput, SaveOutput),
     ];
 
     private async Task<CallToolResult> Start(RequestContext<CallToolRequestParams> context)
@@ -111,6 +117,24 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
         return Result(await session.EndAsync(save));
     }
 
+    private async Task<CallToolResult> Save(RequestContext<CallToolRequestParams> context)
+    {
+        var invalid = ToolArguments.From("workbook_save", context).RejectUnknown();
+        if (invalid is not null)
+        {
+            return ToolResults.InvalidRequest(invalid, Current());
+        }
+
+        if (session is null)
+        {
+            return ToolResults.Failure(
+                new ToolFailure(ToolFailure.Conflict, "NO_SESSION", "There is no session. Start one with session_start."),
+                SessionState.Closed);
+        }
+
+        return Result(await session.SaveAsync());
+    }
+
     private SessionState Current() => session is null ? SessionState.Closed : SessionState.From(session.Status());
 
     // Success adds "session" to the result fields; failure reports the session after the operation.
@@ -176,5 +200,9 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
 
     private static readonly string EndOutput = $$$"""
         {"type":"object","properties":{"session":{{{Session}}},"saved":{"type":"boolean"}},"required":["session","saved"]}
+        """;
+
+    private static readonly string SaveOutput = $$$"""
+        {"type":"object","properties":{"session":{{{Session}}},"workbook":{"type":"string"}},"required":["session","workbook"]}
         """;
 }

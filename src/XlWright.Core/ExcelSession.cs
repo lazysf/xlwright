@@ -11,7 +11,7 @@ public sealed record SessionSnapshot(
 public sealed record SessionOutcome(JsonObject? Result, ToolFailure? Failure, SessionSnapshot Session);
 
 /// <summary>
-/// One session: start (docs/architecture.md "開始の順序" 1, 5, 6 and "所有の確定"), status, and end ("終了").
+/// One session: start (docs/architecture.md "開始の順序" 1, 5, 6 and "所有の確定"), status, save, and end ("終了").
 /// Timeouts end only the Excel whose ownership this session confirmed ("状態と結果不明").
 /// </summary>
 public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeouts) : IDisposable
@@ -48,6 +48,15 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
     public Task<SessionOutcome> EndAsync(bool save) => Run("session_end", () =>
         _active is null ? Fail(ToolFailure.Conflict, "NO_SESSION", "There is no session to end. Start one with session_start.") : null,
         () => EndCore(_active!, save));
+
+    public Task<SessionOutcome> SaveAsync() => Run("workbook_save", () =>
+        _active is null ? Fail(ToolFailure.Conflict, "NO_SESSION", "There is no session. Start one with session_start.") : null,
+        async () =>
+        {
+            var active = _active!;
+            return await SaveCore(active, "Fix the cause and call workbook_save again, or call session_end with save false to discard the changes.")
+                ?? (new JsonObject { ["workbook"] = active.App.WorkbookName }, null);
+        });
 
     public void Dispose()
     {
@@ -168,20 +177,9 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
 
     private async Task<(JsonObject?, ToolFailure?)> EndCore(Active active, bool save)
     {
-        if (save)
+        if (save && await SaveCore(active, "Call session_end with save false to discard the changes.") is { } saveFailed)
         {
-            var saving = active.Worker.Run(active.Excel.Save);
-            if (!await Completes(saving, timeouts.Save))
-            {
-                return await AfterTimeout(active, saving,
-                    "Saving did not finish within the time limit. The main workbook file may hold the contents from before or after the save.");
-            }
-
-            if (saving.IsFaulted)
-            {
-                return Fail(ToolFailure.ExcelError, "SAVE_FAILED",
-                    $"Saving {active.App.WorkbookName} failed: {saving.Exception!.InnerException!.Message} The session is still open; call session_end with save false to discard the changes.");
-            }
+            return saveFailed;
         }
 
         var listing = active.Worker.Run(active.Excel.OpenWorkbookPaths);
@@ -212,6 +210,22 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
 
         var exit = await QuitAndWait(active, timeouts.QuitExit, new JsonObject { ["saved"] = save });
         return exit ?? (new JsonObject { ["saved"] = save }, null);
+    }
+
+    // Returns null when the main workbook was saved. A failed save keeps the session; `next` says what to do then.
+    private async Task<(JsonObject?, ToolFailure?)?> SaveCore(Active active, string next)
+    {
+        var saving = active.Worker.Run(active.Excel.Save);
+        if (!await Completes(saving, timeouts.Save))
+        {
+            return await AfterTimeout(active, saving,
+                "Saving did not finish within the time limit. The main workbook file may hold the contents from before or after the save.");
+        }
+
+        return saving.IsFaulted
+            ? Fail(ToolFailure.ExcelError, "SAVE_FAILED",
+                $"Saving {active.App.WorkbookName} failed: {saving.Exception!.InnerException!.Message} The session is still open. {next}")
+            : null;
     }
 
     // docs/architecture.md "終了" 3-5: close and quit, wait, then end the owned process through its handle.

@@ -80,6 +80,25 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SavesAndKeepsTheSession()
+    {
+        var savedBefore = File.GetLastWriteTimeUtc(Workbook);
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/sales" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+
+        var save = Success(await Call("workbook_save", new()));
+
+        Assert.Equal("ready", save.GetProperty("session").GetProperty("state").GetString());
+        Assert.Equal("Sales.xlsx", save.GetProperty("workbook").GetString());
+        Assert.True(File.GetLastWriteTimeUtc(Workbook) > savedBefore);
+        var status = Success(await Call("session_status", new()));
+        Assert.Equal("ready", status.GetProperty("session").GetProperty("state").GetString());
+
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(pid);
+    }
+
+    [Fact]
     public async Task EndsTheExcelWhenTheWorkbookOpensReadOnly()
     {
         File.SetAttributes(Workbook, FileAttributes.ReadOnly);

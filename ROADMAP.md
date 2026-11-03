@@ -32,7 +32,7 @@
 
 各段階は、次の順に進めます。
 
-1. 最初に確かめることを、実機で確かめます。結果は[調査記録](docs/notes/)に残します。
+1. 最初に確かめることを、実機で確かめます。結果は[調査記録](docs/notes/)に残します。確かめ方を決める前に、ExcelMcpの同じ対象のソースを読みます（[ADR 0016](docs/adr/0016-adopt-excelmcp-designs.md)）。ソースは、実機の確認の代わりにしません。
 2. 成立しなかった事項は、設計の該当箇所にある「成立しない時」の扱いに従い、設計を直します。扱いが「止めて人と相談」なら、そこで止まります。
 3. この段階で加えるツールの引数と応答を[API](docs/api.md)に書き、人の承認を得ます。
 4. 作ります。
@@ -53,7 +53,7 @@
 
 - `AccessVBOM`が0の時のエラーの値、`VBAWarnings`が2の時のImport、VBEのImportが使う文字コード、外部のCOMからの全置換と属性（[VBAの反映](docs/architecture.md#vbaの反映)）。`AccessVBOM`の値を確かめた後に、人が設定を有効にします。これまでの確認は[T15の結果](docs/notes/spike-0-results.md#t15-vba経路の最小確認2026-11-01)にあります。
 - `Application.Run`の実行先と受け渡し、捕捉されないエラーの返り方、実行の間の状態の照会（[マクロの実行](docs/architecture.md#マクロの実行)）。
-- 製品のサーバーの中のSTAでの`RETRYLATER`と遅延した戻り（[構成](docs/architecture.md#構成)）。
+- 製品のサーバーの中のSTAでの`RETRYLATER`・起動の直後の`SERVERCALL_REJECTED`と遅延した戻り（[構成](docs/architecture.md#構成)）。
 - 保留中のCOM呼出しがある時の終了（[状態と結果不明](docs/architecture.md#状態と結果不明)）。
 - COMから起動したEXCELのコマンドライン（[完了にする条件](docs/architecture.md#完了にする条件)）。
 - COMの参照をすべて解放した時に、専用のExcelが自ら終わるか（[起動時の設定](docs/architecture.md#起動時の設定)）。
@@ -70,6 +70,7 @@
 - 上の確認で「成立しない時」に当たった場合の代わりの形（例: [xlwrightのVBAのモジュール](docs/architecture.md#xlwrightのvbaのモジュール)でエラーを捕まえる）。
 - 依頼の前の設定: 人が、開発版のツールを事前に許可します。完了の根拠の「人の操作なし」のためです。
 - これまでの部品（STAのスレッド、セル値の変換、Excelの起動と同一性の確認）と、`bdd2bb4`時点の設計文書（`docs/architecture.md`・`docs/api.md`）の知見は、この段階で読み直し、合うものだけ移します。実機で確かめた範囲は結果記録のとおりです。
+- ExcelMcpで読む先の当たり: `src/ExcelMcp.ComInterop/Session/`の`ExcelBatch.cs`・`OwnedProcessGuard.cs`・`ProcessTerminationPolicy.cs`・`ExcelShutdownService.cs`・`RunningExcelWindows.cs`（`XLMAIN`から`EXCEL7`を辿る部分と`Connect`）、`src/ExcelMcp.ComInterop/OleMessageFilter.cs`、`src/ExcelMcp.Core/Commands/`の`Range`と`Vba`。
 
 ### 段階2 安全の仕組み
 
@@ -82,7 +83,8 @@
 
 作るもの:
 
-- 仕組みのうち、テストに関わるもの以外の残りです。使用中の検出の残り（日常のExcelが主ブックを編集できる状態で開いている時、読み取り専用でしか開けない時）、人が開くブックを専用のExcelに入れないこと、人への引継ぎの手段を揃えること、ダイアログで止まった時の診断の記録です。
+- 仕組みのうち、テストに関わるもの以外の残りです。使用中の検出の残り（日常のExcelが主ブックを編集できる状態で開いている時、読み取り専用でしか開けない時）、人が開くブックを専用のExcelに入れないこと、人への引継ぎの手段を揃えること、ダイアログで止まった時の診断の記録と、読んだダイアログの文字を応答に返すことです。
+- ExcelMcpで読む先の当たり: `src/ExcelMcp.ComInterop/Session/ExcelDialogProbe.cs`。
 - AIエージェントへの手順を渡すプラグインのスキル。報告の前にセッションを終えること、マクロにアプリのフォルダの外のファイルを変更させないこと、アプリのフォルダの規約を含めます。
 
 ### 段階3 VBAのループ
@@ -113,6 +115,7 @@
 
 - 最初に確かめること: 加える操作ごとに、その段階の最初に挙げます。
 - 作るもの: [API](docs/api.md#ツールの一覧)の段階5のツールです。`range_read`に表示される文字列を、`workbook_edit`にブックの保護を加えます。目安の順は、セル範囲とシート、行・列と名前とテーブル、Excel全体とウィンドウと図形と印刷・出力、保護です。承認した題材と、使いながら分かったことで、人が入れ替えてよいものとします。
+- ExcelMcpで読む先の当たり: `src/ExcelMcp.Core/Commands/`の同じ対象のフォルダ。
 
 ### 段階6 Ver1.0.0の判定
 

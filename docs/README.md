@@ -30,6 +30,7 @@
 - [adr/0013-read-and-edit-tools.md](adr/0013-read-and-edit-tools.md): ツールを読むツールと変えるツールに分ける判断。
 - [adr/0014-synchronous-macro-run.md](adr/0014-synchronous-macro-run.md): マクロとテストの実行を、終わるまで応答を待つ形にする判断。
 - [adr/0015-close-on-unknown-result.md](adr/0015-close-on-unknown-result.md): 結果不明では専用のExcelを終えてセッションを閉じる判断。
+- [adr/0016-adopt-excelmcp-designs.md](adr/0016-adopt-excelmcp-designs.md): ExcelMcpのソースを読んで参考にし、xlwrightの方針で書く判断。
 
 調査記録は仕様の正本とは区別します。
 
@@ -39,7 +40,7 @@
 - [notes/mcp-reload-study.md](notes/mcp-reload-study.md): 標準再読込み・Kitsune・Hotloadの調査、Inspector中心の開発環境を採用する根拠、プラグインによる開発版の更新。
 - [notes/mcp-server-development-handoff.md](notes/mcp-server-development-handoff.md): dotfilesへ持ち出すための、MCPサーバー開発環境の知見と標準化候補。単独で読める引継ぎ資料。
 - [notes/mcp-best-practices.md](notes/mcp-best-practices.md): MCPサーバーの設計・開発の公式資料の調査、実測、現在の実装との差、Claude Codeでの呼出しと結果の制限。
-- [notes/existing-excel-mcp-servers.md](notes/existing-excel-mcp-servers.md): Excelを扱う既存のMCPサーバーの調査と、xlwrightの要件との差。
+- [notes/existing-excel-mcp-servers.md](notes/existing-excel-mcp-servers.md): Excelを扱う既存のMCPサーバーの調査、ExcelMcpの作り（起動・終了・再試行・ダイアログの扱い）、xlwrightの要件との差。
 
 [PROJECT_OVERVIEW_V22.md](../references/PROJECT_OVERVIEW_V22.md) は初期の参考資料です。
 正式文書に未移行の記述を、自動的に現行仕様として採用しないでください。

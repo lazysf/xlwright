@@ -1,11 +1,12 @@
 # Excelを扱う既存のMCPサーバーの調査
 
 - Date: 2026-11-03
-- 出典: [sbroenne/mcp-server-excel](https://github.com/sbroenne/mcp-server-excel)（[ADR-005](https://github.com/sbroenne/mcp-server-excel/blob/main/docs/ADR-005-SESSION-AND-FAILURE-OWNERSHIP.md)、[ARCHITECTURE.md](https://github.com/sbroenne/mcp-server-excel/blob/main/docs/ARCHITECTURE.md)、[RUN-VBA-MACROS.md](https://github.com/sbroenne/mcp-server-excel/blob/main/docs/guides/RUN-VBA-MACROS.md)、[AUTOMATION-ADVANCED.md](https://github.com/sbroenne/mcp-server-excel/blob/main/docs/features/AUTOMATION-ADVANCED.md)、[ExcelBatch.cs](https://github.com/sbroenne/mcp-server-excel/blob/main/src/ExcelMcp.ComInterop/Session/ExcelBatch.cs)、[Releases](https://github.com/sbroenne/mcp-server-excel/releases)）、[xlide_mcp](https://github.com/WilliamSmithEdward/xlide_mcp)、[ThepExcelMCP](https://github.com/ThepExcel/ThepExcelMCP)、[prizmPrograms/excel-mcp-server](https://github.com/prizmPrograms/excel-mcp-server)、[Excellm](https://github.com/mroshdy91/Excellm)、[haris-musa/excel-mcp-server](https://github.com/haris-musa/excel-mcp-server)、[Agent Mode in Excel](https://techcommunity.microsoft.com/blog/excelblog/agent-mode-in-excel-is-now-generally-available-on-desktop/4457408)
+- 出典: [sbroenne/mcp-server-excel](https://github.com/sbroenne/mcp-server-excel)（2026-11-03に読んだmain。その時点の最新の公開版は2.6.10。文書は[ADR-001](https://github.com/sbroenne/mcp-server-excel/blob/main/docs/ADR-001-TESTING-STRATEGY.md)、[ADR-004](https://github.com/sbroenne/mcp-server-excel/blob/main/docs/ADR-004-GENERATED-COMMAND-CONTRACTS.md)、[ADR-005](https://github.com/sbroenne/mcp-server-excel/blob/main/docs/ADR-005-SESSION-AND-FAILURE-OWNERSHIP.md)、[ARCHITECTURE.md](https://github.com/sbroenne/mcp-server-excel/blob/main/docs/ARCHITECTURE.md)、[COM-API-BEHAVIOR-FINDINGS.md](https://github.com/sbroenne/mcp-server-excel/blob/main/docs/COM-API-BEHAVIOR-FINDINGS.md)、[PIA-COVERAGE.md](https://github.com/sbroenne/mcp-server-excel/blob/main/docs/PIA-COVERAGE.md)、[RUN-VBA-MACROS.md](https://github.com/sbroenne/mcp-server-excel/blob/main/docs/guides/RUN-VBA-MACROS.md)、[AUTOMATION-ADVANCED.md](https://github.com/sbroenne/mcp-server-excel/blob/main/docs/features/AUTOMATION-ADVANCED.md)。主に読んだソースは`src/ExcelMcp.ComInterop/`の`OleMessageFilter.cs`、`Session/`の`ExcelBatch.cs`・`ExcelDialogProbe.cs`・`ExcelShutdownService.cs`・`OwnedProcessGuard.cs`・`ProcessTerminationPolicy.cs`・`RunningExcelWindows.cs`、`src/ExcelMcp.Core/Commands/Vba/`、`ExcelMcp.ComInterop.csproj`、`ExcelMcp.Core.csproj`。ほかに[Releases](https://github.com/sbroenne/mcp-server-excel/releases)）、[xlide_mcp](https://github.com/WilliamSmithEdward/xlide_mcp)、[ThepExcelMCP](https://github.com/ThepExcel/ThepExcelMCP)、[prizmPrograms/excel-mcp-server](https://github.com/prizmPrograms/excel-mcp-server)、[Excellm](https://github.com/mroshdy91/Excellm)、[haris-musa/excel-mcp-server](https://github.com/haris-musa/excel-mcp-server)、[Agent Mode in Excel](https://techcommunity.microsoft.com/blog/excelblog/agent-mode-in-excel-is-now-generally-available-on-desktop/4457408)
 
 xlwrightを0から作る前に、[要件](../requirements.md)を満たす既存のMCPサーバーがあるかを調べました。
-各リポジトリはREADMEと文書を読みました。ソースはExcelMcpの`ExcelBatch.cs`だけを読みました。
+各リポジトリはREADMEと文書を読みました。ソースは、ExcelMcpの出典に挙げたファイルを主に読みました。
 xlwrightの要件の中心である、[目標](../requirements.md#目標)の2〜5の仕組みと、ファイルを正本としたVBAの反映を満たすものはありませんでした。
+ExcelMcpの扱いは[ADR 0016](../adr/0016-adopt-excelmcp-designs.md)で決めました。
 
 ## 候補
 
@@ -21,9 +22,24 @@ xlwrightの要件の中心である、[目標](../requirements.md#目標)の2〜
 スターの数は2026-11-03に見た値です。
 MicrosoftのExcel用のMCPサーバーは、公式の情報に見つかりませんでした。CopilotのAgent Modeは、MCPサーバーではありません。
 
-## ExcelMcpとxlwrightの要件の差
+## ExcelMcpの作り
 
 ExcelMcpは、候補の中で最も活発で、Excelの寿命と失敗の扱いを文書にしています。
+
+- 構成: `src/`は、ComInterop、Core、Service、McpServer、CLI、生成器に分かれます。NuGetに出ているのは、.NETツールのMcpServerとCLIだけです。
+- PIA: NuGetの`Microsoft.Office.Interop.Excel`を、実行時に含めず、型を埋め込んで参照します。VBEとOffice共通の型は、`ExcelDna.Interop`から取ります（`PIA-COVERAGE.md`）。
+- 起動と接続: 自分のExcelは`Activator.CreateInstance`で起動します。動いているExcelへは、`RunningExcelWindows`で接続します。`Find`は同じユーザーのExcelを列挙し、`XLMAIN`の子の`EXCEL7`を辿って接続先を探します。`EXCEL7`の無いExcelは、結果に入りません。`Connect`は、PIDと生成時刻を照合してから接続します。
+- 終了: PIDと生成時刻で照合します。終了の直前にハンドルを開き直し、もう一度照合してから`TerminateProcess`を呼ぶ関数があります。ただし、製品の経路からは呼ばれていません。呼出し元が無いことは、その時点の`src/`全体を検索して確かめました。
+- 終了の待ち: `ProcessTerminationPolicy.cs`は、Quitの後の自然な終了を75秒、終了させた後の確認を5秒とします。75秒の待ちは起動の失敗の後始末で使い、過ぎても終了させません。
+- メッセージフィルター: 専用のSTAに登録し、`RETRYLATER`を30秒、`SERVERCALL_REJECTED`を120秒まで再試行します。REJECTEDの理由には、管理された端末で起動中に出るサインインのダイアログを挙げています。
+- ダイアログ: 所有するPIDの`XLMAIN`が無効の時に、表示されて有効なウィンドウの所有者を辿り、`XLMAIN`に届くものを見つけます。クラス名の`#32770`は使いません。ダイアログの文字は、500ミリ秒で区切って読みます。
+- PIDが取れない時は、Excelが生きているとみなします（`ExcelBatch.IsExcelProcessAlive`）。
+- テスト: 振る舞いを持つ境界で試します（ADR-001）。Excelに依存しない処理はExcelなしで、ブックの操作は実Excelで試します。
+- 契約の生成: Coreの注釈から、Serviceの振り分け、CLI、MCPのツールを生成します（ADR-004）。xlwrightはツールが33個なので、この仕組みは取り入れません。
+- `COM-API-BEHAVIOR-FINDINGS.md`は、ほぼPower QueryとData Modelの知見です。xlwrightの範囲とは、ほとんど重なりません。
+
+## ExcelMcpとxlwrightの要件の差
+
 次の点は、xlwrightの[設計](../architecture.md)と同じ考え方です。
 
 - 自分で起動したExcelを、PIDと起動時刻で識別します。プロセス名でExcelを終了させません。
@@ -35,7 +51,7 @@ ExcelMcpは、候補の中で最も活発で、Excelの寿命と失敗の扱い�
 
 - 期限が切れても、Excelを強制終了しません。Excelを人に見せ、判断を人に渡します。目標の3は、上限を過ぎた専用のExcelを終了させ、AIエージェントが作業を続けることを求めています。
 - 前のサーバーが残したExcelは、自動では片付けません。目標の3は、次の開始で片付けることを求めています。
-- 動いているExcelのウィンドウへ接続する経路を持ちます（`ExcelBatch.cs`の`RunningExcelWindows.Connect`）。目標の1のためにツールをすべて事前に許可すると、AIエージェントが日常のExcelに接続できます。目標の4は、日常のExcelに接続しないことを求めています。
+- 記録と照合せずに、同じユーザーのExcelを列挙して接続先を選ぶ経路（`RunningExcelWindows.Find`と、それを呼ぶ接続の経路）を持ちます。目標の1のためにツールをすべて事前に許可すると、AIエージェントが日常のExcelに接続できます。目標の4は、日常のExcelに接続しないことを求めています。
 - VBAは、ブックの中のコードを直接書き換えます。文書には、ファイルを正本とした全置換の反映、`.cls`の取り込み、テストの写しが見当たりません。
 
 xlide_mcpは、テストの実行とコンパイルの確認を持つ点で、[設計のテスト](../architecture.md#テスト)に近い候補です。
@@ -46,9 +62,8 @@ haris-musaはExcelを使わないため、マクロの実行とテストを扱�
 
 ## xlwrightで参考になる箇所
 
-- 専用のExcelの起動、識別、終了: ExcelMcpのADR-005と`ExcelBatch.cs`。同じリポジトリの`docs/COM-API-BEHAVIOR-FINDINGS.md`は、名前から関係が深いと見ていますが、まだ読んでいません。
+- ExcelMcpで読む先は、[ROADMAP](../../ROADMAP.md)の各段階に挙げます。取り入れ方は[ADR 0016](../adr/0016-adopt-excelmcp-designs.md)にあります。
 - テストの実行とコンパイルの確認: xlide_mcpと、それが使う`pyVBAharness`。
-- ブックの編集操作の分け方: ExcelMcpの437操作と33の機能の分け方。[範囲の表](../requirements.md#操作)の操作の粒度と比べられます。
 
 ## 未確認
 

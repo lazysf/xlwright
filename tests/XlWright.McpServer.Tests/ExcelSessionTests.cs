@@ -381,6 +381,115 @@ public sealed class ExcelSessionTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadReturnsValuesWithNullsAndCellErrors()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.Values = new object?[,] { { 1.0, "a", true }, { null, new CellError("#DIV/0!"), 2.5 } };
+
+        var outcome = await _session.ReadAsync("Data", Range("A1:C2"), formulas: false);
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal("ready", outcome.Session.State);
+        Assert.Equal("ReadValues Data!A1:C2", _launcher.Excel.Calls[^1]);
+        Assert.Equal("Data", outcome.Result!["sheet"]!.GetValue<string>());
+        Assert.Equal("A1:C2", outcome.Result["range"]!.GetValue<string>());
+        Assert.Equal("""[[1,"a",true],[null,{"error":"#DIV/0!"},2.5]]""", outcome.Result["values"]!.ToJsonString());
+        Assert.Null(outcome.Result["formulas"]);
+    }
+
+    [Fact]
+    public async Task ReadReturnsFormulasInsteadOfValues()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.Formulas = new[,] { { "=SUM(A2:A3)", "text", "" } };
+
+        var outcome = await _session.ReadAsync("Data", Range("A1:C1"), formulas: true);
+
+        Assert.Equal("ReadFormulas Data!A1:C1", _launcher.Excel.Calls[^1]);
+        Assert.Equal("""[["=SUM(A2:A3)","text",""]]""", outcome.Result!["formulas"]!.ToJsonString());
+        Assert.Null(outcome.Result["values"]);
+    }
+
+    [Fact]
+    public async Task WriteReportsTheCellsItWrote()
+    {
+        await _session.StartAsync(_app);
+        var write = RangeWrite.OfValues(new object?[,] { { 1.0, "a" }, { null, false } });
+
+        var outcome = await _session.WriteAsync("Data", Range("B2:C3"), write);
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal("Write Data!B2:C3", _launcher.Excel.Calls[^1]);
+        Assert.Same(write, _launcher.Excel.Written);
+        Assert.Equal("B2:C3", outcome.Result!["range"]!.GetValue<string>());
+        Assert.Equal(4, outcome.Result["cells"]!.GetValue<long>());
+    }
+
+    [Theory]
+    [InlineData("read")]
+    [InlineData("write")]
+    public async Task ReportsAMissingSheet(string operation)
+    {
+        await _session.StartAsync(_app);
+
+        var outcome = await Range(operation, "Missing");
+
+        AssertFailure(outcome, "NOT_FOUND", "SHEET_NOT_FOUND", "ready");
+        Assert.Contains("Missing", outcome.Failure!.Message);
+    }
+
+    [Fact]
+    public async Task ReadKeepsTheSessionWhenExcelFails()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.RangeThrows = new InvalidOperationException("broken");
+
+        var outcome = await Range("read", "Sheet1");
+
+        Assert.Equal("EXCEL_ERROR", outcome.Failure!.Code);
+        Assert.Null(outcome.Failure.Detail);
+        Assert.Contains("broken", outcome.Failure.Message);
+        Assert.Equal("ready", outcome.Session.State);
+    }
+
+    [Fact]
+    public async Task WriteFailureAsksToReadTheRangeAgain()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.RangeThrows = new InvalidOperationException("the sheet is protected");
+
+        var outcome = await Range("write", "Sheet1");
+
+        AssertFailure(outcome, "EXCEL_ERROR", "WRITE_FAILED", "ready");
+        Assert.Contains("the sheet is protected", outcome.Failure!.Message);
+        Assert.Contains("range_read", outcome.Failure.Message);
+    }
+
+    [Theory]
+    [InlineData("read")]
+    [InlineData("write")]
+    public async Task RangeTimeoutTerminatesTheOwnedExcel(string operation)
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.RangeBlock = Block.UntilTerminated;
+
+        var outcome = await Range(operation, "Sheet1");
+
+        AssertFailure(outcome, "STATE_UNKNOWN", "TIMEOUT", "closed");
+        Assert.Equal(1, _launcher.Process.Terminations);
+    }
+
+    [Theory]
+    [InlineData("read")]
+    [InlineData("write")]
+    public async Task RangeWithoutASessionIsAConflict(string operation)
+    {
+        var outcome = await Range(operation, "Sheet1");
+
+        AssertFailure(outcome, "CONFLICT", "NO_SESSION", "closed");
+    }
+
+    [Fact]
     public async Task EndWithoutASessionIsAConflict()
     {
         var outcome = await _session.EndAsync(save: false);
@@ -420,6 +529,12 @@ public sealed class ExcelSessionTests : IDisposable
 
         AssertFailure(second, "CONFLICT", "BUSY", "ready", busy: true);
     }
+
+    private static CellRange Range(string address) => CellRange.Parse(address).Range!;
+
+    private Task<SessionOutcome> Range(string operation, string sheet) => operation == "read"
+        ? _session.ReadAsync(sheet, Range("A1"), formulas: false)
+        : _session.WriteAsync(sheet, Range("A1"), RangeWrite.Clear);
 
     private static void AssertFailure(SessionOutcome outcome, string code, string detail, string state, bool busy = false)
     {

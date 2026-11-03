@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -14,7 +13,7 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
 {
     public IEnumerable<McpServerTool> Create() =>
     [
-        Tool(Start, new()
+        ToolDefinition.Create(Start, new()
         {
             Name = "session_start",
             Description = "Starts a session for one app folder: starts a dedicated hidden Excel and opens the app's main workbook " +
@@ -22,26 +21,26 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
                 "A conversation has at most one session; end it with session_end before you report.",
             ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false,
         }, StartInput, StartOutput),
-        Tool(Status, new()
+        ToolDefinition.Create(Status, new()
         {
             Name = "session_status",
             Description = "Returns the session state (closed or ready), whether an operation is running, and how long it has run. " +
                 "Answers even while a macro runs. Takes no arguments.",
             ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false,
-        }, NoInput, StatusOutput),
-        Tool(End, new()
+        }, ToolDefinition.NoInput, StatusOutput),
+        ToolDefinition.Create(End, new()
         {
             Name = "session_end",
             Description = "Ends the session: saves the main workbook if save is true (otherwise discards the changes since the last save), " +
                 "closes it, and ends the dedicated Excel. Call it before you report.",
             ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false,
         }, EndInput, EndOutput),
-        Tool(Save, new()
+        ToolDefinition.Create(Save, new()
         {
             Name = "workbook_save",
             Description = "Saves the main workbook over its file. The session stays open. Takes no arguments.",
             ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false,
-        }, NoInput, SaveOutput),
+        }, ToolDefinition.NoInput, SaveOutput),
     ];
 
     private async Task<CallToolResult> Start(RequestContext<CallToolRequestParams> context)
@@ -66,7 +65,7 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
                 "This server runs with --no-excel, so it does not start Excel. The app folder passed the checks."), SessionState.Closed);
         }
 
-        return Result(await session.StartAsync(folder!));
+        return ToolResults.From(await session.StartAsync(folder!));
     }
 
     private Task<CallToolResult> Status(RequestContext<CallToolRequestParams> context)
@@ -114,7 +113,7 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
                 SessionState.Closed);
         }
 
-        return Result(await session.EndAsync(save));
+        return ToolResults.From(await session.EndAsync(save));
     }
 
     private async Task<CallToolResult> Save(RequestContext<CallToolRequestParams> context)
@@ -132,51 +131,10 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
                 SessionState.Closed);
         }
 
-        return Result(await session.SaveAsync());
+        return ToolResults.From(await session.SaveAsync());
     }
 
     private SessionState Current() => session is null ? SessionState.Closed : SessionState.From(session.Status());
-
-    // Success adds "session" to the result fields; failure reports the session after the operation.
-    private static CallToolResult Result(SessionOutcome outcome)
-    {
-        var state = SessionState.From(outcome.Session);
-        if (outcome.Failure is not null)
-        {
-            return ToolResults.Failure(outcome.Failure, state);
-        }
-
-        var result = new JsonObject { ["session"] = state.ToJson() };
-        foreach (var (name, value) in outcome.Result!)
-        {
-            result[name] = value?.DeepClone();
-        }
-
-        return ToolResults.Success(result);
-    }
-
-    private static McpServerTool Tool(
-        Func<RequestContext<CallToolRequestParams>, Task<CallToolResult>> handler,
-        McpServerToolCreateOptions toolOptions,
-        string input,
-        string output)
-    {
-        toolOptions.UseStructuredContent = true;
-        toolOptions.OutputSchema = Parse(output);
-        var tool = McpServerTool.Create(handler, toolOptions);
-        tool.ProtocolTool.InputSchema = Parse(input);
-        return tool;
-    }
-
-    private static JsonElement Parse(string schema) => JsonDocument.Parse(schema).RootElement.Clone();
-
-    private const string Session = """
-        {"type":"object","properties":{"state":{"enum":["closed","ready"]},"busy":{"type":"boolean"}},"required":["state","busy"],"additionalProperties":false}
-        """;
-
-    private const string NoInput = """
-        {"type":"object","properties":{},"additionalProperties":false}
-        """;
 
     private const string StartInput = """
         {"type":"object","properties":{"app":{"type":"string","description":"The app folder, relative to the repository or absolute."}},"required":["app"],"additionalProperties":false}
@@ -187,22 +145,22 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
         """;
 
     private static readonly string StartOutput = $$$"""
-        {"type":"object","properties":{"session":{{{Session}}},"app":{"type":"string"},"workbook":{"type":"string"},
+        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"app":{"type":"string"},"workbook":{"type":"string"},
          "excel":{"type":"object","properties":{"pid":{"type":"integer"},"started_at_utc":{"type":"string"}},"required":["pid","started_at_utc"]}},
          "required":["session","app","workbook","excel"]}
         """;
 
     private static readonly string StatusOutput = $$$"""
-        {"type":"object","properties":{"session":{{{Session}}},"app":{"type":"string"},"workbook":{"type":"string"},
+        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"app":{"type":"string"},"workbook":{"type":"string"},
          "operation":{"type":"object","properties":{"tool":{"type":"string"},"elapsed_ms":{"type":"integer"}},"required":["tool","elapsed_ms"]}},
          "required":["session"]}
         """;
 
     private static readonly string EndOutput = $$$"""
-        {"type":"object","properties":{"session":{{{Session}}},"saved":{"type":"boolean"}},"required":["session","saved"]}
+        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"saved":{"type":"boolean"}},"required":["session","saved"]}
         """;
 
     private static readonly string SaveOutput = $$$"""
-        {"type":"object","properties":{"session":{{{Session}}},"workbook":{"type":"string"}},"required":["session","workbook"]}
+        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"workbook":{"type":"string"}},"required":["session","workbook"]}
         """;
 }

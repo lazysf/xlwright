@@ -19,6 +19,24 @@ internal static class ToolResults
     public static CallToolResult Success(JsonObject structured) =>
         Success(JsonSerializer.SerializeToElement(structured));
 
+    // Success adds "session" to the result fields; failure reports the session after the operation.
+    public static CallToolResult From(SessionOutcome outcome)
+    {
+        var state = SessionState.From(outcome.Session);
+        if (outcome.Failure is not null)
+        {
+            return Failure(outcome.Failure, state);
+        }
+
+        var result = new JsonObject { ["session"] = state.ToJson() };
+        foreach (var (name, value) in outcome.Result!)
+        {
+            result[name] = value?.DeepClone();
+        }
+
+        return Success(result);
+    }
+
     public static CallToolResult InvalidRequest(string message) => InvalidRequest(message, SessionState.Closed);
 
     public static CallToolResult InvalidRequest(string message, SessionState session) =>

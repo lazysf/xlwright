@@ -23,6 +23,18 @@ public interface IExcel
 
     void Save();
 
+    /// <summary>
+    /// Recalculates and waits for CalculationState xlDone, then reads Value2 of the main workbook's range as double,
+    /// string, bool, null, or <see cref="CellError"/>; null when no sheet has that name.
+    /// </summary>
+    object?[,]? ReadValues(string sheet, CellRange range);
+
+    /// <summary>Reads Formula (English function names, A1); null when no sheet has that name.</summary>
+    string[,]? ReadFormulas(string sheet, CellRange range);
+
+    /// <summary>Writes Value2, Formula, or ClearContents with events off; false when no sheet has that name.</summary>
+    bool Write(string sheet, CellRange range, RangeWrite write);
+
     /// <summary>The full paths of open workbooks and protected view windows; null for a workbook without a path.</summary>
     IReadOnlyList<string?> OpenWorkbookPaths();
 

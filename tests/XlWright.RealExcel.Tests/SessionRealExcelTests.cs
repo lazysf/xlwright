@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Xunit;
@@ -21,7 +22,7 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         _repo.AddApp("apps/sales");
-        MinimalWorkbook.Write(Workbook);
+        MinimalWorkbook.Write(Workbook, lockedSheet: true);
         _client = await ServerProcess.ConnectAsync(_repo.Root, TestContext.Current.CancellationToken, noExcel: false);
     }
 
@@ -93,6 +94,50 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         Assert.True(File.GetLastWriteTimeUtc(Workbook) > savedBefore);
         var status = Success(await Call("session_status", new()));
         Assert.Equal("ready", status.GetProperty("session").GetProperty("state").GetString());
+
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(pid);
+    }
+
+    [Fact]
+    public async Task WritesAndReadsValuesFormulasAndErrors()
+    {
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/sales" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+
+        var written = Success(await Call("range_write", new()
+        {
+            ["sheet"] = "sheet1",
+            ["range"] = "a1:d1",
+            ["values"] = new[] { new object?[] { 1.5, "日本語", true, null } },
+        }));
+        Assert.Equal("A1:D1", written.GetProperty("range").GetString());
+        Assert.Equal(4, written.GetProperty("cells").GetInt32());
+        Success(await Call("range_write", new()
+        {
+            ["sheet"] = "Sheet1",
+            ["range"] = "A2:C2",
+            ["formulas"] = new[] { new[] { "=A1*2", "=1/0", "=NA()" } },
+        }));
+
+        var values = Success(await Call("range_read", new() { ["sheet"] = "Sheet1", ["range"] = "A1:D2" }));
+        Assert.True(JsonNode.DeepEquals(
+            JsonNode.Parse("""[[1.5,"日本語",true,null],[3,{"error":"#DIV/0!"},{"error":"#N/A"},null]]"""),
+            JsonNode.Parse(values.GetProperty("values").GetRawText())), values.GetProperty("values").GetRawText());
+        var formulas = Success(await Call("range_read", new() { ["sheet"] = "Sheet1", ["range"] = "A2:B2", ["content"] = "formulas" }));
+        Assert.Equal("""[["=A1*2","=1/0"]]""", formulas.GetProperty("formulas").GetRawText());
+        var one = Success(await Call("range_read", new() { ["sheet"] = "Sheet1", ["range"] = "B1" }));
+        Assert.Equal("B1", one.GetProperty("range").GetString());
+
+        Success(await Call("range_write", new() { ["sheet"] = "Sheet1", ["range"] = "A1:A2", ["clear"] = true }));
+        var cleared = Success(await Call("range_read", new() { ["sheet"] = "Sheet1", ["range"] = "A1:A2" }));
+        Assert.Equal("[[null],[null]]", cleared.GetProperty("values").GetRawText());
+
+        var missing = Body(await Call("range_read", new() { ["sheet"] = "Missing", ["range"] = "A1" }));
+        Assert.Equal("SHEET_NOT_FOUND", missing.GetProperty("error").GetProperty("detail").GetString());
+        var locked = Body(await Call("range_write", new() { ["sheet"] = "Locked", ["range"] = "A1", ["values"] = new[] { new object?[] { 1 } } }));
+        Assert.Equal("WRITE_FAILED", locked.GetProperty("error").GetProperty("detail").GetString());
+        Assert.Equal("ready", locked.GetProperty("session").GetProperty("state").GetString());
 
         Success(await Call("session_end", new() { ["save"] = false }));
         AssertNothingLeft(pid);

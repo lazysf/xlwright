@@ -93,6 +93,37 @@ internal sealed class FakeExcel : IExcel
 
     public void ReleaseReferences() => Record("ReleaseReferences");
 
+    public List<string> Sheets { get; } = ["Sheet1", "Data"];
+
+    public object?[,] Values { get; set; } = new object?[1, 1];
+
+    public string[,] Formulas { get; set; } = new string[1, 1];
+
+    public Exception? RangeThrows { get; set; }
+
+    public Block RangeBlock { get; set; } = Block.None;
+
+    public RangeWrite? Written { get; private set; }
+
+    public object?[,]? ReadValues(string sheet, CellRange range) => Range("ReadValues", sheet, range) ? Values : null;
+
+    public string[,]? ReadFormulas(string sheet, CellRange range) => Range("ReadFormulas", sheet, range) ? Formulas : null;
+
+    public bool Write(string sheet, CellRange range, RangeWrite write)
+    {
+        if (!Range("Write", sheet, range)) return false;
+        Written = write;
+        return true;
+    }
+
+    private bool Range(string call, string sheet, CellRange range)
+    {
+        Record($"{call} {sheet}!{range.Address}");
+        Process.WaitIf(RangeBlock);
+        if (RangeThrows is not null) throw RangeThrows;
+        return Sheets.Contains(sheet, StringComparer.OrdinalIgnoreCase);
+    }
+
     private void Record(string call)
     {
         lock (_calls) _calls.Add(call);

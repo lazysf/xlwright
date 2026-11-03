@@ -3,10 +3,11 @@ using System.Text;
 
 namespace XlWright.McpServer.Tests;
 
-// Writes the smallest SpreadsheetML package Excel opens: one empty sheet. No Excel is needed to make it.
+// Writes the smallest SpreadsheetML package Excel opens: one empty sheet, and optionally a second, protected one
+// named Locked. No Excel is needed to make it.
 internal static class MinimalWorkbook
 {
-    public static void Write(string path)
+    public static void Write(string path, bool lockedSheet = false)
     {
         var macroEnabled = Path.GetExtension(path).Equals(".xlsm", StringComparison.OrdinalIgnoreCase);
         var mainType = macroEnabled
@@ -15,6 +16,7 @@ internal static class MinimalWorkbook
         const string Relationships = "http://schemas.openxmlformats.org/package/2006/relationships";
         const string Office = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
         const string Main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        const string WorksheetType = "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml";
 
         using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
         Add(zip, "[Content_Types].xml",
@@ -22,15 +24,24 @@ internal static class MinimalWorkbook
             "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>" +
             "<Default Extension=\"xml\" ContentType=\"application/xml\"/>" +
             $"<Override PartName=\"/xl/workbook.xml\" ContentType=\"{mainType}\"/>" +
-            "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>" +
+            $"<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"{WorksheetType}\"/>" +
+            (lockedSheet ? $"<Override PartName=\"/xl/worksheets/sheet2.xml\" ContentType=\"{WorksheetType}\"/>" : "") +
             "</Types>");
         Add(zip, "_rels/.rels",
             $"<Relationships xmlns=\"{Relationships}\"><Relationship Id=\"rId1\" Type=\"{Office}/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>");
         Add(zip, "xl/workbook.xml",
-            $"<workbook xmlns=\"{Main}\" xmlns:r=\"{Office}\"><sheets><sheet name=\"Sheet1\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>");
+            $"<workbook xmlns=\"{Main}\" xmlns:r=\"{Office}\"><sheets><sheet name=\"Sheet1\" sheetId=\"1\" r:id=\"rId1\"/>" +
+            (lockedSheet ? "<sheet name=\"Locked\" sheetId=\"2\" r:id=\"rId2\"/>" : "") +
+            "</sheets></workbook>");
         Add(zip, "xl/_rels/workbook.xml.rels",
-            $"<Relationships xmlns=\"{Relationships}\"><Relationship Id=\"rId1\" Type=\"{Office}/worksheet\" Target=\"worksheets/sheet1.xml\"/></Relationships>");
+            $"<Relationships xmlns=\"{Relationships}\"><Relationship Id=\"rId1\" Type=\"{Office}/worksheet\" Target=\"worksheets/sheet1.xml\"/>" +
+            (lockedSheet ? $"<Relationship Id=\"rId2\" Type=\"{Office}/worksheet\" Target=\"worksheets/sheet2.xml\"/>" : "") +
+            "</Relationships>");
         Add(zip, "xl/worksheets/sheet1.xml", $"<worksheet xmlns=\"{Main}\"><sheetData/></worksheet>");
+        if (lockedSheet)
+        {
+            Add(zip, "xl/worksheets/sheet2.xml", $"<worksheet xmlns=\"{Main}\"><sheetData/><sheetProtection sheet=\"1\"/></worksheet>");
+        }
     }
 
     private static void Add(ZipArchive zip, string name, string xml)

@@ -49,14 +49,56 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
         _active is null ? Fail(ToolFailure.Conflict, "NO_SESSION", "There is no session to end. Start one with session_start.") : null,
         () => EndCore(_active!, save));
 
-    public Task<SessionOutcome> SaveAsync() => Run("workbook_save", () =>
-        _active is null ? Fail(ToolFailure.Conflict, "NO_SESSION", "There is no session. Start one with session_start.") : null,
+    public Task<SessionOutcome> SaveAsync() => Run("workbook_save", NoSession,
         async () =>
         {
             var active = _active!;
             return await SaveCore(active, "Fix the cause and call workbook_save again, or call session_end with save false to discard the changes.")
                 ?? (new JsonObject { ["workbook"] = active.App.WorkbookName }, null);
         });
+
+    public Task<SessionOutcome> ReadAsync(string sheet, CellRange range, bool formulas) => Run("range_read", NoSession, async () =>
+    {
+        var active = _active!;
+        var reading = active.Worker.Run<Array?>(formulas
+            ? () => active.Excel.ReadFormulas(sheet, range)
+            : () => active.Excel.ReadValues(sheet, range));
+        if (!await Completes(reading, timeouts.Sync))
+        {
+            return await AfterTimeout(active, reading, $"Reading {range.Address} did not finish within the time limit.");
+        }
+
+        if (reading.IsFaulted)
+        {
+            return Fail(ToolFailure.ExcelError, null, $"Excel could not read {range.Address} on {sheet}: {reading.Exception!.InnerException!.Message}");
+        }
+
+        return reading.Result is { } cells
+            ? (new JsonObject { ["sheet"] = sheet, ["range"] = range.Address, [formulas ? "formulas" : "values"] = CellsJson(cells) }, null)
+            : SheetNotFound(sheet);
+    });
+
+    public Task<SessionOutcome> WriteAsync(string sheet, CellRange range, RangeWrite write) => Run("range_write", NoSession, async () =>
+    {
+        var active = _active!;
+        var writing = active.Worker.Run(() => active.Excel.Write(sheet, range, write));
+        if (!await Completes(writing, timeouts.Sync))
+        {
+            return await AfterTimeout(active, writing, $"Writing {range.Address} did not finish within the time limit.");
+        }
+
+        if (writing.IsFaulted)
+        {
+            // A failed array write can stop part-way (docs/notes/range-values.md), so what was written is unknown.
+            return Fail(ToolFailure.ExcelError, "WRITE_FAILED",
+                $"Excel could not write {range.Address} on {sheet}: {writing.Exception!.InnerException!.Message} " +
+                "Some cells may have been written; read the range again with range_read before you continue.");
+        }
+
+        return writing.Result
+            ? (new JsonObject { ["sheet"] = sheet, ["range"] = range.Address, ["cells"] = range.Count }, null)
+            : SheetNotFound(sheet);
+    });
 
     public void Dispose()
     {
@@ -301,6 +343,39 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
         {
             _unusable = true;
         }
+    }
+
+    // Called under the lock by Run.
+    private (JsonObject?, ToolFailure?)? NoSession() =>
+        _active is null ? Fail(ToolFailure.Conflict, "NO_SESSION", "There is no session. Start one with session_start.") : null;
+
+    private static (JsonObject?, ToolFailure?) SheetNotFound(string sheet) =>
+        Fail(ToolFailure.NotFound, "SHEET_NOT_FOUND", $"The main workbook has no sheet named \"{sheet}\". Check the sheet name.");
+
+    // Values are double, string, bool, null, or CellError (IExcel.ReadValues); formulas are strings.
+    private static JsonArray CellsJson(Array cells)
+    {
+        var rows = new JsonArray();
+        for (var row = 0; row < cells.GetLength(0); row++)
+        {
+            var columns = new JsonArray();
+            for (var column = 0; column < cells.GetLength(1); column++)
+            {
+                columns.Add(cells.GetValue(row, column) switch
+                {
+                    null => null,
+                    CellError error => new JsonObject { ["error"] = error.Name },
+                    double number => JsonValue.Create(number),
+                    string text => JsonValue.Create(text),
+                    bool flag => JsonValue.Create(flag),
+                    var other => throw new InvalidOperationException($"Excel returned a cell of type {other.GetType().Name}."),
+                });
+            }
+
+            rows.Add(columns);
+        }
+
+        return rows;
     }
 
     private SessionSnapshot Snapshot() => new(

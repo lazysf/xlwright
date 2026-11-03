@@ -20,7 +20,6 @@ Desktop.ini
 
 # xlwright runtime state and distribution output
 .xlwright/
-.xlwright.lock
 dist/
 
 # Node.js development tools

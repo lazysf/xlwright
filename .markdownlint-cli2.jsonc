@@ -7,7 +7,5 @@
     // Allow the same heading text under different parents.
     "MD024": { "siblings_only": true }
   },
-  "gitignore": true,
-  // Preserve the imported reference document without automatic formatting.
-  "ignores": ["references/PROJECT_OVERVIEW_V22.md"]
+  "gitignore": true
 }

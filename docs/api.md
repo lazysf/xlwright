@@ -3,13 +3,14 @@
 本書は、xlwrightのMCPのツールの名前と共通の規約を定めます。
 ツールの名前・説明・引数・応答は、公開インターフェースです。モデルはツールの定義を、指示として読みます。
 各ツールの引数と応答は、そのツールを作る段階で、その段階の実機の確認の直後に本書へ書きます。実装の前に人の承認を得ます。
-方式は[設計](architecture.md)、実装の基準は[開発ガイド](development.md#mcpツールの実装基準)にあります。
+方式は[設計](architecture.md)にあります。
 
 ## 共通の規約
 
 ### 名前と分け方
 
-ツールは、読むツールと変えるツールに分けます（[ADR 0013](adr/0013-read-and-edit-tools.md)）。
+ツールは、読むツールと変えるツールに分けます。
+読むツールに、読み取りだけの注釈を正しく付けられ、モデルが名前を予測しやすくなるためです。範囲の表の操作（およそ70）を操作ごとのツールにすると数が多すぎ、対象ごとに1つのツールにすると読み取りと削除が混ざります。
 
 - 名前は`<対象>_<動詞>`です。
 - `<対象>_get`は読むだけです。`<対象>_edit`は変えます。変える操作は、引数`action`で選びます。
@@ -26,7 +27,7 @@
 ### 成功と失敗
 
 - 成功は、`outputSchema`に沿う`structuredContent`と、同じJSONの本文で返します。
-- 失敗は、`isError: true`の`CallToolResult`で返します。`structuredContent`は付けません（[ADR 0007](adr/0007-error-as-direct-result.md)）。
+- 失敗は、`isError: true`の`CallToolResult`で返します。`structuredContent`は付けません。MCPの仕様では、ツールの実行の失敗をプロトコルのエラーではなく結果として返し、モデルが読んで次の行動を決められるようにするためです（[Tools](https://modelcontextprotocol.io/specification/draft/server/tools)）。
 - 失敗の本文は、次の形の1行のJSONです。
 
 ```json

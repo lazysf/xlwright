@@ -28,7 +28,7 @@ powershell -NoProfile -File scripts\check.ps1
 4. Excelを起動しないテスト（`tests/XlWright.McpServer.Tests`）を実行します。
 5. 今回のビルドを`--no-excel`で起動し、Inspectorで`tools/list`と`server_info`を呼びます。`build_id`が今回の識別子と一致するかを確かめます。
 6. Markdownをチェックし、`git diff --check HEAD`を行います。
-7. 通ったビルドを`.xlwright/builds/latest.json`に記録します。
+7. 通ったビルドを`.xlwright/builds/latest.json`に記録し、開発版のプラグインの`plugins/xlwright-dev/.mcp.json`（Git管理外）を、そのビルドを起動する形で書き出します。
 
 確認の入口を通らないビルド（`dotnet build`や`dotnet test`を直接実行した時）は、`build_id`が`unknown`になります。
 テストはMicrosoft.Testing.Platformで実行します（[global.json](../global.json)）。直接実行する時は`dotnet test --solution xlwright.slnx`です。
@@ -46,3 +46,19 @@ prek run --all-files
 ```
 
 hookの設定は [prek.toml](../prek.toml)、Markdownのルールは [.markdownlint-cli2.jsonc](../.markdownlint-cli2.jsonc) にあります。
+
+## 開発版のプラグイン
+
+確認の入口が最後に通したビルドを、Claude Codeの会話から使うためのプラグインです。設計は[サーバーとビルドとプラグイン](architecture.md#サーバーとビルドとプラグイン)にあります。
+ユーザーの設定`~/.claude/settings.json`へ書き込むため、入れるのは人です（または人の承認を得て行います）。確認の入口を1回通してから、`env`の`CLAUDE_CODE_PLUGIN_DIRS`に`~/<リポジトリまでのパス>/plugins/xlwright-dev`を加えます。ほかの値がある時は、`;`で区切って後ろに足します。
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_PLUGIN_DIRS": "~/projects/xlwright/plugins/xlwright-dev"
+  }
+}
+```
+
+新しく始めた会話に、`mcp__plugin_xlwright-dev_xlwright__server_info`が現れます。開いたままの会話は、始めた時のビルドを使い続けます（[記録](notes/dev-plugin-loading.md)）。
+戻すには、加えたパスを消します。

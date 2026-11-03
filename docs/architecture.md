@@ -21,7 +21,7 @@ Claude Codeの会話
 ```
 
 - 1つのサーバーが持つセッションは、最大1つです。ツールは`session_id`を引数に取りません。会話ごとにサーバーが1つ付くなら、セッションを区別する必要が無いためです。
-- 未確認（段階0）: Claude Codeが、プラグインで登録したサーバーを会話ごとに起動するか。成立しない時は、セッションの単位を見直すため、止めて人と相談します。
+- 確認済み（段階0、[記録](notes/dev-plugin-loading.md)）: Claude Codeのデスクトップアプリは、プラグインのサーバーを会話ごとに起動した。
 - Excelのオブジェクトは、専用のSTAスレッドの中でだけ作り、使い、解放します。スレッドの外へ渡しません。
 - 状態の照会はCOMを使わず、サーバーが持つ情報から返します。STAが塞がっていても答えるためです。
 - 未確認（段階1）: 製品のサーバーの中のSTAで、`RETRYLATER`や、保存・Closeの遅延した戻りが起きるか。起きた時は、[期限](#期限と大きさの上限)の規則で扱います。起動の直後に`SERVERCALL_REJECTED`が返るかも確かめます。ExcelMcpは、管理された端末で起動中に出るサインインのダイアログを理由に、REJECTEDを再試行しています。返る時は、開始に限って再試行するかを人が判断します。
@@ -64,8 +64,8 @@ apps/sales/                  アプリのフォルダ（リポジトリの中。
 
 - アプリのフォルダは、サーバーの引数`--project`が指すリポジトリの中に限ります。
 - フォルダの中かどうかは、正規化した完全なパスを、末尾の区切り文字まで含めた前方一致で比べます。大文字と小文字は区別しません。`apps\sales`と`apps\sales2`を取り違えないためです。
-- プラグインは`--project`に`${CLAUDE_PROJECT_DIR:-.}`を渡します。サーバーは、相対パスを作業ディレクトリを基準に解決します。
-- 未確認（段階0）: プラグインのサーバーで、`${CLAUDE_PROJECT_DIR}`がリポジトリに展開されるか。展開されない時に、作業ディレクトリがリポジトリの直下か。どちらでもリポジトリを指さない時は、止めて人と相談します。
+- プラグインは`--project`に`${CLAUDE_PROJECT_DIR}`を渡します。既定の値を付けた`${CLAUDE_PROJECT_DIR:-.}`は、プラグインの設定では展開されず`.`になりました。サーバーは、相対パスを作業ディレクトリを基準に解決します。
+- 確認済み（段階0、[記録](notes/dev-plugin-loading.md)）: プラグインのサーバーで、`${CLAUDE_PROJECT_DIR}`はリポジトリの完全なパスに展開された。
 - UNC、デバイスパス（`\\?\`・`\\.\`で始まるパス）、ネットワークドライブ（`DriveType.Network`）は、パスに触れる前に拒否します（[利用の前提](requirements.md#利用の前提)）。
 - 未確認（段階2）: 同期しているフォルダ（OneDriveなど）のブックで、`Workbook.FullName`がローカルのパスを返すか。成立しない時は、同期フォルダの中のアプリを開始で拒否する案を人が判断し、利用の前提に書きます。
 
@@ -327,12 +327,12 @@ xlwrightが止まって知らせる時に、人が取る手順です。段階2�
 - ビルドは毎回、変わらない置き場`.xlwright/builds/<build-id>/`へ出します。開発版のプラグイン、Inspector、実Excelのテストは、すべてこの置き場から起動します。動いているサーバーがDLLを掴んでいても、次のビルドを妨げないためです。
 - 確認の入口は1つのコマンドにし、AIエージェントが人なしで回します。工程は、依存の復元、ビルドと置き場への出力、Excelを起動しないテスト、Inspectorでの`tools/list`と`server_info`（今回のビルドを`--no-excel`で起動）、Markdownのチェック、`git diff --check`、通ったビルドの`.xlwright/builds/latest.json`への記録、の順です。
 - 古いビルドは、新しい5つと、`latest.json`が指すビルドを残して、フォルダの単位で消します。消す前にフォルダの名前の変更を試し、失敗したもの（動いているサーバーが使っている見込み）は飛ばします。
-- 未確認（段階0）: 開いた会話が使っているビルドのフォルダは、名前の変更が失敗するか。成功する時は、古いビルドを消す工程を止め、消し方を決め直します。
+- 確認済み（段階0、[記録](notes/build-folder-rename.md)）: 開いた会話が使っているビルドのフォルダは、名前の変更が`IOException`で失敗した。
 - 開発版のプラグインは`xlwright-dev`、利用する版のプラグインは`xlwright`という名前にします。どちらも、プラグインの中のMCPサーバーの名前は`xlwright`です。
 - Claude Codeはツールに`mcp__plugin_<プラグイン名>_<サーバー名>__`を付けます（[MCP](https://code.claude.com/docs/en/mcp.md)）。そのため、ツールの名前は`mcp__plugin_xlwright-dev_xlwright__<ツール名>`と`mcp__plugin_xlwright_xlwright__<ツール名>`に分かれます。事前の許可の設定は、この名前で書きます。
-- 開発版の入れ方: リポジトリの直下の`.claude-plugin/marketplace.json`（`name`は`xlwright-dev`）が、`plugins/xlwright-dev/`を相対パスで指します。プラグインの`plugin.json`には`version`を書きません。確認の入口が通ると、`plugins/xlwright-dev/.mcp.json`（Git管理外）を書き出します。中身は、`dotnet`で`${CLAUDE_PLUGIN_ROOT}/../../.xlwright/builds/<build-id>/XlWright.McpServer.dll`を起動し、`--project ${CLAUDE_PROJECT_DIR:-.}`を渡すものです。
-- 人は、`/plugin marketplace add`にこのリポジトリを渡し、`/plugin install xlwright-dev@xlwright-dev`を`local`のスコープで入れます。ユーザーの設定へ書き込むため、人が行います。ローカルのフォルダから追加したマーケットプレイスのプラグインは、その場で読み込まれ、次の会話の開始で反映されます（[プラグインの読み込み](https://code.claude.com/docs/en/plugins/loading.md)）。
-- 未確認（段階0）: デスクトップアプリで、アプリを再起動せずに、新しい会話だけで新しい版が読まれるか。開いたままの会話が前の版を使い続けるか。成立しない時は、`CLAUDE_CODE_PLUGIN_DIRS`で開発版を読み込む形を試します。次に、版を上げて入れ直す形を試します。それでも読まれなければ、止めて人と相談します。
+- 開発版の入れ方: `plugins/xlwright-dev/`を、`--plugin-dir`と同じ形で読み込ませます。プラグインはその場所のまま読み込まれ、`${CLAUDE_PLUGIN_ROOT}`はこのフォルダを指します（[プラグインの読み込み](https://code.claude.com/docs/en/plugins/loading.md)）。プラグインの`plugin.json`には`version`を書きません。確認の入口が通ると、`plugins/xlwright-dev/.mcp.json`（Git管理外）を書き出します。中身は、`dotnet`で`${CLAUDE_PLUGIN_ROOT}/../../.xlwright/builds/<build-id>/XlWright.McpServer.dll`を起動し、`--project ${CLAUDE_PROJECT_DIR}`を渡すものです。
+- 人は、ユーザーの設定`~/.claude/settings.json`の`env.CLAUDE_CODE_PLUGIN_DIRS`に、`plugins/xlwright-dev`の絶対パスか`~`で始まるパスを加えます。リポジトリの外の設定のため、人が行うか、人の承認を得て行います。デスクトップアプリの画面ではローカルのフォルダのマーケットプレイスを追加できず、プロジェクトの設定の`env`では読み込まれませんでした（[記録](notes/dev-plugin-loading.md)）。この設定は、すべてのプロジェクトの会話で開発版のサーバーを起動します。
+- 確認済み（段階0、[記録](notes/dev-plugin-loading.md)）: 新しい会話は、確認の入口が最後に通したビルドを読み、開いたままの会話は前のビルドを使い続けた。
 - 利用する版は、.NETの実行環境を同梱する自己完結の形で発行し、プラグインに入れます。別の端末で.NETを入れる手順を省くためです（[提供形態](requirements.md#利用環境と提供形態)）。
 - 未確認（段階4）: 会社のPCの管理設定が、プラグインの入手元を制限していないか。GitHubから配布物を取得できるか。成立しない時は、リポジトリを手元に写し、ローカルのフォルダのマーケットプレイスとして追加します。
 - 未確認（段階4）: PIAの型を埋め込んだ配布物の利用条件。問題があれば、止めて人と相談します。

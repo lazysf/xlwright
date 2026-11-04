@@ -14,7 +14,11 @@ public sealed class ExcelSessionTests : IDisposable
         QuitExit: TimeSpan.FromMilliseconds(300),
         CleanupQuitExit: TimeSpan.FromMilliseconds(300),
         TerminateExit: TimeSpan.FromMilliseconds(200),
-        PendingReturn: TimeSpan.FromMilliseconds(300));
+        PendingReturn: TimeSpan.FromMilliseconds(300))
+    {
+        CompileWatch = TimeSpan.FromMilliseconds(600),
+        DialogClose = TimeSpan.FromMilliseconds(300),
+    };
 
     private readonly TempRepository _repo = new();
     private readonly FakeLauncher _launcher = new();
@@ -605,6 +609,117 @@ public sealed class ExcelSessionTests : IDisposable
     public async Task ListModulesWithoutASessionIsAConflict()
     {
         var outcome = await _session.ListModulesAsync();
+
+        AssertFailure(outcome, "CONFLICT", "NO_SESSION", "closed");
+    }
+
+    [Fact]
+    public async Task CheckSyncsCompilesAndReportsCompiledCode()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.CompilesAfter = 2;
+
+        var outcome = await _session.CheckAsync();
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal("ready", outcome.Session.State);
+        Assert.True(outcome.Result!["compiled"]!.GetValue<bool>());
+        Assert.Null(outcome.Result["error"]);
+        Assert.NotNull(outcome.Result["sync"]!["modules"]);
+        var calls = _launcher.Excel.Calls.SkipWhile(c => !c.StartsWith("SyncVba")).ToList();
+        Assert.Equal(["StartCompile", "IsCompiled", "IsCompiled"], calls.Skip(1));
+    }
+
+    [Fact]
+    public async Task CheckReportsCodeThatWasAlreadyCompiled()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.CompileStart = CompileStart.AlreadyCompiled;
+
+        var outcome = await _session.CheckAsync();
+
+        Assert.True(outcome.Result!["compiled"]!.GetValue<bool>());
+        Assert.DoesNotContain("IsCompiled", _launcher.Excel.Calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CheckReportsACompileErrorClosesTheDialogAndHidesTheEditor(bool placeKnown)
+    {
+        await _session.StartAsync(_app);
+        _launcher.Process.Dialog = new DialogText("Microsoft Visual Basic for Applications", "コンパイル エラー:\n変数が定義されていません。");
+        _launcher.Excel.ErrorPlace = placeKnown ? new CompileErrorPlace("Calc", 4) : null;
+
+        var outcome = await _session.CheckAsync();
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal("ready", outcome.Session.State);
+        var result = outcome.Result!;
+        Assert.False(result["compiled"]!.GetValue<bool>());
+        Assert.Equal("コンパイル エラー: 変数が定義されていません。", result["error"]!["message"]!.GetValue<string>());
+        Assert.Equal(placeKnown ? "Calc" : null, result["error"]!["module"]?.GetValue<string>());
+        Assert.Equal(placeKnown ? 4 : null, result["error"]!["line"]?.GetValue<int>());
+        Assert.Equal(1, _launcher.Process.DialogCloses);
+        Assert.Equal("HideEditor", _launcher.Excel.Calls[^1]);
+        Assert.Contains("ReadErrorPlace", _launcher.Excel.Calls);
+        Assert.Equal(0, _launcher.Process.Terminations);
+    }
+
+    [Fact]
+    public async Task CheckEndsTheExcelWhenTheClosedDialogStays()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Process.Dialog = new DialogText("Microsoft Visual Basic for Applications", "コンパイル エラー:");
+        _launcher.Process.CloseLeavesDialog = true;
+
+        var outcome = await _session.CheckAsync();
+
+        AssertFailure(outcome, "STATE_UNKNOWN", "DIALOG", "closed");
+        Assert.Equal("コンパイル エラー:", outcome.Failure!.Data!["dialog"]!["text"]!.GetValue<string>());
+        Assert.Equal(1, _launcher.Process.Terminations);
+    }
+
+    [Fact]
+    public async Task CheckReportsACompileThatIsNotConfirmed()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.CompilesAfter = int.MaxValue;
+
+        var outcome = await _session.CheckAsync();
+
+        AssertFailure(outcome, "EXCEL_ERROR", "COMPILE_NOT_CONFIRMED", "ready");
+        Assert.Equal(0, _launcher.Process.Terminations);
+    }
+
+    [Fact]
+    public async Task CheckDoesNotCompileWhenTheSyncStops()
+    {
+        _repo.AddApp("apps/sales", "src/modules/Calc.cls");
+        await _session.StartAsync(_app);
+
+        var outcome = await _session.CheckAsync();
+
+        AssertFailure(outcome, "INVALID_REQUEST", "SOURCE_INVALID", "ready");
+        Assert.DoesNotContain("StartCompile", _launcher.Excel.Calls);
+    }
+
+    [Fact]
+    public async Task CheckTimeoutTerminatesTheOwnedExcel()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.CompileBlock = Block.UntilTerminated;
+
+        var outcome = await _session.CheckAsync();
+
+        AssertFailure(outcome, "STATE_UNKNOWN", "TIMEOUT", "closed");
+        Assert.Equal(1, _launcher.Process.Terminations);
+    }
+
+    [Fact]
+    public async Task CheckWithoutASessionIsAConflict()
+    {
+        var outcome = await _session.CheckAsync();
 
         AssertFailure(outcome, "CONFLICT", "NO_SESSION", "closed");
     }

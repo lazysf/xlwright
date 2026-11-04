@@ -376,6 +376,141 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
         }
     }
 
+    private const int ControlButton = 1; // msoControlButton
+    private const int CompileControlId = 578; // "Compile VBAProject" in the VBE (docs/notes/test-copy.md)
+
+    public CompileStart StartCompile()
+    {
+        dynamic project = TrustedProject();
+        try
+        {
+            ThrowIfLocked(project);
+            dynamic vbe = App.VBE;
+            try
+            {
+                // Only the ActiveVBProject is compiled (docs/notes/test-copy.md).
+                vbe.ActiveVBProject = project;
+                return WithCompileControl((object)vbe, control =>
+                {
+                    if (!(bool)control.Enabled)
+                    {
+                        return CompileStart.AlreadyCompiled;
+                    }
+
+                    control.Execute();
+                    return CompileStart.Started;
+                });
+            }
+            finally
+            {
+                Release(vbe);
+            }
+        }
+        finally
+        {
+            Release(project);
+        }
+    }
+
+    public bool IsCompiled()
+    {
+        dynamic vbe = App.VBE;
+        try
+        {
+            return WithCompileControl((object)vbe, control => !(bool)control.Enabled);
+        }
+        finally
+        {
+            Release(vbe);
+        }
+    }
+
+    public CompileErrorPlace? ReadErrorPlace()
+    {
+        dynamic vbe = App.VBE;
+        try
+        {
+            dynamic? pane = vbe.ActiveCodePane;
+            if (pane is null)
+            {
+                return null;
+            }
+
+            try
+            {
+                int startLine = 0, startColumn = 0, endLine = 0, endColumn = 0;
+                pane.GetSelection(out startLine, out startColumn, out endLine, out endColumn);
+                dynamic code = pane.CodeModule;
+                try
+                {
+                    dynamic component = code.Parent;
+                    try
+                    {
+                        return startLine > 0 ? new CompileErrorPlace((string)component.Name, startLine) : null;
+                    }
+                    finally
+                    {
+                        Release(component);
+                    }
+                }
+                finally
+                {
+                    Release(code);
+                }
+            }
+            finally
+            {
+                Release(pane);
+            }
+        }
+        finally
+        {
+            Release(vbe);
+        }
+    }
+
+    public void HideEditor()
+    {
+        dynamic vbe = App.VBE;
+        try
+        {
+            dynamic window = vbe.MainWindow;
+            try
+            {
+                window.Visible = false;
+            }
+            finally
+            {
+                Release(window);
+            }
+        }
+        finally
+        {
+            Release(vbe);
+        }
+    }
+
+    private static T WithCompileControl<T>(object vbe, Func<dynamic, T> use)
+    {
+        dynamic bars = ((dynamic)vbe).CommandBars;
+        try
+        {
+            dynamic control = bars.FindControl(ControlButton, CompileControlId);
+            try
+            {
+                return use(control);
+            }
+            finally
+            {
+                Release(control);
+            }
+        }
+        finally
+        {
+            Release(bars);
+        }
+    }
+
     private dynamic TrustedProject()
     {
         try

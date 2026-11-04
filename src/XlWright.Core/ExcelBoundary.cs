@@ -107,6 +107,21 @@ public interface IExcel
     IReadOnlyList<VbaComponent> ListVba();
 
     /// <summary>
+    /// Makes the main workbook's project the ActiveVBProject and executes the VBE's "Compile VBAProject" control
+    /// (docs/architecture.md "テスト", docs/notes/test-copy.md). It returns at once; a compile error shows a dialog later.
+    /// </summary>
+    CompileStart StartCompile();
+
+    /// <summary>Whether the compile control is disabled, which it is once the project is compiled.</summary>
+    bool IsCompiled();
+
+    /// <summary>The module and line the VBE selected for a compile error, or null when it cannot be read.</summary>
+    CompileErrorPlace? ReadErrorPlace();
+
+    /// <summary>Hides the VBE window that a compile error shows on the person's screen.</summary>
+    void HideEditor();
+
+    /// <summary>
     /// Checks that the macro is a public Sub or Function of a standard module, adds the module that calls it by
     /// name, runs that module's Run with Application.Run, and removes the module (docs/architecture.md
     /// "実行ごとに作るモジュール"). Blocks while the macro runs.
@@ -139,6 +154,9 @@ public interface IOwnedProcess : IDisposable
     /// </summary>
     DialogText? FindDialog();
 
+    /// <summary>Posts WM_CLOSE to the dialog <see cref="FindDialog"/> finds, if there is one. Reads windows only.</summary>
+    void CloseDialog();
+
     /// <summary>Whether each XLMAIN window of the process is enabled, for the diagnostic log. Reads windows only.</summary>
     IReadOnlyList<bool> MainWindowsEnabled();
 }
@@ -148,6 +166,18 @@ public interface IOwnedProcess : IDisposable
 /// sheet module, and null for the others.
 /// </summary>
 public sealed record VbaComponent(string Name, string Type, int Lines, string? Sheet);
+
+public enum CompileStart
+{
+    /// <summary>The compile control was already disabled: the project is compiled, so nothing was executed.</summary>
+    AlreadyCompiled,
+
+    /// <summary>The control was executed.</summary>
+    Started,
+}
+
+/// <summary>Where the VBE put the selection for a compile error.</summary>
+public sealed record CompileErrorPlace(string Module, int Line);
 
 /// <summary>The title and the body text of a dialog. It goes only into the response, never into a log.</summary>
 public sealed record DialogText(string Title, string Text);
@@ -235,4 +265,10 @@ public sealed record SessionTimeouts(
         CleanupQuitExit: TimeSpan.FromSeconds(10),
         TerminateExit: TimeSpan.FromSeconds(5),
         PendingReturn: TimeSpan.FromSeconds(10));
+
+    /// <summary>How long vba_check watches for a dialog after the compile (docs/api.md "vba_check").</summary>
+    public TimeSpan CompileWatch { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long a dialog may stay after WM_CLOSE before the Excel is ended.</summary>
+    public TimeSpan DialogClose { get; init; } = TimeSpan.FromSeconds(1);
 }

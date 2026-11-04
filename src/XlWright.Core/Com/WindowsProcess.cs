@@ -64,11 +64,22 @@ internal sealed class WindowsProcess : IOwnedProcess
 
     // docs/architecture.md "失敗の返し方と記録": an XLMAIN of the process is disabled, and the process has a visible,
     // enabled window that is not XLMAIN. A dialog a macro shows has no owner, or the VBE as owner (docs/notes/dialog-probe.md).
-    public DialogText? FindDialog()
+    public DialogText? FindDialog() => DialogWindow() is var dialog && dialog == IntPtr.Zero ? null : ReadDialog(dialog);
+
+    public void CloseDialog()
+    {
+        const uint WmClose = 0x0010;
+        if (DialogWindow() is var dialog && dialog != IntPtr.Zero)
+        {
+            _ = NativeMethods.PostMessage(dialog, WmClose, IntPtr.Zero, IntPtr.Zero);
+        }
+    }
+
+    private IntPtr DialogWindow()
     {
         if (_handle.IsInvalid)
         {
-            return null;
+            return IntPtr.Zero;
         }
 
         var windows = new List<IntPtr>();
@@ -85,12 +96,11 @@ internal sealed class WindowsProcess : IOwnedProcess
 
         if (!windows.Any(hwnd => ClassOf(hwnd) == "XLMAIN" && !NativeMethods.IsWindowEnabled(hwnd)))
         {
-            return null;
+            return IntPtr.Zero;
         }
 
-        var dialog = windows.FirstOrDefault(hwnd =>
+        return windows.FirstOrDefault(hwnd =>
             ClassOf(hwnd) != "XLMAIN" && NativeMethods.IsWindowVisible(hwnd) && NativeMethods.IsWindowEnabled(hwnd));
-        return dialog == IntPtr.Zero ? null : ReadDialog(dialog);
     }
 
     public IReadOnlyList<bool> MainWindowsEnabled()

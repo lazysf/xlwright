@@ -153,6 +153,38 @@ internal sealed class FakeExcel : IExcel
         return Components;
     }
 
+    public CompileStart CompileStart { get; set; } = CompileStart.Started;
+
+    public Block CompileBlock { get; set; } = Block.None;
+
+    // IsCompiled returns true from this call on; the watch also stops at a dialog of the process.
+    public int CompilesAfter { get; set; } = 1;
+
+    public CompileErrorPlace? ErrorPlace { get; set; }
+
+    private int _compileChecks;
+
+    public CompileStart StartCompile()
+    {
+        Record("StartCompile");
+        Process.WaitIf(CompileBlock);
+        return CompileStart;
+    }
+
+    public bool IsCompiled()
+    {
+        Record("IsCompiled");
+        return ++_compileChecks >= CompilesAfter;
+    }
+
+    public CompileErrorPlace? ReadErrorPlace()
+    {
+        Record("ReadErrorPlace");
+        return ErrorPlace;
+    }
+
+    public void HideEditor() => Record("HideEditor");
+
     public MacroResult MacroResult { get; set; } = new MacroResult.Returned(42);
 
     public Block MacroBlock { get; set; } = Block.None;
@@ -196,6 +228,16 @@ internal sealed class FakeProcess : IOwnedProcess
     {
         DialogChecks++;
         return Dialog;
+    }
+
+    public int DialogCloses { get; private set; }
+
+    public bool CloseLeavesDialog { get; set; }
+
+    public void CloseDialog()
+    {
+        DialogCloses++;
+        if (!CloseLeavesDialog) Dialog = null;
     }
 
     public IReadOnlyList<bool> MainWindowsEnabled() => [true];

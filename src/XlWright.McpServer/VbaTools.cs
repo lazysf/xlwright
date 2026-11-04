@@ -5,7 +5,7 @@ using XlWright.Core;
 
 namespace XlWright.McpServer;
 
-/// <summary>vba_sync and macro_run (docs/api.md, stage 1), and vba_get (stage 3).</summary>
+/// <summary>vba_sync and macro_run (docs/api.md, stage 1), and vba_get and vba_check (stage 3).</summary>
 internal sealed class VbaTools(ExcelSession? session)
 {
     private const int DefaultTimeoutSeconds = 300;
@@ -30,6 +30,15 @@ internal sealed class VbaTools(ExcelSession? session)
                 "name is the CodeName to use for src/workbook/<CodeName>.cls. Takes no arguments.",
             ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false,
         }, ToolDefinition.NoInput, GetOutput),
+        ToolDefinition.Create(Check, new()
+        {
+            Name = "vba_check",
+            Description = "Syncs src/ as vba_sync does, then compiles the VBA project of the main workbook. A compile error is a " +
+                "result, not a failure: compiled is false and error has the message, and the module and line when the editor " +
+                "gives them. On a compile error the dialog and the VBA editor show on the person's screen for a moment; xlwright " +
+                "closes the dialog and hides the editor. It does not save. Takes no arguments.",
+            ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false,
+        }, ToolDefinition.NoInput, CheckOutput),
         ToolDefinition.Create(Run, new()
         {
             Name = "macro_run",
@@ -62,6 +71,17 @@ internal sealed class VbaTools(ExcelSession? session)
         }
 
         return session is null ? NoSession() : ToolResults.From(await session.ListModulesAsync());
+    }
+
+    private async Task<CallToolResult> Check(RequestContext<CallToolRequestParams> context)
+    {
+        var invalid = ToolArguments.From("vba_check", context).RejectUnknown();
+        if (invalid is not null)
+        {
+            return ToolResults.InvalidRequest(invalid, Current());
+        }
+
+        return session is null ? NoSession() : ToolResults.From(await session.CheckAsync());
     }
 
     private async Task<CallToolResult> Run(RequestContext<CallToolRequestParams> context)
@@ -156,6 +176,13 @@ internal sealed class VbaTools(ExcelSession? session)
           "type":{"enum":["standard","class","document","form"]},"lines":{"type":"integer"},"sheet":{"type":"string"}},
           "required":["name","type","lines"]}} },
          "required":["session","modules"]}
+        """;
+
+    private static readonly string CheckOutput = $$$"""
+        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"compiled":{"type":"boolean"},
+         "error":{"type":"object","properties":{"message":{"type":"string"},"module":{"type":"string"},"line":{"type":"integer"}},"required":["message"]},
+         "sync":{"type":"object","properties":{ {{{SyncResult}}} },"required":["modules","removed"]}},
+         "required":["session","compiled","sync"]}
         """;
 
     private const string RunInput = """

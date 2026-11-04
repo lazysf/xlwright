@@ -110,6 +110,119 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
 
     public Task<SessionOutcome> SyncAsync() => Run("vba_sync", NoSession, () => SyncCore(_active!));
 
+    /// <summary>
+    /// Syncs, compiles the main workbook's project, and watches for the compile error dialog (docs/api.md
+    /// "vba_check"). A compile error is a result: the dialog is read, closed with WM_CLOSE, and the VBE is hidden.
+    /// </summary>
+    public Task<SessionOutcome> CheckAsync() => Run("vba_check", NoSession, async () =>
+    {
+        var active = _active!;
+        var (sync, syncFailure) = await SyncCore(active);
+        if (syncFailure is not null)
+        {
+            return (null, syncFailure);
+        }
+
+        var starting = active.Worker.Run(active.Excel.StartCompile);
+        if (!await Completes(starting, timeouts.Sync))
+        {
+            return await AfterTimeout(active, starting, "Compiling the VBA project did not finish within the time limit.");
+        }
+
+        if (starting.IsFaulted)
+        {
+            return Fail(ToolFailure.ExcelError, null, $"Excel could not compile the VBA project: {starting.Exception!.InnerException!.Message}");
+        }
+
+        if (starting.Result == CompileStart.AlreadyCompiled)
+        {
+            return (Checked(true, null, sync!), null);
+        }
+
+        // The control returns at once and a compile error shows its dialog later; the control stays enabled then.
+        var watch = Stopwatch.StartNew();
+        while (watch.Elapsed < timeouts.CompileWatch)
+        {
+            if (active.Process.FindDialog() is { } dialog)
+            {
+                return await CompileError(active, dialog, sync!);
+            }
+
+            var checking = active.Worker.Run(active.Excel.IsCompiled);
+            if (!await Completes(checking, timeouts.Sync))
+            {
+                return await AfterTimeout(active, checking, "Checking the compile did not finish within the time limit.");
+            }
+
+            if (checking.IsFaulted)
+            {
+                return Fail(ToolFailure.ExcelError, null, $"Excel could not report the compile: {checking.Exception!.InnerException!.Message}");
+            }
+
+            if (checking.Result)
+            {
+                return (Checked(true, null, sync!), null);
+            }
+
+            await Task.Delay(DialogInterval);
+        }
+
+        return Fail(ToolFailure.ExcelError, "COMPILE_NOT_CONFIRMED",
+            $"The compile showed no error and was not confirmed within {timeouts.CompileWatch.TotalSeconds:0.###} seconds. The session is still open; call vba_check again.");
+    });
+
+    private async Task<(JsonObject?, ToolFailure?)> CompileError(Active active, DialogText dialog, JsonObject sync)
+    {
+        var shown = new JsonObject { ["dialog"] = new JsonObject { ["title"] = dialog.Title, ["text"] = dialog.Text } };
+        var reading = active.Worker.Run(active.Excel.ReadErrorPlace);
+        if (!await Completes(reading, timeouts.Sync))
+        {
+            return await AfterTimeout(active, reading, "Reading the place of the compile error did not finish within the time limit.", "DIALOG", shown);
+        }
+
+        // The place is optional in the result; the VBE does not always have a code pane (docs/notes/test-copy.md).
+        var place = reading.IsFaulted ? null : reading.Result;
+        active.Process.CloseDialog();
+        var closing = Stopwatch.StartNew();
+        while (active.Process.FindDialog() is not null)
+        {
+            if (closing.Elapsed >= timeouts.DialogClose)
+            {
+                // Excel did not quit with the dialog left open (docs/notes/test-copy.md), so it is ended now.
+                return await AfterTimeout(active, Task.CompletedTask, "The compile error dialog stayed open after it was closed.", "DIALOG", shown);
+            }
+
+            await Task.Delay(DialogInterval / 5);
+        }
+
+        var hiding = active.Worker.Run(active.Excel.HideEditor);
+        if (!await Completes(hiding, timeouts.Sync))
+        {
+            return await AfterTimeout(active, hiding, "Hiding the VBA editor did not finish within the time limit.");
+        }
+
+        var error = new JsonObject { ["message"] = string.Join(" ", dialog.Text.Split('\n').Select(line => line.Trim()).Where(line => line.Length > 0)) };
+        if (place is not null)
+        {
+            error["module"] = place.Module;
+            error["line"] = place.Line;
+        }
+
+        return (Checked(false, error, sync), null);
+    }
+
+    private static JsonObject Checked(bool compiled, JsonObject? error, JsonObject sync)
+    {
+        var result = new JsonObject { ["compiled"] = compiled };
+        if (error is not null)
+        {
+            result["error"] = error;
+        }
+
+        result["sync"] = sync;
+        return result;
+    }
+
     /// <summary>Lists the modules of the main workbook as they are, without a sync (docs/api.md "vba_get").</summary>
     public Task<SessionOutcome> ListModulesAsync() => Run("vba_get", NoSession, async () =>
     {

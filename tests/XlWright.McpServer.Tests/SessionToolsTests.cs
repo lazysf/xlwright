@@ -37,6 +37,7 @@ public sealed class SessionToolsTests : IAsyncLifetime
     [InlineData("workbook_save", false, true, true, false, null)]
     [InlineData("vba_sync", false, true, true, false, null)]
     [InlineData("vba_get", true, false, true, false, null)]
+    [InlineData("vba_check", false, true, true, false, null)]
     public async Task ListsTheToolWithItsAnnotationsAndSchemas(
         string name, bool readOnly, bool destructive, bool idempotent, bool openWorld, string? required)
     {
@@ -126,6 +127,7 @@ public sealed class SessionToolsTests : IAsyncLifetime
         { "workbook_save", new() { ["path"] = "Other.xlsm" } },
         { "vba_sync", new() { ["modules"] = "Calc" } },
         { "vba_get", new() { ["module"] = "Calc" } },
+        { "vba_check", new() { ["module"] = "Calc" } },
     };
 
     [Theory]
@@ -151,6 +153,7 @@ public sealed class SessionToolsTests : IAsyncLifetime
     [InlineData("workbook_save")]
     [InlineData("vba_sync")]
     [InlineData("vba_get")]
+    [InlineData("vba_check")]
     public async Task ReportsThatThereIsNoSession(string tool)
     {
         var error = await Failure(tool, new());

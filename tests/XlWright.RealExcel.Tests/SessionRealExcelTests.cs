@@ -229,6 +229,37 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         AssertNothingLeft(pid);
     }
 
+    // Needs AccessVBOM 1. The compile error shows its dialog and the VBA editor on the person's screen for a moment.
+    [Fact]
+    public async Task ChecksTheCompileAndReportsACompileErrorWithItsLine()
+    {
+        _repo.AddApp("apps/check");
+        var app = Path.Combine(_repo.Root, "apps", "check");
+        MinimalWorkbook.Write(Path.Combine(app, "Check.xlsm"));
+        Source(app, "src/modules/Calc.bas", "Option Explicit\nPublic Function Twice(ByVal x As Long) As Long\n    Twice = x * 2\nEnd Function\n");
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/check" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+
+        var good = Success(await Call("vba_check", new()));
+        Assert.True(good.GetProperty("compiled").GetBoolean());
+        Assert.False(good.TryGetProperty("error", out _));
+
+        Source(app, "src/modules/Broken.bas", "Option Explicit\n\nPublic Sub Broken()\n    notDeclared = 1\nEnd Sub\n");
+        var bad = Success(await Call("vba_check", new()));
+        Assert.False(bad.GetProperty("compiled").GetBoolean());
+        var error = bad.GetProperty("error");
+        Assert.Contains("コンパイル エラー", error.GetProperty("message").GetString());
+        Assert.Equal("Broken", error.GetProperty("module").GetString());
+        Assert.Equal(4, error.GetProperty("line").GetInt32());
+        Assert.Equal("ready", bad.GetProperty("session").GetProperty("state").GetString());
+
+        File.Delete(Path.Combine(app, "src", "modules", "Broken.bas"));
+        Assert.True(Success(await Call("vba_check", new())).GetProperty("compiled").GetBoolean());
+
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(pid);
+    }
+
     // Needs AccessVBOM 1. The last call shows a MsgBox on the person's screen until the watch ends the Excel.
     [Fact]
     public async Task RunsMacrosAndReportsErrorsStatusAndADialog()

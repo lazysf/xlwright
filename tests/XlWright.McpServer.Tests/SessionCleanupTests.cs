@@ -12,6 +12,7 @@ public sealed class SessionCleanupTests : IDisposable
         Sync: TimeSpan.FromMilliseconds(500),
         Save: TimeSpan.FromMilliseconds(500),
         QuitExit: TimeSpan.FromMilliseconds(300),
+        CleanupQuitExit: TimeSpan.FromMilliseconds(300),
         TerminateExit: TimeSpan.FromMilliseconds(200),
         PendingReturn: TimeSpan.FromMilliseconds(300));
 
@@ -73,6 +74,55 @@ public sealed class SessionCleanupTests : IDisposable
         Assert.Null(outcome.Failure);
         Assert.Equal("terminate", outcome.Result!["cleanup"]!["ended_by"]!.GetValue<string>());
         Assert.Equal(1, _processes.Leftover.Terminations);
+    }
+
+    [Fact]
+    public async Task WaitsAfterQuitOnlyForTheCleanupWait()
+    {
+        _leftover.QuitEndsProcess = false;
+        using var session = new ExcelSession(_launcher, _processes, _connector,
+            Short with { Start = TimeSpan.FromSeconds(30), QuitExit = TimeSpan.FromSeconds(20) });
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        var outcome = await session.StartAsync(_app);
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal("terminate", outcome.Result!["cleanup"]!["ended_by"]!.GetValue<string>());
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), $"took {watch.Elapsed}");
+    }
+
+    [Theory]
+    [InlineData("open failed")]
+    [InlineData("read-only file")]
+    public async Task ReportsTheCleanupWhenTheStartFailsAfterIt(string why)
+    {
+        if (why == "open failed") _launcher.Excel.OpenThrows = new InvalidOperationException("cannot open");
+        if (why == "read-only file") File.SetAttributes(_app.WorkbookPath, FileAttributes.ReadOnly);
+
+        var outcome = await _session.StartAsync(_app);
+        File.SetAttributes(_app.WorkbookPath, FileAttributes.Normal);
+
+        Assert.NotNull(outcome.Failure);
+        var cleanup = outcome.Failure.Data!["cleanup"]!;
+        Assert.Equal(999, cleanup["excel"]!["pid"]!.GetValue<int>());
+        Assert.Equal("quit", cleanup["ended_by"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("\"EXCEL.EXE\" C:\\Daily\\Book.xlsx")]
+    public async Task LeavesALeftoverNotStartedFromCom(string? commandLine)
+    {
+        _processes.LeftoverCommandLine = commandLine;
+
+        var outcome = await _session.StartAsync(_app);
+
+        AssertFailure(outcome, "CONFLICT", "LEFTOVER_EXCEL");
+        Assert.Equal(999, outcome.Failure!.Data!["excel"]!["pid"]!.GetValue<int>());
+        Assert.Empty(_connector.Connects);
+        Assert.Equal(0, _processes.Leftover.Terminations);
+        Assert.Equal(0, _launcher.Launches);
+        Assert.Equal(OwnershipRecord.Owned, ReadRecord().State);
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 
 namespace XlWright.Core;
@@ -294,8 +295,30 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
         }
     }
 
-    // docs/architecture.md "開始の順序": 2 the app lock, 3 the record, 4 the sharing check, 5 the mark and the start.
+    // The cleanup goes into the result, and into a failure after it, since the record is completed by then
+    // (docs/api.md "session_start に段階2で加えるもの").
     private async Task<(JsonObject?, ToolFailure?)> StartCore(AppFolder app)
+    {
+        var cleanedUp = new StrongBox<JsonObject?>();
+        var (result, failure) = await StartSteps(app, cleanedUp);
+        if (cleanedUp.Value is not { } cleanup)
+        {
+            return (result, failure);
+        }
+
+        if (failure is null)
+        {
+            result!["cleanup"] = cleanup;
+            return (result, null);
+        }
+
+        var data = failure.Data ?? new JsonObject();
+        data["cleanup"] ??= cleanup;
+        return (null, failure with { Data = data });
+    }
+
+    // docs/architecture.md "開始の順序": 2 the app lock, 3 the record, 4 the sharing check, 5 the mark and the start.
+    private async Task<(JsonObject?, ToolFailure?)> StartSteps(AppFolder app, StrongBox<JsonObject?> cleanedUp)
     {
         var deadline = Stopwatch.StartNew();
         AppLock? appLock;
@@ -315,10 +338,9 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
         }
 
         DateTime marked;
-        JsonObject? cleanup;
         try
         {
-            (var ready, cleanup) = await CheckRecord(app, appLock, deadline);
+            (var ready, cleanedUp.Value) = await CheckRecord(app, appLock, deadline);
             ready ??= CheckWorkbookFile(app);
             if (ready is not null)
             {
@@ -408,11 +430,6 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
             ["workbook"] = app.WorkbookName,
             ["excel"] = ExcelJson(process.Facts),
         };
-        if (cleanup is not null)
-        {
-            result["cleanup"] = cleanup;
-        }
-
         return (result, null);
     }
 
@@ -614,6 +631,17 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
                 if (lookup.Presence == ProcessPresence.Running)
                 {
                     using var leftover = lookup.Process!;
+                    // Started from COM, as at ownership, so a rewritten record cannot end a daily Excel (人の判断, 2026-11-04).
+                    if (leftover.Facts.CommandLine is not { } commandLine)
+                    {
+                        return (Leftover(app, record.Process!, "has a command line that could not be read"), null);
+                    }
+
+                    if (!commandLine.Contains("/automation", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return (Leftover(app, record.Process!, "has a command line without /automation"), null);
+                    }
+
                     (var failure, cleanup) = await CleanUp(app, record.Process!, leftover, deadline);
                     if (_unusable && failure is not { Item2.Code: ToolFailure.StateUnknown })
                     {
@@ -692,7 +720,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
         // Checked: only app workbooks are open, so a close or quit that does not end it in time ends it by handle.
         var quit = worker.Run(excel.CloseAllAndQuit);
         if (await Completes(quit, Within(deadline, timeouts.Sync)) && !quit.IsFaulted
-            && leftover.WaitForExit(Within(deadline, timeouts.QuitExit)))
+            && leftover.WaitForExit(Within(deadline, timeouts.CleanupQuitExit)))
         {
             worker.Dispose();
             return Ended(app, recorded, ended: true, "quit");

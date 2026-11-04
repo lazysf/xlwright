@@ -12,6 +12,7 @@ public sealed class ExcelSessionTests : IDisposable
         Sync: TimeSpan.FromMilliseconds(500),
         Save: TimeSpan.FromMilliseconds(500),
         QuitExit: TimeSpan.FromMilliseconds(300),
+        CleanupQuitExit: TimeSpan.FromMilliseconds(300),
         TerminateExit: TimeSpan.FromMilliseconds(200),
         PendingReturn: TimeSpan.FromMilliseconds(300));
 

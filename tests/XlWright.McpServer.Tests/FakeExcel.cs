@@ -214,6 +214,9 @@ internal sealed class FakeProcessQuery : IProcessQuery
     // The process handed out for a running record; a leftover FakeExcel ends it on quit.
     public FakeProcess Leftover { get; } = new();
 
+    // The command line the OS gives for a running record; null when it cannot be read.
+    public string? LeftoverCommandLine { get; set; } = "\"EXCEL.EXE\" /automation -Embedding";
+
     public ProcessLookup Find(RecordedProcess process)
     {
         if (!Running.Contains(process))
@@ -221,7 +224,7 @@ internal sealed class FakeProcessQuery : IProcessQuery
             return new ProcessLookup(Unchecked.Contains(process) ? ProcessPresence.Unknown : ProcessPresence.Gone);
         }
 
-        Leftover.Facts = new ProcessFacts(process.Pid, process.Name + ".EXE", process.StartedAtUtc, null);
+        Leftover.Facts = new ProcessFacts(process.Pid, process.Name + ".EXE", process.StartedAtUtc, LeftoverCommandLine);
         return new ProcessLookup(ProcessPresence.Running, Leftover);
     }
 

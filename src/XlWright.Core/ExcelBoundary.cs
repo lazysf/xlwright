@@ -202,6 +202,7 @@ public sealed record SessionTimeouts(
     TimeSpan Sync,
     TimeSpan Save,
     TimeSpan QuitExit,
+    TimeSpan CleanupQuitExit,
     TimeSpan TerminateExit,
     TimeSpan PendingReturn)
 {
@@ -210,6 +211,7 @@ public sealed record SessionTimeouts(
         Sync: TimeSpan.FromSeconds(30),
         Save: TimeSpan.FromSeconds(120),
         QuitExit: TimeSpan.FromSeconds(75),
+        CleanupQuitExit: TimeSpan.FromSeconds(10),
         TerminateExit: TimeSpan.FromSeconds(5),
         PendingReturn: TimeSpan.FromSeconds(10));
 }

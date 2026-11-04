@@ -155,6 +155,7 @@
 | `CONFLICT` | `SESSION_ACTIVE` | このサーバーで既にセッションを始めている |
 | `CONFLICT` | `SERVER_UNUSABLE` | 上の共通の扱いのとおり |
 | `CONFLICT` | `WORKBOOK_READ_ONLY` | 開いた主ブックの`ReadOnly`が真。専用のExcelは終えて、`closed`に戻る |
+| `EXCEL_ERROR` | `EXCEL_NOT_STARTED` | Excelを起動できなかった（`CreateInstance`の失敗）。`closed`のまま（人が承認、2026-11-04） |
 | `EXCEL_ERROR` | `OPEN_FAILED` | Excelが主ブックを開けなかった。専用のExcelは終えて、`closed`に戻る |
 | `STATE_UNKNOWN` | `OWNERSHIP_NOT_CONFIRMED` | 起動したExcelの所有を確定できなかった。そのExcelには触らず、`excel_ended`は偽 |
 | `STATE_UNKNOWN` | `TIMEOUT` | 開始の期限（120秒）が切れた |
@@ -220,8 +221,10 @@
 
 - 用途: 1つのシートの1つの範囲の値か数式を読みます。読む前に再計算し、計算を終えた値を返します（[起動時の設定](architecture.md#起動時の設定)）。
 - 引数: `sheet`（文字列、必須）、`range`（A1形式、必須。例`A1:C10`）、`content`（`"values"`か`"formulas"`、既定は`"values"`）。
+- `range`は、1つのセルか1つの矩形だけです。列（`A:A`）・行・複数の範囲・名前・シートの修飾は、`INVALID_RANGE`で拒否します（`range_write`も同じ。人が承認、2026-11-04）。
+- 10,000セルを超える範囲は、Excelに触れる前に`TOO_LARGE`で拒否します。1つのセルが応答で2文字以上になり、20,000文字に収まらないためです（人が承認、2026-11-04）。
 - 結果: `{"session":{…},"sheet":"Data","range":"A1:C2","values":[[1,"a",true],[null,{"error":"#DIV/0!"},2.5]]}`。`content`が`"formulas"`の時は`values`の代わりに`formulas`（文字列の2次元の配列、英語の関数名のA1形式）を返します。
-- 値: 数値、文字列、真偽値、空は`null`、セルのエラーは`{"error":"#N/A"}`の形です。日付は、シリアル値の数値で返します（`Value2`）。
+- 値: 数値、文字列、真偽値、空は`null`、セルのエラーは`{"error":"#N/A"}`の形です。日付は、シリアル値の数値で返します（`Value2`）。名前の分からないエラーは、`{"error":"#ERROR(<番号>)"}`で返します。名前を付けるのは、Microsoftが`XlCVError`に挙げる8つと、実機で見た`#CALC!`です（人が承認、2026-11-04）。
 - 失敗: `NOT_FOUND`・`SHEET_NOT_FOUND`、`INVALID_REQUEST`・`INVALID_RANGE`、`INVALID_REQUEST`・`TOO_LARGE`（応答が20,000文字を超える。範囲の絞り方を`message`に書く）、`STATE_UNKNOWN`・`TIMEOUT`（30秒）。
 - 注釈: `ReadOnly`は真、`Destructive`は偽、`Idempotent`は真、`OpenWorld`は偽です。
 
@@ -230,7 +233,7 @@
 - 用途: 1つのシートの1つの範囲に、値か数式を書くか、中身を消します。保存はしません。
 - 引数: `sheet`（文字列、必須）、`range`（A1形式、必須）。加えて、次のどれか1つが必須です。
   - `values`: 2次元の配列。要素は数値、文字列、真偽値、`null`（空にする）。
-  - `formulas`: 文字列の2次元の配列。英語の関数名のA1形式です（`Range.Formula`）。
+  - `formulas`: 文字列の2次元の配列。英語の関数名のA1形式です（`Range.Formula`）。`=SEQUENCE(2)`のような動的配列の数式はspillしません。`Formula2`は使いません（人が承認、2026-11-04、[記録](notes/range-values.md)）。
   - `clear`: `true`。値と数式を消し、書式は残します（`ClearContents`）。
 - 配列の行と列の数は、範囲の大きさと一致させます。
 - `values`の文字列は、人がセルに入力した時と同じにExcelが解釈します。`"1/2"`は日付に、`"001"`は数値になりえます。`=`で始まる文字列は、`INVALID_REQUEST`・`VALUE_LOOKS_LIKE_FORMULA`で拒否し、`formulas`を使うよう`message`に書きます。
@@ -250,8 +253,8 @@
 | `code` | `detail` | 場合 |
 | --- | --- | --- |
 | `INVALID_REQUEST` | `NOT_MACRO_ENABLED` | 主ブックが`.xlsx` |
-| `INVALID_REQUEST` | `SOURCE_INVALID` | ブックに触れる前の検査で拒否した。`data.file`・`data.line`・`data.reason`。理由は、ANSIに変換できない文字、`VB_Name`とファイル名の食い違い、拡張子とフォルダの食い違い、入れ子のフォルダ、`XlWright`という名前のほかのモジュール |
-| `INVALID_REQUEST` | `WORKBOOK_MODULES_NOT_SUPPORTED` | `src/workbook/`にファイルがある（段階3） |
+| `INVALID_REQUEST` | `SOURCE_INVALID` | ブックに触れる前の検査で拒否した。`data.file`・`data.line`・`data.reason`。理由は、ANSIに変換できない文字、`VB_Name`とファイル名の食い違い、拡張子とフォルダの食い違い、入れ子のフォルダ、`XlWright`という名前のほかのモジュール、`XlWrightCall`という名前のモジュール（人が承認、2026-11-04） |
+| `INVALID_REQUEST` | `WORKBOOK_MODULES_NOT_SUPPORTED` | `src/workbook/`にファイルがある。段階3の拡張（下の[段階3の契約](#段階3の契約人が承認2026-11-04)）で除く |
 | `CONFLICT` | `VBA_ACCESS_NOT_TRUSTED` | 「VBA プロジェクト オブジェクト モデルへのアクセスを信頼する」が無効。人に設定を求める`message` |
 | `CONFLICT` | `VBA_PROJECT_LOCKED` | VBAのプロジェクトが保護されている |
 | `EXCEL_ERROR` | `SYNC_FAILED` | 途中で失敗した。`data.done`に処理済みのモジュール。保存していないため、次の反映がやり直す |
@@ -273,12 +276,88 @@
 | --- | --- | --- |
 | `INVALID_REQUEST` | `INVALID_MACRO_NAME` | `macro`の形が違う |
 | `NOT_FOUND` | `MACRO_NOT_FOUND` | マクロが無い |
-| `EXCEL_ERROR` | `MACRO_ERROR` | マクロの実行時エラーを、xlwrightのVBAのモジュールが捕まえた。`data.number`・`data.description`。`ready`のまま |
+| `EXCEL_ERROR` | `MACRO_ERROR` | マクロの実行時エラーを、xlwrightのVBAのモジュールが捕まえた。`data.number`・`data.description`・`data.source`。`ready`のまま。`End`文で止まった時のように`Application.Run`自体がCOMの例外になった時は、`data.number`にHRESULTを、`data.source`に空を入れる（人が承認、2026-11-04、[記録](notes/macro-run.md#end文)） |
 | `STATE_UNKNOWN` | `DIALOG` | マクロの実行中にダイアログで止まった。専用のExcelを終えて`closed`。`data.dialog`に題名と本文。前の保存からの変更は失われる |
 | `STATE_UNKNOWN` | `TIMEOUT` | 実行の上限を過ぎた。専用のExcelを終えて`closed`。前の保存からの変更は失われる |
 
 - ダイアログの文字は応答にだけ返し、診断の記録には書きません。
 - 注釈: `ReadOnly`は偽、`Destructive`は真、`Idempotent`は偽、`OpenWorld`は真です。マクロはアプリのフォルダの外にも触れうるためです。
+
+### 段階3の契約（人が承認、2026-11-04）
+
+段階3の確認（[記録](notes/test-copy.md)）を受けた契約です。段階1のツールに共通の扱いは、段階3のツールにも当てはめます。
+
+#### `vba_sync`をシートとブックのモジュールに広げる
+
+- `src/workbook/<CodeName>.cls`のコードを、ブックの同じCodeNameのシートとブックのモジュールへ書きます（[VBAの反映](architecture.md#vbaの反映)）。ヘッダーと`Attribute`の行を除き、モジュールのコードをすべて置き換えます。
+- CodeNameは、`VBComponents`の名前で照合します。`Worksheet.CodeName`は、`VBProject`に触れる前は空のことがあるためです。
+- `src/workbook/`にファイルの無いシートとブックのモジュールには触れません。コードを消すには、空のファイルを置きます。
+- ファイルと同じ検査（ANSIに変換できない文字など）を通します。
+- 結果の`modules`に、`{"name":"Sheet1","type":"document"}`の形で加えます。
+- 失敗: `WORKBOOK_MODULES_NOT_SUPPORTED`を除き、次を加えます。
+
+| `code` | `detail` | 場合 |
+| --- | --- | --- |
+| `NOT_FOUND` | `WORKBOOK_MODULE_NOT_FOUND` | `src/workbook/`のファイル名のCodeNameが、ブックのシートとブックのモジュールに無い。ブックを変える前に止まる。`data.file` |
+
+#### `vba_get`
+
+- 用途: 主ブックのVBAのモジュールの一覧を返します。反映はせず、今のブックの中身を返します。
+- 引数: ありません。
+- 結果: `{"session":{…},"modules":[{"name":"Calc","type":"standard","lines":12},{"name":"Counter","type":"class","lines":30},{"name":"ThisWorkbook","type":"document","lines":0},{"name":"Sheet1","type":"document","lines":5,"sheet":"データ"},{"name":"Form1","type":"form","lines":20}]}`。`type`は`standard`・`class`・`document`・`form`です。シートのモジュールには、シートの名前を`sheet`に返します。CodeNameとシートの名前の対応を、AIエージェントが`src/workbook/`のファイル名に使うためです。
+- 失敗: `vba_sync`の`NOT_MACRO_ENABLED`・`VBA_ACCESS_NOT_TRUSTED`・`VBA_PROJECT_LOCKED`と、`STATE_UNKNOWN`・`TIMEOUT`（30秒）。
+- 注釈: `ReadOnly`は真、`Destructive`は偽、`Idempotent`は真、`OpenWorld`は偽です。
+
+#### `vba_check`
+
+- 用途: `vba_sync`と同じ反映をしてから、主ブックのVBAのプロジェクトをコンパイルします。保存はしません。
+- 引数: ありません。
+- 手順: 主ブックのプロジェクトを`ActiveVBProject`にし、VBEの「VBAProject のコンパイル」（`FindControl(1, 578)`）を`Execute`します。その後、5秒の間、[ダイアログ](architecture.md#失敗の返し方と記録)を見張ります。ダイアログが出たら、文字と、`ActiveCodePane`の選択の位置を読み、ダイアログを`WM_CLOSE`で閉じ、VBEのウィンドウを隠します。
+- 説明に書くこと: コンパイルのエラーでは、非表示のExcelでも、ダイアログとVBEのウィンドウが人の画面に短い間表示されます。
+- 結果: コンパイルのエラーは、ツールの失敗でなく結果として返します。確認そのものは行えたためです。
+  - 通った時: `{"session":{…},"compiled":true,"sync":{"modules":[…],"removed":[…]}}`。
+  - エラーの時: `{"session":{…},"compiled":false,"error":{"message":"コンパイル エラー: 変数が定義されていません。","module":"Calc","line":4},"sync":{…}}`。`module`と`line`は、読めた時だけ付きます（実機では読めないことがあった）。
+- 失敗: `vba_sync`の失敗（反映の前に止まった時はコンパイルしない）に加えて、次です。
+
+| `code` | `detail` | 場合 |
+| --- | --- | --- |
+| `EXCEL_ERROR` | `COMPILE_NOT_CONFIRMED` | ダイアログが出ず、コンパイルの済んだ状態（コントロールの`Enabled`が偽）にもならなかった。`ready`のまま |
+| `STATE_UNKNOWN` | `DIALOG` | 閉じたダイアログが1秒の後も残る。Quitで終わらないことがあったため、専用のExcelを終えて`closed`。`data.dialog`に題名と本文 |
+| `STATE_UNKNOWN` | `TIMEOUT` | 30秒の期限が切れた |
+
+- 注釈: `ReadOnly`は偽、`Destructive`は真、`Idempotent`は真、`OpenWorld`は偽です。
+
+#### `test_run`
+
+- 用途: [テストの流れ](architecture.md#テスト)のとおり、反映して主ブックを保存し、テストの写しでテストを実行し、結果を返します。
+- 説明に書くこと: 呼ぶ前の変更を含めて主ブックを保存すること。テストの中の変更は主ブックに残らないこと。テストがアプリのフォルダの外や、主ブックのフォルダを絶対パスで書き換えることは防がないこと。
+- 引数:
+  - `tests`（文字列の配列、任意）: 実行するテストの`<モジュール>.<プロシージャ>`。省くと、すべてのテストです。
+  - `timeout_seconds`（整数、任意）: 1〜1200、既定は300です。保存から開き直しまでの、呼出しの全体で測ります。
+- テスト: `tests/*.bas`の、引数の無い`Sub`で、`Private`でなく、名前が`Test`で始まるものです。xlwrightはソースのファイルから見つけ、ファイル名の順、ファイルの中の順に1つずつ実行します。`tests/*.cls`は、テストの補助のクラスとして取り込みます。
+- 写しには、`tests/`のモジュールと、アサーションのモジュール`XlWrightAssert`を取り込みます。取り込むファイルは、`vba_sync`と同じ検査を通します。`src/`と同じ名前のモジュール、`XlWright`・`XlWrightCall`・`XlWrightAssert`という名前のモジュールは、`SOURCE_INVALID`で拒否します。
+- アサーション: `XlWrightAssert.AreEqual expected, actual[, message]`、`XlWrightAssert.IsTrue condition[, message]`、`XlWrightAssert.Fail message`。失敗すると、`Err.Source`が`XlWrightAssert`のエラーを上げ、そのテストはそこで止まります。値の比較はVBAの`=`で行い、オブジェクトと配列は比べずに失敗にします。テストが`On Error`でアサーションの失敗を握りつぶすと、`passed`になります。
+- テストは、`macro_run`と同じく、名前で直接呼ぶ関数を実行ごとに作って呼びます。実行の間は`EnableEvents`を変えません。
+- 結果: `{"session":{…},"summary":{"passed":2,"failed":1,"errors":1},"tests":[{"name":"Tests.TestAdd","result":"passed","elapsed_ms":3},{"name":"Tests.TestSplit","result":"failed","message":"AreEqual: expected 3, actual 2. 列の数"},{"name":"Tests.TestLoad","result":"error","number":53,"description":"ファイルが見つかりません。","source":"VBAProject"}],"elapsed_ms":1520,"sync":{…}}`。テストが失敗しても、ツールは成功を返します。結果が大きい時は要約し、全体を`result_file`へ書きます。
+- 後始末: 写しのフォルダ（`.xlwright/test/<run-id>/`）の中のブックは、保存せずに閉じます。ほかのブックは閉じません（`session_end`の`FOREIGN_WORKBOOK`で知らせます）。写しのフォルダを消せない時は、結果の`leftover_copy`にそのパスを返します。
+- 失敗: `vba_sync`の失敗（反映の前に止まった時は実行しない）に加えて、次です。主ブックを閉じた後に止まった時は、主ブックを開き直してから返します。開き直せない時は、下の`WORKBOOK_NOT_REOPENED`です。止まるまでのテストの結果は、`data.tests`に入れます。
+
+| `code` | `detail` | 場合 |
+| --- | --- | --- |
+| `INVALID_REQUEST` | `INVALID_TEST_NAME` | `tests`の名前の形が違う |
+| `NOT_FOUND` | `TEST_NOT_FOUND` | テストが1つも無い、または`tests`の名前のテストが無い。Excelに触れる前に止まる |
+| `EXCEL_ERROR` | `SAVE_FAILED` | 主ブックを保存できなかった。テストを実行せず、`ready`のまま |
+| `INTERNAL_ERROR` | `COPY_FAILED` | アプリのフォルダを写せなかった |
+| `EXCEL_ERROR` | `OPEN_FAILED` | 写しを開けなかった |
+| `CONFLICT` | `WORKBOOK_NOT_REOPENED` | 主ブックを開き直せなかった、または`ReadOnly`で開いた。専用のExcelを[終了](architecture.md#終了)の2〜5で終え、`closed`。主ブックは保存してある |
+| `STATE_UNKNOWN` | `DIALOG` | テストの実行中にダイアログで止まった（コンパイルのエラーを含む）。専用のExcelを終えて`closed`。`data.dialog`と、止まったテストの名前を`data.test`に入れる。主ブックは保存してある |
+| `STATE_UNKNOWN` | `TIMEOUT` | 実行の上限を過ぎた。専用のExcelを終えて`closed`。`data.test`は上と同じ |
+
+- 注釈: `ReadOnly`は偽、`Destructive`は真、`Idempotent`は偽、`OpenWorld`は真です。
+
+#### `session_status`の実行中のテスト
+
+- `test_run`の実行中は、`operation`に`test`を加えます。`{"tool":"test_run","elapsed_ms":4210,"test":{"name":"Tests.TestLoad","index":3,"count":5}}`。`index`は1から数えます。写しを開く前と開き直す間は、`test`を付けません。
 
 ## 表示要求のコマンド（段階2、人が承認、2026-11-04）
 

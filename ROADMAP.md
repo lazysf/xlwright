@@ -16,6 +16,7 @@ Claude Codeの会話から、`session_start`の後に閉じた会話が残した
 人がエクスプローラーから開いたブックが専用のExcelに入らないことと、非表示の残ったExcelを表示要求で人へ見せられることを確かめました（[記録](docs/notes/human-open-and-show.md)）。
 AIエージェントへの手順を、開発版のプラグインのスキルにしました（[設計](docs/architecture.md#サーバーとビルドとプラグイン)）。
 人への引継ぎで、残った専用のExcelを人へ見せて終える表示要求のコマンドを作りました（[API](docs/api.md#表示要求のコマンド段階2人が承認2026-11-04)、[記録](docs/notes/human-open-and-show.md#表示要求のコマンド)）。
+失敗の応答から辿れる診断の記録を作りました（[設計](docs/architecture.md#診断の記録の形式人が承認2026-11-04)）。
 
 ## ロードマップ
 

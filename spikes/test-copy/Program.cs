@@ -538,11 +538,37 @@ internal static class Program
             }, IntPtr.Zero);
             var title = new StringBuilder(256);
             GetWindowText(hwnd, title, title.Capacity);
+            Console.WriteLine($"  [windows] {WindowStates()}");
             Console.WriteLine($"  [dialog] \"{title}\": {string.Join(" / ", texts).ReplaceLineEndings(" ")}; {s_dialogAction}");
             if (s_dialogAction == "close") PostMessage(hwnd, WmClose, IntPtr.Zero, IntPtr.Zero);
             if (s_dialogAction == "ok") PostMessage(hwnd, WmCommand, new IntPtr(1), IntPtr.Zero); // IDOK
             return true;
         }, IntPtr.Zero);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowEnabled(IntPtr hwnd);
+
+    // The class, visibility, and enabled state of each top-level window of the owned Excel, for the dialog rule of
+    // docs/architecture.md "失敗の返し方と記録" (an XLMAIN is disabled).
+    private static string WindowStates()
+    {
+        var states = new List<string>();
+        EnumWindows((hwnd, _) =>
+        {
+            GetWindowThreadProcessId(hwnd, out var pid);
+            if (pid != s_owned!.Id || !IsWindowVisible(hwnd) && !GetClassNameOf(hwnd).Equals("XLMAIN")) return true;
+            states.Add($"{GetClassNameOf(hwnd)}(visible {IsWindowVisible(hwnd)}, enabled {IsWindowEnabled(hwnd)})");
+            return true;
+        }, IntPtr.Zero);
+        return string.Join(", ", states);
+    }
+
+    private static string GetClassNameOf(IntPtr hwnd)
+    {
+        var name = new StringBuilder(64);
+        GetClassName(hwnd, name, name.Capacity);
+        return name.ToString();
     }
 
     private static string Shorten(string path) => path.Replace(Folder, "<tmp>", StringComparison.OrdinalIgnoreCase);

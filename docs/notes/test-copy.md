@@ -58,6 +58,7 @@ dotnet run --project spikes\test-copy -- document
 - ダイアログと同時に、VBEのウィンドウが人の画面に表示された（`VBE.MainWindow.Visible`が真）。Excelの`Visible`は偽のままだった。`MainWindow.Visible=False`で隠せた。
 - コントロールの`Enabled`は真のままだった。`ActiveCodePane.GetSelection`を表示した3回では、宣言の無い変数の時はエラーの行（4行目の5〜18列）を毎回指した。構文エラーの時は、5行目を1回指し、2回は`ActiveCodePane`が無かった。
 - ダイアログを開いたままでも、以後のCOMの呼出しは通った。
+- ダイアログが出ている間、2つの`XLMAIN`（どちらも非表示）の1つが無効で、VBEのウィンドウ（`wndclass_desked_gsk`）は表示されて無効だった（2026-11-04に`compile close`で1回）。マクロの実行中のダイアログと同じ規則（[失敗の返し方と記録](../architecture.md#失敗の返し方と記録)）で見つけられる。
 - ダイアログを`WM_CLOSE`で閉じた3回は、Quitで終わった。`IDOK`で閉じた1回と残した1回は、Quitの後20秒で終わらず、終了させた。
 - 最初の1回は、変数の名前がモジュールの名前と同じだったため、本文が「モジュールではなく、変数またはプロシージャを指定してください。」になった。この回は、`WM_CLOSE`の後にExcelが終わった（`0x800706BA`）。原因は確かめていない。
 

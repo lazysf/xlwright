@@ -93,11 +93,18 @@ public interface IExcel
     IReadOnlyList<string?> OpenWorkbookPaths();
 
     /// <summary>
-    /// Removes every standard and class module of the main workbook, then imports <paramref name="modules"/> in order
-    /// and checks each imported name and type. Returns the removed names that are not in <paramref name="modules"/>.
-    /// Throws <see cref="VbaSyncException"/> for the failures docs/api.md "vba_sync" names.
+    /// Checks that each of <paramref name="documents"/> is a sheet or workbook module of the main workbook, removes
+    /// every standard and class module, imports <paramref name="modules"/> in order and checks each imported name and
+    /// type, then replaces the code of each document module. Returns the removed names that are not in
+    /// <paramref name="modules"/>. Throws <see cref="VbaSyncException"/> for the failures docs/api.md "vba_sync" names.
     /// </summary>
-    IReadOnlyList<string> SyncVba(IReadOnlyList<VbaModule> modules);
+    IReadOnlyList<string> SyncVba(IReadOnlyList<VbaModule> modules, IReadOnlyList<VbaDocumentModule> documents);
+
+    /// <summary>
+    /// Lists the modules of the main workbook in VBComponents order. Throws <see cref="VbaSyncException"/> with
+    /// VBA_ACCESS_NOT_TRUSTED or VBA_PROJECT_LOCKED, as vba_sync does.
+    /// </summary>
+    IReadOnlyList<VbaComponent> ListVba();
 
     /// <summary>
     /// Checks that the macro is a public Sub or Function of a standard module, adds the module that calls it by
@@ -136,6 +143,12 @@ public interface IOwnedProcess : IDisposable
     IReadOnlyList<bool> MainWindowsEnabled();
 }
 
+/// <summary>
+/// One module for vba_get (docs/api.md): Type is standard, class, document, or form; Sheet is the sheet name of a
+/// sheet module, and null for the others.
+/// </summary>
+public sealed record VbaComponent(string Name, string Type, int Lines, string? Sheet);
+
 /// <summary>The title and the body text of a dialog. It goes only into the response, never into a log.</summary>
 public sealed record DialogText(string Title, string Text);
 
@@ -159,12 +172,17 @@ public abstract record MacroResult
     public sealed record OfType(string TypeName) : MacroResult;
 }
 
-/// <summary>A vba_sync failure: the detail of docs/api.md "vba_sync" and the modules imported before it.</summary>
-public sealed class VbaSyncException(string detail, IReadOnlyList<string> done, string message) : Exception(message)
+/// <summary>
+/// A vba_sync failure: the detail of docs/api.md "vba_sync", the modules done before it, and the source file it is
+/// about when there is one.
+/// </summary>
+public sealed class VbaSyncException(string detail, IReadOnlyList<string> done, string message, string? file = null) : Exception(message)
 {
     public string Detail { get; } = detail;
 
     public IReadOnlyList<string> Done { get; } = done;
+
+    public string? File { get; } = file;
 }
 
 /// <summary>What ownership is decided from (docs/architecture.md "所有の確定").</summary>

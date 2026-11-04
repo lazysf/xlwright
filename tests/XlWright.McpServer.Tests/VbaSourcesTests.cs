@@ -69,6 +69,47 @@ public sealed class VbaSourcesTests : IDisposable
         Source("src/workbook/.gitkeep", "");
 
         Assert.Equal(["XlWright"], Prepare().Select(m => m.Name));
+        Assert.Empty(PrepareDocuments());
+    }
+
+    [Fact]
+    public void ConvertsWorkbookModulesToCodeWithoutTheHeaderAndAttributes()
+    {
+        Source("src/workbook/Sheet1.cls",
+            "VERSION 1.0 CLASS\r\nBEGIN\r\n  MultiUse = -1  'True\r\nEND\r\nAttribute VB_Name = \"Sheet1\"\r\nAttribute VB_PredeclaredId = True\r\n" +
+            "Option Explicit\n' 日本語\nPublic Function Twice(x)\nAttribute Twice.VB_Description = \"x\"\n    Twice = x * 2\nEnd Function\n");
+        Source("src/workbook/ThisWorkbook.cls", "");
+
+        var documents = PrepareDocuments();
+
+        Assert.Equal(["Sheet1", "ThisWorkbook"], documents.Select(d => d.Name));
+        Assert.Equal("Option Explicit\r\n' 日本語\r\nPublic Function Twice(x)\r\n    Twice = x * 2\r\nEnd Function", documents[0].Code);
+        Assert.Equal("src/workbook/Sheet1.cls", documents[0].File);
+        Assert.Equal("", documents[1].Code);
+    }
+
+    [Fact]
+    public void RejectsAWorkbookModuleNameThatDiffersFromTheFile()
+    {
+        Source("src/workbook/Sheet1.cls", "Attribute VB_Name = \"Sheet2\"\r\nOption Explicit\r\n");
+
+        var failure = PrepareFailure();
+
+        Assert.Equal("SOURCE_INVALID", failure.Detail);
+        Assert.Equal("src/workbook/Sheet1.cls", failure.Data!["file"]!.GetValue<string>());
+        Assert.Equal(1, failure.Data["line"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public void RejectsAWorkbookModuleCharacterTheAnsiCodePageCannotHold()
+    {
+        Source("src/workbook/ThisWorkbook.cls", "Option Explicit\r\n' 😀\r\n");
+
+        var failure = PrepareFailure();
+
+        Assert.Equal("src/workbook/ThisWorkbook.cls", failure.Data!["file"]!.GetValue<string>());
+        Assert.Equal(2, failure.Data["line"]!.GetValue<int>());
+        Assert.False(File.Exists(Path.Combine(_app.FullPath, "src", "modules", "XlWright.bas")));
     }
 
     [Fact]
@@ -136,6 +177,8 @@ public sealed class VbaSourcesTests : IDisposable
     [InlineData("src/modules/notes.txt", null, "notes.txt")]
     [InlineData("src/modules/sub/Calc.bas", null, "sub")]
     [InlineData("src/classes/XlWright.cls", null, "XlWright")]
+    [InlineData("src/workbook/Sheet1.bas", null, "Sheet1.bas")]
+    [InlineData("src/workbook/sub/Sheet1.cls", null, "sub")]
     public void RejectsAFileInTheWrongPlace(string file, int? line, string reason)
     {
         Source(file, "Option Explicit\r\n");
@@ -143,7 +186,7 @@ public sealed class VbaSourcesTests : IDisposable
         var failure = PrepareFailure();
 
         Assert.Equal("SOURCE_INVALID", failure.Detail);
-        Assert.StartsWith(file.StartsWith("src/modules/sub") ? "src/modules/sub" : file, failure.Data!["file"]!.GetValue<string>());
+        Assert.StartsWith(file.Contains("/sub/") ? file[..(file.IndexOf("/sub/") + 4)] : file, failure.Data!["file"]!.GetValue<string>());
         Assert.Equal(line, failure.Data["line"]?.GetValue<int>());
         Assert.Contains(reason, failure.Data["reason"]!.GetValue<string>());
     }
@@ -195,19 +238,6 @@ public sealed class VbaSourcesTests : IDisposable
     }
 
     [Fact]
-    public void RejectsWorkbookModulesBeforeAnythingElse()
-    {
-        Source("src/workbook/Sheet1.cls", "Option Explicit\r\n");
-        Source("src/modules/Calc.cls", "Option Explicit\r\n");
-
-        var failure = PrepareFailure();
-
-        Assert.Equal(ToolFailure.InvalidRequest, failure.Code);
-        Assert.Equal("WORKBOOK_MODULES_NOT_SUPPORTED", failure.Detail);
-        Assert.False(File.Exists(Path.Combine(_app.FullPath, "src", "modules", "XlWright.bas")));
-    }
-
-    [Fact]
     public void DoesNotWriteTheXlWrightModuleWhenASourceIsRejected()
     {
         Source("src/modules/Calc.cls", "Option Explicit\r\n");
@@ -219,14 +249,21 @@ public sealed class VbaSourcesTests : IDisposable
 
     private IReadOnlyList<VbaModule> Prepare()
     {
-        var (modules, failure) = VbaSources.Prepare(_app, ShiftJis, "0.1.0");
+        var (modules, _, failure) = VbaSources.Prepare(_app, ShiftJis, "0.1.0");
         Assert.Null(failure);
         return modules!;
     }
 
+    private IReadOnlyList<VbaDocumentModule> PrepareDocuments()
+    {
+        var (_, documents, failure) = VbaSources.Prepare(_app, ShiftJis, "0.1.0");
+        Assert.Null(failure);
+        return documents!;
+    }
+
     private ToolFailure PrepareFailure()
     {
-        var (modules, failure) = VbaSources.Prepare(_app, ShiftJis, "0.1.0");
+        var (modules, _, failure) = VbaSources.Prepare(_app, ShiftJis, "0.1.0");
         Assert.Null(modules);
         Assert.NotNull(failure);
         return failure;

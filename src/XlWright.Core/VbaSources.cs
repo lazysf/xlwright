@@ -14,8 +14,15 @@ public enum VbaModuleKind
 public sealed record VbaModule(string Name, VbaModuleKind Kind, string ImportPath);
 
 /// <summary>
-/// Reads src/modules and src/classes, writes the xlwright VBA module, and converts each source for Import
-/// (docs/architecture.md "VBAの反映", "xlwrightのVBAのモジュール"; docs/notes/vba-sync.md).
+/// The code for the sheet or workbook module whose CodeName is Name, without the header and Attribute lines, for
+/// CodeModule.AddFromString. File is the source relative to the app folder.
+/// </summary>
+public sealed record VbaDocumentModule(string Name, string File, string Code);
+
+/// <summary>
+/// Reads src/modules, src/classes, and src/workbook, writes the xlwright VBA module, and converts each source for
+/// Import or AddFromString (docs/architecture.md "VBAの反映", "xlwrightのVBAのモジュール"; docs/notes/vba-sync.md,
+/// docs/notes/test-copy.md).
 /// </summary>
 public static partial class VbaSources
 {
@@ -58,21 +65,16 @@ public static partial class VbaSources
     /// <summary>
     /// Checks every source before Excel is touched, writes XlWright.bas when it is missing, older than
     /// <paramref name="version"/>, or of the same version with other text, and writes the converted files under
-    /// &lt;app&gt;/.xlwright/sync/&lt;id&gt;/.
+    /// &lt;app&gt;/.xlwright/sync/&lt;id&gt;/. The sheet and workbook modules come back as code, in file name order.
     /// The caller deletes that folder after the sync.
     /// </summary>
-    public static (IReadOnlyList<VbaModule>? Modules, ToolFailure? Failure) Prepare(AppFolder app, Encoding ansi, string version)
+    public static (IReadOnlyList<VbaModule>? Modules, IReadOnlyList<VbaDocumentModule>? Documents, ToolFailure? Failure) Prepare(
+        AppFolder app, Encoding ansi, string version)
     {
         var src = Path.Combine(app.FullPath, "src");
-        var workbook = Path.Combine(src, "workbook");
-        if (Directory.Exists(workbook) && Directory.EnumerateFileSystemEntries(workbook).Any(entry => !Path.GetFileName(entry).StartsWith('.')))
-        {
-            return (null, new ToolFailure(ToolFailure.InvalidRequest, "WORKBOOK_MODULES_NOT_SUPPORTED",
-                "src/workbook/ has files. Sheet and workbook modules are not synced yet; move or remove those files, then call again."));
-        }
-
         var files = new List<(string Path, VbaModuleKind Kind)>();
-        foreach (var (folder, extension, kind) in new[] { ("modules", ".bas", VbaModuleKind.Standard), ("classes", ".cls", VbaModuleKind.Class) })
+        var documentFiles = new List<string>();
+        foreach (var (folder, extension, kind) in new[] { ("modules", ".bas", VbaModuleKind.Standard), ("classes", ".cls", VbaModuleKind.Class), ("workbook", ".cls", (VbaModuleKind?)null) })
         {
             var full = Path.Combine(src, folder);
             if (!Directory.Exists(full))
@@ -96,7 +98,14 @@ public static partial class VbaSources
                 if (!Path.GetExtension(name).Equals(extension, StringComparison.OrdinalIgnoreCase))
                 {
                     return Invalid(app, entry, null,
-                        $"{name} is in src/{folder}/, which holds only {extension} files. Standard modules go in src/modules/*.bas and class modules in src/classes/*.cls.");
+                        $"{name} is in src/{folder}/, which holds only {extension} files. Standard modules go in src/modules/*.bas, " +
+                        "class modules in src/classes/*.cls, and sheet and workbook modules in src/workbook/<CodeName>.cls.");
+                }
+
+                if (kind is null)
+                {
+                    documentFiles.Add(entry);
+                    continue;
                 }
 
                 if (Path.GetFileNameWithoutExtension(name).Equals(MacroCall.ModuleName, StringComparison.OrdinalIgnoreCase))
@@ -109,7 +118,7 @@ public static partial class VbaSources
                     return Invalid(app, entry, null, $"{name}: the name {XlWrightName} is kept for the module xlwright writes. Rename the class.");
                 }
 
-                files.Add((entry, kind));
+                files.Add((entry, kind.Value));
             }
         }
 
@@ -120,10 +129,22 @@ public static partial class VbaSources
             var (module, failure) = Convert(app, path, kind, File.ReadAllBytes(path), ansi);
             if (failure is not null)
             {
-                return (null, failure);
+                return (null, null, failure);
             }
 
             converted.Add(module!.Value);
+        }
+
+        var documents = new List<VbaDocumentModule>();
+        foreach (var path in documentFiles)
+        {
+            var (document, failure) = ConvertDocument(app, path, File.ReadAllBytes(path), ansi);
+            if (failure is not null)
+            {
+                return (null, null, failure);
+            }
+
+            documents.Add(document!);
         }
 
         var xlWrightPath = Path.Combine(src, "modules", XlWrightName + ".bas");
@@ -135,7 +156,7 @@ public static partial class VbaSources
             var (module, failure) = Convert(app, xlWrightPath, VbaModuleKind.Standard, File.ReadAllBytes(xlWrightPath), ansi);
             if (failure is not null)
             {
-                return (null, failure);
+                return (null, null, failure);
             }
 
             converted.Add(module!.Value);
@@ -154,52 +175,16 @@ public static partial class VbaSources
             }
         }
 
-        return (modules, null);
+        return (modules, documents, null);
     }
 
     // UTF-8 to the ANSI code page with CRLF, the class header when missing, and Attribute VB_Name from the file name.
     private static ((string, VbaModuleKind, byte[])?, ToolFailure?) Convert(AppFolder app, string path, VbaModuleKind kind, byte[] bytes, Encoding ansi)
     {
-        string text;
-        try
+        var (lines, nameLine, name, failure) = Read(app, path, bytes, ansi);
+        if (failure is not null)
         {
-            text = StrictUtf8.GetString(bytes);
-        }
-        catch (DecoderFallbackException)
-        {
-            return (null, Invalid(app, path, null, "The file is not valid UTF-8. Save it as UTF-8.").Failure);
-        }
-
-        var lines = text.TrimStart('﻿').ReplaceLineEndings("\n").TrimEnd('\n').Split('\n').ToList();
-        var fileName = Path.GetFileNameWithoutExtension(path);
-        var name = fileName;
-        var nameLine = lines.FindIndex(line => VbName().IsMatch(line));
-        if (nameLine >= 0)
-        {
-            name = VbName().Match(lines[nameLine]).Groups["name"].Value;
-            if (!name.Equals(fileName, StringComparison.OrdinalIgnoreCase))
-            {
-                return (null, Invalid(app, path, nameLine + 1,
-                    $"Attribute VB_Name is \"{name}\", but the file is {Path.GetFileName(path)}. Make them the same.").Failure);
-            }
-        }
-
-        if (name.Equals(XlWrightName, StringComparison.OrdinalIgnoreCase) && !Path.GetFileName(path).Equals(XlWrightName + ".bas", StringComparison.OrdinalIgnoreCase))
-        {
-            return (null, Invalid(app, path, nameLine + 1, $"The name {XlWrightName} is kept for the module xlwright writes. Rename the module.").Failure);
-        }
-
-        for (var i = 0; i < lines.Count; i++)
-        {
-            try
-            {
-                ansi.GetBytes(lines[i]);
-            }
-            catch (EncoderFallbackException)
-            {
-                return (null, Invalid(app, path, i + 1,
-                    $"The line has a character that the system code page ({ansi.CodePage}) cannot hold, so the VBA editor would change it. Replace it, for example with ChrW.").Failure);
-            }
+            return (null, failure);
         }
 
         var addHeader = kind == VbaModuleKind.Class && !lines.FirstOrDefault(line => line.Trim().Length > 0)?.Trim().StartsWith("VERSION 1.0 CLASS", StringComparison.OrdinalIgnoreCase) == true;
@@ -211,6 +196,77 @@ public static partial class VbaSources
 
         var result = (addHeader ? ClassHeader : "") + string.Join("\r\n", lines) + "\r\n";
         return ((name, kind, ansi.GetBytes(result)), null);
+    }
+
+    // The code only: the class header (VERSION 1.0 CLASS to END) and every Attribute line are removed, because
+    // AddFromString writes them as code. The name is the CodeName from the file name.
+    private static (VbaDocumentModule?, ToolFailure?) ConvertDocument(AppFolder app, string path, byte[] bytes, Encoding ansi)
+    {
+        var (lines, _, name, failure) = Read(app, path, bytes, ansi);
+        if (failure is not null)
+        {
+            return (null, failure);
+        }
+
+        var first = lines.FindIndex(line => line.Trim().Length > 0);
+        if (first >= 0 && lines[first].Trim().StartsWith("VERSION 1.0 CLASS", StringComparison.OrdinalIgnoreCase))
+        {
+            var end = lines.FindIndex(first, line => line.Trim().Equals("END", StringComparison.OrdinalIgnoreCase));
+            lines.RemoveRange(0, end + 1);
+        }
+
+        lines.RemoveAll(line => AttributeLine().IsMatch(line));
+        var code = string.Join("\r\n", lines).Trim('\r', '\n');
+        return (new VbaDocumentModule(name, Relative(app, path), code), null);
+    }
+
+    // UTF-8 to lines, with the checks every source passes: Attribute VB_Name matches the file name, the name
+    // XlWright is kept, and each line fits the ANSI code page. The name is VB_Name, or the file name without it.
+    private static (List<string> Lines, int NameLine, string Name, ToolFailure? Failure) Read(AppFolder app, string path, byte[] bytes, Encoding ansi)
+    {
+        string text;
+        try
+        {
+            text = StrictUtf8.GetString(bytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            return ([], -1, "", Invalid(app, path, null, "The file is not valid UTF-8. Save it as UTF-8.").Failure);
+        }
+
+        var lines = text.TrimStart('﻿').ReplaceLineEndings("\n").TrimEnd('\n').Split('\n').ToList();
+        var fileName = Path.GetFileNameWithoutExtension(path);
+        var name = fileName;
+        var nameLine = lines.FindIndex(line => VbName().IsMatch(line));
+        if (nameLine >= 0)
+        {
+            name = VbName().Match(lines[nameLine]).Groups["name"].Value;
+            if (!name.Equals(fileName, StringComparison.OrdinalIgnoreCase))
+            {
+                return ([], -1, "", Invalid(app, path, nameLine + 1,
+                    $"Attribute VB_Name is \"{name}\", but the file is {Path.GetFileName(path)}. Make them the same.").Failure);
+            }
+        }
+
+        if (name.Equals(XlWrightName, StringComparison.OrdinalIgnoreCase) && !Path.GetFileName(path).Equals(XlWrightName + ".bas", StringComparison.OrdinalIgnoreCase))
+        {
+            return ([], -1, "", Invalid(app, path, nameLine + 1, $"The name {XlWrightName} is kept for the module xlwright writes. Rename the module.").Failure);
+        }
+
+        for (var i = 0; i < lines.Count; i++)
+        {
+            try
+            {
+                ansi.GetBytes(lines[i]);
+            }
+            catch (EncoderFallbackException)
+            {
+                return ([], -1, "", Invalid(app, path, i + 1,
+                    $"The line has a character that the system code page ({ansi.CodePage}) cannot hold, so the VBA editor would change it. Replace it, for example with ChrW.").Failure);
+            }
+        }
+
+        return (lines, nameLine, name, null);
     }
 
     private static bool NeedsXlWright(string path, string version)
@@ -233,8 +289,8 @@ public static partial class VbaSources
         return written < current || (written == current && text != XlWrightText(version));
     }
 
-    private static (IReadOnlyList<VbaModule>?, ToolFailure? Failure) Invalid(AppFolder app, string path, int? line, string reason) =>
-        (null, new ToolFailure(ToolFailure.InvalidRequest, "SOURCE_INVALID",
+    private static (IReadOnlyList<VbaModule>?, IReadOnlyList<VbaDocumentModule>?, ToolFailure? Failure) Invalid(AppFolder app, string path, int? line, string reason) =>
+        (null, null, new ToolFailure(ToolFailure.InvalidRequest, "SOURCE_INVALID",
             $"{Relative(app, path)}{(line is null ? "" : $" line {line}")}: {reason} Nothing was changed in the workbook.",
             new JsonObject { ["file"] = Relative(app, path), ["line"] = line, ["reason"] = reason }));
 
@@ -242,6 +298,9 @@ public static partial class VbaSources
 
     [GeneratedRegex("""^\s*Attribute\s+VB_Name\s*=\s*"(?<name>[^"]*)"\s*\z""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex VbName();
+
+    [GeneratedRegex(@"^\s*Attribute\s", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex AttributeLine();
 
     [GeneratedRegex(@"^' XlWright (?<version>[0-9]+\.[0-9]+\.[0-9]+)[: ]", RegexOptions.CultureInvariant)]
     private static partial Regex VersionLine();

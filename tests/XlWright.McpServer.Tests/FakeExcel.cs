@@ -127,13 +127,30 @@ internal sealed class FakeExcel : IExcel
 
     public IReadOnlyList<VbaModule>? Synced { get; private set; }
 
-    public IReadOnlyList<string> SyncVba(IReadOnlyList<VbaModule> modules)
+    public IReadOnlyList<VbaDocumentModule>? SyncedDocuments { get; private set; }
+
+    public IReadOnlyList<string> SyncVba(IReadOnlyList<VbaModule> modules, IReadOnlyList<VbaDocumentModule> documents)
     {
-        Record("SyncVba " + string.Join(",", modules.Select(m => m.Name)));
+        Record("SyncVba " + string.Join(",", modules.Select(m => m.Name)) + (documents.Count > 0 ? " | " + string.Join(",", documents.Select(d => d.Name)) : ""));
         Synced = modules;
+        SyncedDocuments = documents;
         Process.WaitIf(SyncBlock);
         if (SyncThrows is not null) throw SyncThrows;
         return Removed;
+    }
+
+    public List<VbaComponent> Components { get; set; } = [];
+
+    public Exception? ListThrows { get; set; }
+
+    public Block ListBlock { get; set; } = Block.None;
+
+    public IReadOnlyList<VbaComponent> ListVba()
+    {
+        Record("ListVba");
+        Process.WaitIf(ListBlock);
+        if (ListThrows is not null) throw ListThrows;
+        return Components;
     }
 
     public MacroResult MacroResult { get; set; } = new MacroResult.Returned(42);

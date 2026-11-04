@@ -110,6 +110,45 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
 
     public Task<SessionOutcome> SyncAsync() => Run("vba_sync", NoSession, () => SyncCore(_active!));
 
+    /// <summary>Lists the modules of the main workbook as they are, without a sync (docs/api.md "vba_get").</summary>
+    public Task<SessionOutcome> ListModulesAsync() => Run("vba_get", NoSession, async () =>
+    {
+        var active = _active!;
+        if (MacrosRejected(active) is { } rejected)
+        {
+            return rejected;
+        }
+
+        var listing = active.Worker.Run(active.Excel.ListVba);
+        if (!await Completes(listing, timeouts.Sync))
+        {
+            return await AfterTimeout(active, listing, "Listing the VBA modules did not finish within the time limit.");
+        }
+
+        if (listing.IsFaulted)
+        {
+            return listing.Exception!.InnerException switch
+            {
+                VbaSyncException e => Fail(ToolFailure.Conflict, e.Detail, e.Message),
+                var e => Fail(ToolFailure.ExcelError, null, $"Excel could not list the VBA modules: {e!.Message}"),
+            };
+        }
+
+        var modules = new JsonArray();
+        foreach (var component in listing.Result)
+        {
+            var module = new JsonObject { ["name"] = component.Name, ["type"] = component.Type, ["lines"] = component.Lines };
+            if (component.Sheet is not null)
+            {
+                module["sheet"] = component.Sheet;
+            }
+
+            modules.Add(module);
+        }
+
+        return (new JsonObject { ["modules"] = modules }, null);
+    });
+
     /// <summary>
     /// Syncs, then runs the macro and waits up to <paramref name="limit"/>, checking for a dialog every 250 ms
     /// (docs/architecture.md "マクロの実行"). A dialog or the limit ends the owned Excel.
@@ -157,15 +196,20 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
         };
     }, new JsonObject { ["macro"] = macro.ToString() });
 
+    private static (JsonObject?, ToolFailure?)? MacrosRejected(Active active) =>
+        Path.GetExtension(active.App.WorkbookName).Equals(".xlsm", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : Fail(ToolFailure.InvalidRequest, "NOT_MACRO_ENABLED",
+                $"{active.App.WorkbookName} is not a macro-enabled workbook (.xlsm), so it cannot hold VBA.");
+
     private async Task<(JsonObject?, ToolFailure?)> SyncCore(Active active)
     {
-        if (!Path.GetExtension(active.App.WorkbookName).Equals(".xlsm", StringComparison.OrdinalIgnoreCase))
+        if (MacrosRejected(active) is { } rejected)
         {
-            return Fail(ToolFailure.InvalidRequest, "NOT_MACRO_ENABLED",
-                $"{active.App.WorkbookName} is not a macro-enabled workbook (.xlsm), so it cannot hold VBA.");
+            return rejected;
         }
 
-        var (modules, invalid) = VbaSources.Prepare(active.App, VbaSources.SystemAnsiEncoding(), ServerIdentity.Current.Version);
+        var (modules, documents, invalid) = VbaSources.Prepare(active.App, VbaSources.SystemAnsiEncoding(), ServerIdentity.Current.Version);
         if (invalid is not null)
         {
             return (null, invalid);
@@ -173,7 +217,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
 
         try
         {
-            var syncing = active.Worker.Run(() => active.Excel.SyncVba(modules!));
+            var syncing = active.Worker.Run(() => active.Excel.SyncVba(modules!, documents!));
             if (!await Completes(syncing, timeouts.Sync))
             {
                 return await AfterTimeout(active, syncing, "Syncing the VBA modules did not finish within the time limit.");
@@ -184,6 +228,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
                 return syncing.Exception!.InnerException switch
                 {
                     VbaSyncException { Detail: "SYNC_FAILED" } e => SyncFailed(e.Message, e.Done),
+                    VbaSyncException { Detail: "WORKBOOK_MODULE_NOT_FOUND" } e => Fail(ToolFailure.NotFound, e.Detail, e.Message, new JsonObject { ["file"] = e.File }),
                     VbaSyncException e => Fail(ToolFailure.Conflict, e.Detail, e.Message),
                     var e => SyncFailed($"Syncing the VBA modules failed: {e!.Message}", []),
                 };
@@ -193,6 +238,11 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
             foreach (var module in modules!)
             {
                 listed.Add(new JsonObject { ["name"] = module.Name, ["type"] = module.Kind == VbaModuleKind.Class ? "class" : "standard" });
+            }
+
+            foreach (var document in documents!)
+            {
+                listed.Add(new JsonObject { ["name"] = document.Name, ["type"] = "document" });
             }
 
             return (new JsonObject { ["modules"] = listed, ["removed"] = new JsonArray(syncing.Result.Select(name => (JsonNode?)name).ToArray()) }, null);

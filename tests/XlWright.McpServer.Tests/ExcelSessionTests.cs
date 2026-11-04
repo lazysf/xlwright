@@ -522,6 +522,94 @@ public sealed class ExcelSessionTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncWritesTheWorkbookModulesAndReportsThemAsDocuments()
+    {
+        _repo.AddApp("apps/sales", "src/modules/Calc.bas", "src/workbook/Sheet1.cls", "src/workbook/ThisWorkbook.cls");
+        await _session.StartAsync(_app);
+
+        var outcome = await _session.SyncAsync();
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal("SyncVba Calc,XlWright | Sheet1,ThisWorkbook", _launcher.Excel.Calls[^1]);
+        Assert.Equal(
+            """[{"name":"Calc","type":"standard"},{"name":"XlWright","type":"standard"},{"name":"Sheet1","type":"document"},{"name":"ThisWorkbook","type":"document"}]""",
+            outcome.Result!["modules"]!.ToJsonString());
+    }
+
+    [Fact]
+    public async Task SyncReportsAMissingWorkbookModuleAsNotFound()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.SyncThrows = new VbaSyncException("WORKBOOK_MODULE_NOT_FOUND", [], "Sheet9 is not in the workbook.", "src/workbook/Sheet9.cls");
+
+        var outcome = await _session.SyncAsync();
+
+        AssertFailure(outcome, "NOT_FOUND", "WORKBOOK_MODULE_NOT_FOUND", "ready");
+        Assert.Equal("src/workbook/Sheet9.cls", outcome.Failure!.Data!["file"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task ListModulesReturnsTheModulesWithLinesAndSheetNames()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.Components = [new("Calc", "standard", 12, null), new("Sheet1", "document", 5, "Data"), new("ThisWorkbook", "document", 0, null)];
+
+        var outcome = await _session.ListModulesAsync();
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal("ready", outcome.Session.State);
+        Assert.Equal("ListVba", _launcher.Excel.Calls[^1]);
+        Assert.Equal(
+            """[{"name":"Calc","type":"standard","lines":12},{"name":"Sheet1","type":"document","lines":5,"sheet":"Data"},{"name":"ThisWorkbook","type":"document","lines":0}]""",
+            outcome.Result!["modules"]!.ToJsonString());
+    }
+
+    [Fact]
+    public async Task ListModulesRejectsAMainWorkbookWithoutMacros()
+    {
+        _repo.AddApp("apps/plain", "Plain.xlsx");
+        await _session.StartAsync(AppFolder.Resolve(_repo.Root, "apps/plain").Folder!);
+
+        var outcome = await _session.ListModulesAsync();
+
+        AssertFailure(outcome, "INVALID_REQUEST", "NOT_MACRO_ENABLED", "ready");
+        Assert.DoesNotContain("ListVba", _launcher.Excel.Calls);
+    }
+
+    [Theory]
+    [InlineData("VBA_ACCESS_NOT_TRUSTED")]
+    [InlineData("VBA_PROJECT_LOCKED")]
+    public async Task ListModulesReportsWhatExcelRefused(string detail)
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.ListThrows = new VbaSyncException(detail, [], "refused");
+
+        var outcome = await _session.ListModulesAsync();
+
+        AssertFailure(outcome, "CONFLICT", detail, "ready");
+    }
+
+    [Fact]
+    public async Task ListModulesTimeoutTerminatesTheOwnedExcel()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.ListBlock = Block.UntilTerminated;
+
+        var outcome = await _session.ListModulesAsync();
+
+        AssertFailure(outcome, "STATE_UNKNOWN", "TIMEOUT", "closed");
+        Assert.Equal(1, _launcher.Process.Terminations);
+    }
+
+    [Fact]
+    public async Task ListModulesWithoutASessionIsAConflict()
+    {
+        var outcome = await _session.ListModulesAsync();
+
+        AssertFailure(outcome, "CONFLICT", "NO_SESSION", "closed");
+    }
+
+    [Fact]
     public async Task SyncRejectsAMainWorkbookWithoutMacros()
     {
         _repo.AddApp("apps/plain", "Plain.xlsx");

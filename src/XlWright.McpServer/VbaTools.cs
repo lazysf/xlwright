@@ -5,7 +5,7 @@ using XlWright.Core;
 
 namespace XlWright.McpServer;
 
-/// <summary>vba_sync and macro_run (docs/api.md, stage 1).</summary>
+/// <summary>vba_sync and macro_run (docs/api.md, stage 1), and vba_get (stage 3).</summary>
 internal sealed class VbaTools(ExcelSession? session)
 {
     private const int DefaultTimeoutSeconds = 300;
@@ -17,10 +17,19 @@ internal sealed class VbaTools(ExcelSession? session)
         {
             Name = "vba_sync",
             Description = "Replaces every standard and class module of the main workbook with src/modules/*.bas and src/classes/*.cls " +
-                "(UTF-8). A module that is not in the source is removed from the workbook. Before it syncs, xlwright writes " +
-                "src/modules/XlWright.bas; do not edit that file. It does not save. Takes no arguments.",
+                "(UTF-8). A module that is not in the source is removed from the workbook. It also replaces the code of each sheet " +
+                "and workbook module that has a file src/workbook/<CodeName>.cls; the others are left as they are. Before it syncs, " +
+                "xlwright writes src/modules/XlWright.bas; do not edit that file. It does not save. Takes no arguments.",
             ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false,
         }, ToolDefinition.NoInput, SyncOutput),
+        ToolDefinition.Create(Get, new()
+        {
+            Name = "vba_get",
+            Description = "Lists the VBA modules of the main workbook as they are now, without syncing: name, type " +
+                "(standard, class, document, form), and number of lines. A sheet module also has the sheet name; its module " +
+                "name is the CodeName to use for src/workbook/<CodeName>.cls. Takes no arguments.",
+            ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false,
+        }, ToolDefinition.NoInput, GetOutput),
         ToolDefinition.Create(Run, new()
         {
             Name = "macro_run",
@@ -42,6 +51,17 @@ internal sealed class VbaTools(ExcelSession? session)
         }
 
         return session is null ? NoSession() : ToolResults.From(await session.SyncAsync());
+    }
+
+    private async Task<CallToolResult> Get(RequestContext<CallToolRequestParams> context)
+    {
+        var invalid = ToolArguments.From("vba_get", context).RejectUnknown();
+        if (invalid is not null)
+        {
+            return ToolResults.InvalidRequest(invalid, Current());
+        }
+
+        return session is null ? NoSession() : ToolResults.From(await session.ListModulesAsync());
     }
 
     private async Task<CallToolResult> Run(RequestContext<CallToolRequestParams> context)
@@ -122,12 +142,20 @@ internal sealed class VbaTools(ExcelSession? session)
     }
 
     private static readonly string SyncResult = """
-        "modules":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"type":{"enum":["standard","class"]}},"required":["name","type"]}},
+        "modules":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"type":{"enum":["standard","class","document"]}},"required":["name","type"]}},
          "removed":{"type":"array","items":{"type":"string"}}
         """;
 
     private static readonly string SyncOutput = $$$"""
         {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},{{{SyncResult}}} },"required":["session","modules","removed"]}
+        """;
+
+    private static readonly string GetOutput = $$$"""
+        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},
+         "modules":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},
+          "type":{"enum":["standard","class","document","form"]},"lines":{"type":"integer"},"sheet":{"type":"string"}},
+          "required":["name","type","lines"]}} },
+         "required":["session","modules"]}
         """;
 
     private const string RunInput = """

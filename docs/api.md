@@ -244,7 +244,7 @@
 
 ### `vba_sync`（段階1）
 
-- 用途: `src/modules/*.bas`と`src/classes/*.cls`を主ブックへ全置換で反映します（[VBAの反映](architecture.md#vbaの反映)）。ソースに無い標準・クラスモジュールは、ブックから消えます。保存はしません。
+- 用途: `src/modules/*.bas`と`src/classes/*.cls`を主ブックへ全置換で反映します（[VBAの反映](architecture.md#vbaの反映)）。ソースに無い標準・クラスモジュールは、ブックから消えます。段階3で、`src/workbook/<CodeName>.cls`をシートとブックのモジュールへ書くよう広げました（[段階3の契約](#vba_syncをシートとブックのモジュールに広げる)）。保存はしません。
 - 引数: ありません。
 - 反映の前に、`src/modules/XlWright.bas`を[xlwrightのVBAのモジュール](architecture.md#xlwrightのvbaのモジュール)のとおりに書きます。
 - 結果: `{"session":{…},"modules":[{"name":"Calc","type":"standard"},{"name":"Counter","type":"class"}],"removed":["Old"]}`。
@@ -254,7 +254,6 @@
 | --- | --- | --- |
 | `INVALID_REQUEST` | `NOT_MACRO_ENABLED` | 主ブックが`.xlsx` |
 | `INVALID_REQUEST` | `SOURCE_INVALID` | ブックに触れる前の検査で拒否した。`data.file`・`data.line`・`data.reason`。理由は、ANSIに変換できない文字、`VB_Name`とファイル名の食い違い、拡張子とフォルダの食い違い、入れ子のフォルダ、`XlWright`という名前のほかのモジュール、`XlWrightCall`という名前のモジュール（人が承認、2026-11-04） |
-| `INVALID_REQUEST` | `WORKBOOK_MODULES_NOT_SUPPORTED` | `src/workbook/`にファイルがある。段階3の拡張（下の[段階3の契約](#段階3の契約人が承認2026-11-04)）で除く |
 | `CONFLICT` | `VBA_ACCESS_NOT_TRUSTED` | 「VBA プロジェクト オブジェクト モデルへのアクセスを信頼する」が無効。人に設定を求める`message` |
 | `CONFLICT` | `VBA_PROJECT_LOCKED` | VBAのプロジェクトが保護されている |
 | `EXCEL_ERROR` | `SYNC_FAILED` | 途中で失敗した。`data.done`に処理済みのモジュール。保存していないため、次の反映がやり直す |
@@ -294,7 +293,7 @@
 - `src/workbook/`にファイルの無いシートとブックのモジュールには触れません。コードを消すには、空のファイルを置きます。
 - ファイルと同じ検査（ANSIに変換できない文字など）を通します。
 - 結果の`modules`に、`{"name":"Sheet1","type":"document"}`の形で加えます。
-- 失敗: `WORKBOOK_MODULES_NOT_SUPPORTED`を除き、次を加えます。
+- 失敗: 段階2までの`WORKBOOK_MODULES_NOT_SUPPORTED`（`src/workbook/`にファイルがある）を除き、次を加えます。
 
 | `code` | `detail` | 場合 |
 | --- | --- | --- |

@@ -185,6 +185,50 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         AssertNothingLeft(pid);
     }
 
+    // Needs AccessVBOM 1. The sheet is renamed, so its CodeName comes from vba_get, not from the sheet name.
+    [Fact]
+    public async Task ListsAndSyncsTheSheetAndWorkbookModulesByCodeName()
+    {
+        _repo.AddApp("apps/sheets");
+        var app = Path.Combine(_repo.Root, "apps", "sheets");
+        MinimalWorkbook.Write(Path.Combine(app, "Sheets.xlsm"), firstSheet: "データ");
+        Source(app, "src/modules/Poke.bas", "Option Explicit\nPublic Sub WriteA1()\n    ThisWorkbook.Worksheets(1).Range(\"A1\").Value = 5\nEnd Sub\n");
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/sheets" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+
+        var before = Success(await Call("vba_get", new())).GetProperty("modules").EnumerateArray().ToList();
+        var sheet = Assert.Single(before, m => m.TryGetProperty("sheet", out var name) && name.GetString() == "データ");
+        var codeName = sheet.GetProperty("name").GetString()!;
+        Assert.Equal("document", sheet.GetProperty("type").GetString());
+        Assert.Contains(before, m => m.GetProperty("name").GetString() == "ThisWorkbook" && !m.TryGetProperty("sheet", out _));
+
+        Source(app, $"src/workbook/{codeName}.cls",
+            "VERSION 1.0 CLASS\nBEGIN\n  MultiUse = -1  'True\nEND\nAttribute VB_Name = \"" + codeName + "\"\n" +
+            "Option Explicit\n\nPrivate Sub Worksheet_Change(ByVal Target As Range)\n    If Target.Address = \"$A$1\" Then Me.Range(\"B1\").Value = \"変更を見た\"\nEnd Sub\n");
+        Source(app, "src/workbook/ThisWorkbook.cls", "Option Explicit\n\nPublic Function Hello() As String\n    Hello = \"ブック\"\nEnd Function\n");
+        var synced = Success(await Call("vba_sync", new())).GetProperty("modules").EnumerateArray()
+            .Where(m => m.GetProperty("type").GetString() == "document").Select(m => m.GetProperty("name").GetString());
+        Assert.Equal([codeName, "ThisWorkbook"], synced);
+
+        var after = Success(await Call("vba_get", new())).GetProperty("modules").EnumerateArray().ToList();
+        Assert.Equal(5, after.Single(m => m.GetProperty("name").GetString() == codeName).GetProperty("lines").GetInt32());
+        Assert.Equal(5, after.Single(m => m.GetProperty("name").GetString() == "ThisWorkbook").GetProperty("lines").GetInt32());
+
+        // macro_run leaves events on, so the replaced Worksheet_Change runs.
+        Success(await Call("macro_run", new() { ["macro"] = "Poke.WriteA1" }));
+        var b1 = Success(await Call("range_read", new() { ["sheet"] = "データ", ["range"] = "B1" }));
+        Assert.Equal("変更を見た", b1.GetProperty("values")[0][0].GetString());
+
+        Source(app, "src/workbook/NoSuchSheet.cls", "Option Explicit\n");
+        var missing = Body(await Call("vba_sync", new()));
+        Assert.Equal("WORKBOOK_MODULE_NOT_FOUND", missing.GetProperty("error").GetProperty("detail").GetString());
+        Assert.Equal("src/workbook/NoSuchSheet.cls", missing.GetProperty("error").GetProperty("data").GetProperty("file").GetString());
+        Assert.Equal("ready", missing.GetProperty("session").GetProperty("state").GetString());
+
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(pid);
+    }
+
     // Needs AccessVBOM 1. The last call shows a MsgBox on the person's screen until the watch ends the Excel.
     [Fact]
     public async Task RunsMacrosAndReportsErrorsStatusAndADialog()

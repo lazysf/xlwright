@@ -38,6 +38,7 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
     private const int CalculationDone = 0; // xlDone
     private const int StdModule = 1; // vbext_ct_StdModule
     private const int ClassModule = 2; // vbext_ct_ClassModule
+    private const int DocumentModule = 100; // vbext_ct_Document
     private const int ProjectLocked = 1; // vbext_pp_locked
     private const int ProcedureKind = 0; // vbext_pk_Proc
 
@@ -174,34 +175,33 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
 
     // A full replace (docs/architecture.md "VBAの反映"). Import renames a module whose name is taken, and turns a
     // name it cannot use into Module1, without an exception, so each imported name is checked (docs/notes/vba-sync.md).
-    public IReadOnlyList<string> SyncVba(IReadOnlyList<VbaModule> modules)
+    // Sheet and workbook modules are found by the VBComponents name, which is the CodeName; Worksheet.CodeName can be
+    // empty before the VBProject is read (docs/notes/test-copy.md).
+    public IReadOnlyList<string> SyncVba(IReadOnlyList<VbaModule> modules, IReadOnlyList<VbaDocumentModule> documents)
     {
-        dynamic project;
-        try
-        {
-            project = Main.VBProject;
-        }
-        catch (COMException)
-        {
-            // AccessVBOM 0 fails with 0x800A03EC, which Excel also returns for other failures (docs/notes/workbook-save-open.md).
-            throw new VbaSyncException("VBA_ACCESS_NOT_TRUSTED", [],
-                "Excel does not allow programs to access the VBA project. Ask the person to turn on " +
-                "\"Trust access to the VBA project object model\" (File > Options > Trust Center > Trust Center Settings > Macro Settings), then call again.");
-        }
-
+        dynamic project = TrustedProject();
         var done = new List<string>();
         var step = "removing the modules";
         try
         {
-            if ((int)project.Protection == ProjectLocked)
-            {
-                throw new VbaSyncException("VBA_PROJECT_LOCKED", [],
-                    "The VBA project of the main workbook is protected. Ask the person to unlock it in the VBA editor, then call again.");
-            }
-
+            ThrowIfLocked(project);
             dynamic components = project.VBComponents;
             try
             {
+                step = "finding the sheet and workbook modules";
+                foreach (var document in documents)
+                {
+                    if (DocumentComponent(components, document.Name) is not { } found)
+                    {
+                        throw new VbaSyncException("WORKBOOK_MODULE_NOT_FOUND", [],
+                            $"{document.File}: the main workbook has no sheet or workbook module with the CodeName {document.Name}. " +
+                            "Nothing was changed in the workbook. Name the file after a CodeName that vba_get lists.",
+                            document.File);
+                    }
+
+                    Release(found);
+                }
+
                 var removed = new List<string>();
                 for (var i = (int)components.Count; i >= 1; i--)
                 {
@@ -250,6 +250,39 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
                     done.Add(module.Name);
                 }
 
+                foreach (var document in documents)
+                {
+                    step = "writing " + document.Name;
+                    dynamic component = DocumentComponent(components, document.Name)!;
+                    try
+                    {
+                        dynamic code = component.CodeModule;
+                        try
+                        {
+                            int count = code.CountOfLines;
+                            if (count > 0)
+                            {
+                                code.DeleteLines(1, count);
+                            }
+
+                            if (document.Code.Length > 0)
+                            {
+                                code.AddFromString(document.Code);
+                            }
+                        }
+                        finally
+                        {
+                            Release(code);
+                        }
+                    }
+                    finally
+                    {
+                        Release(component);
+                    }
+
+                    done.Add(document.Name);
+                }
+
                 removed.Sort(StringComparer.Ordinal);
                 return removed;
             }
@@ -266,6 +299,127 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
         {
             Release(project);
         }
+    }
+
+    public IReadOnlyList<VbaComponent> ListVba()
+    {
+        dynamic project = TrustedProject();
+        try
+        {
+            ThrowIfLocked(project);
+
+            // CodeName is read after VBProject, because it can be empty before (docs/notes/test-copy.md).
+            var sheetNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            dynamic sheets = Main.Sheets;
+            try
+            {
+                for (var i = 1; i <= (int)sheets.Count; i++)
+                {
+                    dynamic sheet = sheets.Item(i);
+                    try
+                    {
+                        sheetNames[(string)sheet.CodeName] = (string)sheet.Name;
+                    }
+                    finally
+                    {
+                        Release(sheet);
+                    }
+                }
+            }
+            finally
+            {
+                Release(sheets);
+            }
+
+            var list = new List<VbaComponent>();
+            dynamic components = project.VBComponents;
+            try
+            {
+                for (var i = 1; i <= (int)components.Count; i++)
+                {
+                    dynamic component = components.Item(i);
+                    try
+                    {
+                        string name = component.Name;
+                        int type = component.Type;
+                        dynamic code = component.CodeModule;
+                        int lines;
+                        try
+                        {
+                            lines = code.CountOfLines;
+                        }
+                        finally
+                        {
+                            Release(code);
+                        }
+
+                        // A form and an ActiveX designer (type 3 and 11) are both designers, which xlwright does not touch.
+                        var kind = type switch { StdModule => "standard", ClassModule => "class", DocumentModule => "document", _ => "form" };
+                        list.Add(new VbaComponent(name, kind, lines, type == DocumentModule ? sheetNames.GetValueOrDefault(name) : null));
+                    }
+                    finally
+                    {
+                        Release(component);
+                    }
+                }
+            }
+            finally
+            {
+                Release(components);
+            }
+
+            return list;
+        }
+        finally
+        {
+            Release(project);
+        }
+    }
+
+    private dynamic TrustedProject()
+    {
+        try
+        {
+            return Main.VBProject;
+        }
+        catch (COMException)
+        {
+            // AccessVBOM 0 fails with 0x800A03EC, which Excel also returns for other failures (docs/notes/workbook-save-open.md).
+            throw new VbaSyncException("VBA_ACCESS_NOT_TRUSTED", [],
+                "Excel does not allow programs to access the VBA project. Ask the person to turn on " +
+                "\"Trust access to the VBA project object model\" (File > Options > Trust Center > Trust Center Settings > Macro Settings), then call again.");
+        }
+    }
+
+    private static void ThrowIfLocked(dynamic project)
+    {
+        if ((int)project.Protection == ProjectLocked)
+        {
+            throw new VbaSyncException("VBA_PROJECT_LOCKED", [],
+                "The VBA project of the main workbook is protected. Ask the person to unlock it in the VBA editor, then call again.");
+        }
+    }
+
+    // The sheet or workbook module with the name, or null; Item throws for a missing name (docs/notes/test-copy.md).
+    private static dynamic? DocumentComponent(dynamic components, string name)
+    {
+        dynamic component;
+        try
+        {
+            component = components.Item(name);
+        }
+        catch (Exception e) when (e is COMException or IndexOutOfRangeException or ArgumentException)
+        {
+            return null;
+        }
+
+        if ((int)component.Type == DocumentModule)
+        {
+            return component;
+        }
+
+        Release(component);
+        return null;
     }
 
     public MacroResult RunMacro(MacroName macro, IReadOnlyList<object> args)

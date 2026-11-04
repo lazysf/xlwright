@@ -15,6 +15,7 @@
 Claude Codeの会話から、`session_start`の後に閉じた会話が残した専用のExcelを、次の会話の`session_start`が片付けて`cleanup`を返すことを確かめました（[記録](docs/notes/stage2-cleanup.md)）。
 人がエクスプローラーから開いたブックが専用のExcelに入らないことと、非表示の残ったExcelを表示要求で人へ見せられることを確かめました（[記録](docs/notes/human-open-and-show.md)）。
 AIエージェントへの手順を、開発版のプラグインのスキルにしました（[設計](docs/architecture.md#サーバーとビルドとプラグイン)）。
+人への引継ぎで、残った専用のExcelを人へ見せて終える表示要求のコマンドを作りました（[API](docs/api.md#表示要求のコマンド段階2人が承認2026-11-04)、[記録](docs/notes/human-open-and-show.md#表示要求のコマンド)）。
 
 ## ロードマップ
 

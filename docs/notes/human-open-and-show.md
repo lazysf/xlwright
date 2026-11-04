@@ -52,6 +52,17 @@ dotnet run --project spikes\leftover -- kill .xlwright\spikes\handoff\a.json
 - その後の照会で、`XLMAIN`は2つとも非表示で、`EXCEL7`は無かった。ブックを閉じた後に残ったExcelと同じ形で、ウィンドウからは接続できなかった。
 - 人がいつ閉じたかは記録していない。人の返事の時点（11:09:51）から照会を始めた。
 
+### 表示要求のコマンド
+
+支持（1回、2026-11-04）。[表示要求のコマンド](../api.md#表示要求のコマンド段階2人が承認2026-11-04)を、ビルド`2f907bb-dirty-20261104T024942Z`で確かめた。
+
+1. 別の会話で`session_start`（`.xlwright/scratch/stage1`）を呼び、その会話をアーカイブで閉じた。専用のExcel（PID 5020）が残り、所有記録は`owned`だった。
+2. Terminalのタブで`cmd /v:on /c "powershell -NoProfile -File plugins\xlwright-dev\scripts\show-excel.ps1 -App .xlwright\scratch\stage1 & echo exit=!ERRORLEVEL!"`を実行した。コマンドは5020を表示して`done`を待ち、その間、所有記録は排他で読めなかった。
+3. 人がExcelを見て、保存せずに閉じ、`done`と入力した。プロセスは残っていて、ブックのウィンドウが無かったため、コマンドが終了させ、終了コード0で終わった。所有記録は`owned`のままだった。
+4. この会話の`session_start`は、残りを見つけずに成功し（`cleanup`は無し）、所有記録は`completed`になった。`session_end`の後、`EXCEL.EXE`は0だった。
+
+- 人が閉じた後もプロセスが残ったのは、上の実験と合わせて2回中2回です。
+
 ## 後始末とGit差分
 
 - 18448は、記録と照合してから`kill`で終了させた。

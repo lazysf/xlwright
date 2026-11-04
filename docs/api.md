@@ -136,7 +136,7 @@
 - `STATE_UNKNOWN`の`data`には、`excel_ended`と`restartable`に加えて、専用のExcelを残して止まった時は`excel`（`pid`と`started_at_utc`）と人が取る手順を入れます。
 - 失敗の`data.log`に、診断の記録のパスを入れます（[失敗の返し方と記録](architecture.md#失敗の返し方と記録)）。
 - 保留中のCOM呼出しが残って、このサーバーで新しいセッションを始められない時は、`session_start`を`CONFLICT`・`detail: SERVER_UNUSABLE`で拒否し、会話を閉じて新しい会話で始めるよう`message`に書きます（[状態と結果不明](architecture.md#状態と結果不明)）。
-- 段階1には、アプリの排他と次の開始での片付けがありません（段階2で作ります）。
+- アプリの排他、所有記録、開始の順序の4の検査は、段階2で作りました。次の開始での片付けは、まだありません。残った専用のExcelが動いている時は、`LEFTOVER_EXCEL`で止まります。
 
 ### `session_start`（段階1）
 
@@ -161,6 +161,27 @@
 
 - 注釈: `ReadOnly`は偽、`Destructive`は偽、`Idempotent`は偽、`OpenWorld`は偽です。
 - `.xlsx`の主ブックでも始められます。`vba_sync`と`macro_run`は拒否します。
+
+### `session_start`に段階2で加えるもの（人が承認、2026-11-04）
+
+[開始の順序](architecture.md#開始の順序)の2〜4と、起動前の印、[片付け](architecture.md#残った専用のexcelの片付け)を加えます。引数は変えません。
+
+- 結果: 前のセッションの専用のExcelを片付けた時だけ、`cleanup`を加えます。`{"cleanup":{"excel":{"pid":12345,"started_at_utc":"…"},"ended_by":"quit"}}`。`ended_by`は、Quitで終わった時に`quit`、同一性を照合して終了させた時に`terminate`です。AIエージェントが、人の画面から消えたExcelを報告できるようにするためです。
+- 止まって知らせる失敗の`data`には、`record`（所有記録のパス。リポジトリからの相対パスで、区切りは`/`）を入れます。残ったExcelがある時は、`excel`（`pid`と`started_at_utc`）も入れます。人が取る手順は、[人への引継ぎ](architecture.md#人への引継ぎ)のとおり`message`に書きます。
+- 失敗:
+
+| `code` | `detail` | 場合 |
+| --- | --- | --- |
+| `CONFLICT` | `SESSION_IN_USE` | アプリの排他を取れない。別の会話がそのアプリのセッションを持っている。その会話で`session_end`を呼ぶか、その会話を閉じるよう`message`に書く |
+| `CONFLICT` | `RECORD_INVALID` | 所有記録が空、形式が不正、または読めない。`data.record`を入れる |
+| `CONFLICT` | `LEFTOVER_EXCEL` | 残った専用のExcelを確かめられず、触らずに止まった。`data.record`と`data.excel`を入れる |
+| `CONFLICT` | `UNKNOWN_EXCEL` | 起動前の印だけが残り、その後にCOMから起動されたExcelがある。`data.record`と、`data.processes`（`pid`と`started_at_utc`の配列）を入れる |
+| `CONFLICT` | `EXIT_NOT_CONFIRMED` | 残った専用のExcelを終えようとしたが、プロセスの終了を確かめられなかった。`data.record`と`data.excel`を入れる |
+| `CONFLICT` | `WORKBOOK_IN_USE` | 主ブックのファイルを書込みのアクセスで開けない（共有違反）。ほかのプログラムが編集できる状態で開いている。閉じるよう`message`に書く |
+| `CONFLICT` | `WORKBOOK_FILE_READ_ONLY` | 主ブックのファイルの属性が読み取り専用 |
+| `STATE_UNKNOWN` | `TIMEOUT` | 片付けの照合を終える前に開始の期限が切れた時は、残ったExcelに触らず、`excel_ended`は偽、`data.record`と`data.excel`を入れる |
+
+- どの失敗でも、このセッションの専用のExcelはまだ起動していません。`STATE_UNKNOWN`の`TIMEOUT`のほかは、`session`は`closed`のままで、`data.excel_ended`は付けません。
 
 ### `session_status`（段階1）
 

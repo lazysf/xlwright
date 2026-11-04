@@ -162,7 +162,7 @@ internal sealed class FakeProcess : IOwnedProcess
 {
     private readonly ManualResetEventSlim _exited = new();
 
-    public ProcessFacts Facts { get; set; } = new(4242, "EXCEL.EXE", DateTime.MaxValue, "\"EXCEL.EXE\" /automation -Embedding");
+    public ProcessFacts Facts { get; set; } = new(4242, "EXCEL.EXE", DateTime.SpecifyKind(DateTime.MaxValue, DateTimeKind.Utc), "\"EXCEL.EXE\" /automation -Embedding");
 
     public bool TerminateEnds { get; set; } = true;
 
@@ -196,5 +196,29 @@ internal sealed class FakeProcess : IOwnedProcess
 
     public void Dispose()
     {
+    }
+}
+
+// Stands in for the OS process queries: Running holds the recorded processes that still run, Unchecked those
+// the OS cannot tell about, and Automation the Excel processes started from COM after the mark.
+internal sealed class FakeProcessQuery : IProcessQuery
+{
+    public List<RecordedProcess> Running { get; } = [];
+
+    public List<ProcessFacts> Automation { get; } = [];
+
+    public DateTime? AutomationSince { get; private set; }
+
+    public List<RecordedProcess> Unchecked { get; } = [];
+
+    public ProcessLookup Find(RecordedProcess process) =>
+        Running.Contains(process)
+            ? new ProcessLookup(ProcessPresence.Running, new FakeProcess { Facts = new ProcessFacts(process.Pid, process.Name + ".EXE", process.StartedAtUtc, null) })
+            : new ProcessLookup(Unchecked.Contains(process) ? ProcessPresence.Unknown : ProcessPresence.Gone);
+
+    public IReadOnlyList<ProcessFacts> AutomationExcelsSince(DateTime utc)
+    {
+        AutomationSince = utc;
+        return Automation;
     }
 }

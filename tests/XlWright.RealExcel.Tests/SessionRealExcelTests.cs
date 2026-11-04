@@ -253,19 +253,49 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         AssertNothingLeft(pid);
     }
 
-    [Fact]
-    public async Task EndsTheExcelWhenTheWorkbookOpensReadOnly()
+    [Theory]
+    [InlineData("WORKBOOK_FILE_READ_ONLY")]
+    [InlineData("WORKBOOK_IN_USE")]
+    public async Task StopsBeforeStartingExcelWhenTheWorkbookCannotBeEdited(string detail)
     {
-        File.SetAttributes(Workbook, FileAttributes.ReadOnly);
+        if (detail == "WORKBOOK_FILE_READ_ONLY")
+        {
+            File.SetAttributes(Workbook, FileAttributes.ReadOnly);
+        }
+
+        using var holder = detail == "WORKBOOK_IN_USE"
+            ? new FileStream(Workbook, FileMode.Open, FileAccess.ReadWrite, FileShare.Read)
+            : null;
 
         var start = await Call("session_start", new() { ["app"] = "apps/sales" });
 
         Assert.True(start.IsError);
         var body = Body(start);
         Assert.Equal("CONFLICT", body.GetProperty("error").GetProperty("code").GetString());
-        Assert.Equal("WORKBOOK_READ_ONLY", body.GetProperty("error").GetProperty("detail").GetString());
+        Assert.Equal(detail, body.GetProperty("error").GetProperty("detail").GetString());
         Assert.Equal("closed", body.GetProperty("session").GetProperty("state").GetString());
         AssertNothingLeft(null);
+    }
+
+    [Fact]
+    public async Task LocksTheAppAndCompletesTheRecord()
+    {
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/sales" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+        await using (var second = await ServerProcess.ConnectAsync(_repo.Root, TestContext.Current.CancellationToken, noExcel: false))
+        {
+            var other = await second.CallToolAsync("session_start", new Dictionary<string, object?> { ["app"] = "apps/sales" },
+                cancellationToken: TestContext.Current.CancellationToken);
+
+            Assert.True(other.IsError);
+            Assert.Equal("SESSION_IN_USE", Body(other).GetProperty("error").GetProperty("detail").GetString());
+        }
+
+        Success(await Call("session_end", new() { ["save"] = false }));
+
+        var record = JsonNode.Parse(File.ReadAllText(Path.Combine(_repo.Root, "apps", "sales", ".xlwright", "session.json")))!;
+        Assert.Equal("completed", record["state"]!.GetValue<string>());
+        AssertNothingLeft(pid);
     }
 
     // The Excel processes from before the test are unchanged, and no Excel started by the test is still running.

@@ -12,13 +12,20 @@ internal sealed class WindowsProcess : IOwnedProcess
 {
     private readonly SafeProcessHandle _handle;
 
-    private WindowsProcess(SafeProcessHandle handle, ProcessFacts facts)
+    private WindowsProcess(SafeProcessHandle handle, ProcessFacts facts, int openError = 0)
     {
         _handle = handle;
         Facts = facts;
+        OpenError = openError;
     }
 
     public ProcessFacts Facts { get; }
+
+    /// <summary>The Win32 error of OpenProcess when the handle is invalid; 0 when it opened.</summary>
+    public int OpenError { get; }
+
+    /// <summary>The Win32 error OpenProcess returns when no process has the PID.</summary>
+    public const int NoSuchProcess = 87;
 
     /// <summary>
     /// Opens the process. If it cannot be opened or read, the facts carry no image name or command line,
@@ -29,7 +36,7 @@ internal sealed class WindowsProcess : IOwnedProcess
         var handle = NativeMethods.OpenProcess(NativeMethods.ProcessAccess, false, pid);
         if (handle.IsInvalid)
         {
-            return new WindowsProcess(handle, new ProcessFacts(pid, "", UnknownTime, null));
+            return new WindowsProcess(handle, new ProcessFacts(pid, "", UnknownTime, null), Marshal.GetLastPInvokeError());
         }
 
         var created = NativeMethods.GetProcessTimes(handle, out var creation, out _, out _, out _)

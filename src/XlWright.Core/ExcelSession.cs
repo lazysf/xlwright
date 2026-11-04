@@ -11,10 +11,10 @@ public sealed record SessionSnapshot(
 public sealed record SessionOutcome(JsonObject? Result, ToolFailure? Failure, SessionSnapshot Session);
 
 /// <summary>
-/// One session: start (docs/architecture.md "開始の順序" 1, 5, 6 and "所有の確定"), status, save, and end ("終了").
+/// One session: start (docs/architecture.md "開始の順序" 1-6, "所有記録の形式", and "所有の確定"), status, save, and end ("終了").
 /// Timeouts end only the Excel whose ownership this session confirmed ("状態と結果不明").
 /// </summary>
-public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeouts) : IDisposable
+public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processes, SessionTimeouts timeouts) : IDisposable
 {
     // docs/notes/dialog-probe.md: every dialog was found at the first 250 ms check.
     private static readonly TimeSpan DialogInterval = TimeSpan.FromMilliseconds(250);
@@ -25,7 +25,10 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
     private bool _unusable;
     private Active? _active;
 
-    private sealed record Active(AppFolder App, StaWorker Worker, IExcel Excel, IOwnedProcess Process);
+    // App locks kept while a call is pending; holding them here keeps the finalizer from closing the file.
+    private readonly List<AppLock> _keptLocks = [];
+
+    private sealed record Active(AppFolder App, StaWorker Worker, IExcel Excel, IOwnedProcess Process, AppLock Lock, DateTime Marked);
 
     public SessionSnapshot Status()
     {
@@ -248,6 +251,8 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
         lock (_gate)
         {
             _active?.Worker.Dispose();
+            _active?.Lock.Dispose();
+            _keptLocks.ForEach(kept => kept.Dispose());
         }
     }
 
@@ -289,17 +294,55 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
         }
     }
 
+    // docs/architecture.md "開始の順序": 2 the app lock, 3 the record, 4 the sharing check, 5 the mark and the start.
     private async Task<(JsonObject?, ToolFailure?)> StartCore(AppFolder app)
     {
         var deadline = Stopwatch.StartNew();
+        AppLock? appLock;
+        try
+        {
+            appLock = AppLock.Take(app);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return RecordInvalid(app, $"The ownership record could not be opened: {e.Message}");
+        }
+
+        if (appLock is null)
+        {
+            return Fail(ToolFailure.Conflict, "SESSION_IN_USE",
+                $"Another conversation has a session for {app.RelativePath}. End it there with session_end, or close that conversation, then start again.");
+        }
+
+        DateTime marked;
+        try
+        {
+            var ready = CheckRecord(app, appLock) ?? CheckWorkbookFile(app);
+            if (ready is not null)
+            {
+                appLock.Dispose();
+                return ready.Value;
+            }
+
+            RemoveResults(app);
+            marked = DateTime.UtcNow;
+            appLock.Write(new OwnershipRecord(OwnershipRecord.Starting, marked, app.WorkbookName, null));
+        }
+        catch
+        {
+            // Nothing is started yet, so the app is freed now instead of by the finalizer.
+            appLock.Dispose();
+            throw;
+        }
+
         var worker = new StaWorker();
         var requestedUtc = DateTime.UtcNow;
-
         var launch = worker.Run(launcher.Launch);
         if (!await Completes(launch, timeouts.Start))
         {
-            // Nothing is owned yet, so the Excel is not touched; the call is still pending on the STA.
+            // Nothing is owned yet, so the Excel is not touched; the call is still pending on the STA, so the app stays locked.
             MarkUnusable();
+            KeepLock(appLock);
             return Unknown("TIMEOUT", excelEnded: false, restartable: false, null,
                 "Starting Excel did not finish within the time limit. The Excel it may have started is left untouched. Close this conversation and start again in a new one.");
         }
@@ -307,6 +350,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
         if (launch.IsFaulted)
         {
             worker.Dispose();
+            appLock.Dispose();
             return Fail(ToolFailure.ExcelError, null, $"Excel did not start: {launch.Exception!.InnerException!.Message}");
         }
 
@@ -315,11 +359,15 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
         if (problem is not null)
         {
             // Without a confirmed owner there is no ground to end that Excel (docs/architecture.md "所有の確定").
+            // The starting mark stays, so the next start stops at an Excel started after it.
+            appLock.Dispose();
             return Unknown("OWNERSHIP_NOT_CONFIRMED", excelEnded: false, restartable: false, process.Facts,
                 $"The started Excel could not be confirmed as this session's ({problem}), so it was left untouched. Ask the person to check the process in Task Manager.");
         }
 
-        var active = new Active(app, worker, excel, process);
+        appLock.Write(new OwnershipRecord(OwnershipRecord.Owned, marked, app.WorkbookName,
+            new RecordedProcess(process.Facts.Pid, process.Facts.CreatedUtc, Path.GetFileNameWithoutExtension(process.Facts.ImageName))));
+        var active = new Active(app, worker, excel, process, appLock, marked);
         var open = worker.Run(() =>
         {
             excel.TakeControl();
@@ -382,7 +430,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
                 MarkUnusable();
             }
 
-            Close(active);
+            Close(active, ended: false);
             var data = Handover(active.Process.Facts);
             data["saved"] = save;
             var why = foreign is null
@@ -430,7 +478,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
             ended = active.Process.WaitForExit(timeouts.TerminateExit);
         }
 
-        Close(active);
+        Close(active, ended);
         if (ended)
         {
             return null;
@@ -454,7 +502,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
             MarkUnusable();
         }
 
-        Close(active);
+        Close(active, ended);
         var lost = " The changes since the last save are lost.";
         return ended && returned
             ? Unknown(detail, excelEnded: true, restartable: true, null, what + " The dedicated Excel was ended." + lost + " You can start a new session.", extra)
@@ -463,7 +511,9 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
                 " Close this conversation and start the session in a new one.", extra);
     }
 
-    private void Close(Active active)
+    // The record is completed only when the OS confirmed the exit (docs/architecture.md "完了にする条件"); otherwise it
+    // stays owned for the next start. The app stays locked while a call is pending ("状態と結果不明").
+    private void Close(Active active, bool ended)
     {
         lock (_gate)
         {
@@ -473,13 +523,140 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
             }
         }
 
-        if (!_unusable)
+        // Kept before the write, so a failed write does not leave the lock to the finalizer.
+        if (_unusable)
         {
-            active.Worker.Dispose();
+            KeepLock(active.Lock);
         }
 
-        active.Process.Dispose();
+        try
+        {
+            if (ended)
+            {
+                active.Lock.Write(new OwnershipRecord(OwnershipRecord.Completed, active.Marked, active.App.WorkbookName, null));
+            }
+        }
+        finally
+        {
+            if (!_unusable)
+            {
+                active.Worker.Dispose();
+                active.Lock.Dispose();
+            }
+
+            active.Process.Dispose();
+        }
     }
+
+    private void KeepLock(AppLock appLock)
+    {
+        lock (_gate)
+        {
+            _keptLocks.Add(appLock);
+        }
+    }
+
+    // docs/architecture.md "所有記録の形式" and "完了にする条件": a first start completes the new record; a starting
+    // mark completes when no Excel started after it; an owned record completes when its Excel has ended.
+    // A leftover that still runs stops the start (its cleanup comes with "残った専用のExcelの片付け").
+    private (JsonObject?, ToolFailure?)? CheckRecord(AppFolder app, AppLock appLock)
+    {
+        var completed = new OwnershipRecord(OwnershipRecord.Completed, DateTime.UtcNow, app.WorkbookName, null);
+        if (appLock.Created)
+        {
+            appLock.Write(completed);
+            return null;
+        }
+
+        OwnershipRecord? record;
+        try
+        {
+            record = OwnershipRecord.Parse(appLock.Read());
+        }
+        catch (Exception e) when (e is IOException or System.Text.DecoderFallbackException)
+        {
+            return RecordInvalid(app, $"The ownership record could not be read: {e.Message}");
+        }
+
+        switch (record?.State)
+        {
+            case null:
+                return RecordInvalid(app, "The ownership record is empty or not in the expected form.");
+            case OwnershipRecord.Starting:
+                var started = processes.AutomationExcelsSince(record.MarkedAtUtc);
+                if (started.Count > 0)
+                {
+                    var data = RecordData(app);
+                    data["processes"] = new JsonArray(started.Select(facts => (JsonNode)ExcelJson(facts)).ToArray());
+                    return Fail(ToolFailure.Conflict, "UNKNOWN_EXCEL",
+                        $"An earlier start of {app.RelativePath} stopped while starting Excel, and an Excel started from COM since then is running " +
+                        $"(PID {string.Join(", ", started.Select(facts => facts.Pid))}). Ask the person to check it in Task Manager and close it, then start again.",
+                        data);
+                }
+
+                break;
+            case OwnershipRecord.Owned:
+                var lookup = processes.Find(record.Process!);
+                lookup.Process?.Dispose();
+                if (lookup.Presence != ProcessPresence.Gone)
+                {
+                    var data = RecordData(app);
+                    data["excel"] = new JsonObject
+                    {
+                        ["pid"] = record.Process!.Pid,
+                        ["started_at_utc"] = record.Process.StartedAtUtc.ToString("O"),
+                    };
+                    var state = lookup.Presence == ProcessPresence.Running ? "is still running" : "could not be checked";
+                    return Fail(ToolFailure.Conflict, "LEFTOVER_EXCEL",
+                        $"The dedicated Excel of an earlier session (PID {record.Process.Pid}) {state} and was left untouched. " +
+                        "Ask the person to check it in Task Manager, save what they need, and close it, then start again.",
+                        data);
+                }
+
+                break;
+        }
+
+        appLock.Write(completed);
+        return null;
+    }
+
+    // docs/architecture.md "開始の順序" 4: open the file for writing for a moment, letting others read and write.
+    private static (JsonObject?, ToolFailure?)? CheckWorkbookFile(AppFolder app)
+    {
+        if (File.GetAttributes(app.WorkbookPath).HasFlag(FileAttributes.ReadOnly))
+        {
+            return Fail(ToolFailure.Conflict, "WORKBOOK_FILE_READ_ONLY",
+                $"{app.WorkbookName} has the read-only file attribute. Ask the person to clear it, then start again.");
+        }
+
+        try
+        {
+            using var probe = new FileStream(app.WorkbookPath, FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
+            return null;
+        }
+        catch (IOException e) when (e.HResult == unchecked((int)0x80070020))
+        {
+            return Fail(ToolFailure.Conflict, "WORKBOOK_IN_USE",
+                $"{app.WorkbookName} is open for editing in another program, such as Excel. Ask the person to close it there, then start again.");
+        }
+    }
+
+    // The results of the last session go once no leftover Excel can still be writing them ("開始の順序" 3).
+    private static void RemoveResults(AppFolder app)
+    {
+        var results = Path.Combine(app.FullPath, ".xlwright", "results");
+        if (Directory.Exists(results))
+        {
+            Directory.Delete(results, recursive: true);
+        }
+    }
+
+    private static JsonObject RecordData(AppFolder app) => new() { ["record"] = AppLock.RelativePath(app) };
+
+    private static (JsonObject?, ToolFailure?) RecordInvalid(AppFolder app, string why) =>
+        Fail(ToolFailure.Conflict, "RECORD_INVALID",
+            $"{why} Ask the person to check {AppLock.RelativePath(app)}; when it is empty, delete it, then start again.",
+            RecordData(app));
 
     private void MarkUnusable()
     {

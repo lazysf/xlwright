@@ -24,7 +24,7 @@ public sealed class ExcelSessionTests : IDisposable
     {
         _repo.AddApp("apps/sales", "Sales.xlsm");
         _app = AppFolder.Resolve(_repo.Root, "apps/sales").Folder!;
-        _session = new ExcelSession(_launcher, Short);
+        _session = new ExcelSession(_launcher, new FakeProcessQuery(), Short);
     }
 
     public void Dispose()

@@ -9,6 +9,31 @@ public interface IExcelLauncher
     LaunchedExcel Launch();
 }
 
+/// <summary>
+/// Reads OS processes for the ownership record (docs/architecture.md "完了にする条件"). It never touches COM.
+/// </summary>
+public interface IProcessQuery
+{
+    /// <summary>
+    /// Whether the recorded process still runs. Gone only when the OS says so: no process has the PID, its creation
+    /// time differs (a reused PID), or it has exited. A process that cannot be read is Unknown, never Gone.
+    /// </summary>
+    ProcessLookup Find(RecordedProcess process);
+
+    /// <summary>The EXCEL processes created after the time whose command line contains /automation or cannot be read.</summary>
+    IReadOnlyList<ProcessFacts> AutomationExcelsSince(DateTime utc);
+}
+
+public enum ProcessPresence
+{
+    Gone,
+    Running,
+    Unknown,
+}
+
+/// <summary>What the OS says about a recorded process; Process is the one held through a handle when it runs.</summary>
+public sealed record ProcessLookup(ProcessPresence Presence, IOwnedProcess? Process = null);
+
 /// <summary>The Excel that one session started, and the process that Hwnd points to.</summary>
 public sealed record LaunchedExcel(IExcel Excel, IOwnedProcess Process);
 

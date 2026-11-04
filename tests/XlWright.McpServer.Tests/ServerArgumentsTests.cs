@@ -25,4 +25,37 @@ public sealed class ServerArgumentsTests
         Assert.Equal(2, exitCode);
         Assert.Contains(named, standardError);
     }
+
+    // docs/api.md "表示要求のコマンド".
+    public static TheoryData<string[], string> InvalidShowArguments => new()
+    {
+        { ["show"], "--project" },
+        { ["show", "--project", Directory.GetCurrentDirectory()], "--app" },
+        { ["show", "--project", Directory.GetCurrentDirectory(), "--app"], "--app" },
+        { ["show", "--project", Directory.GetCurrentDirectory(), "--app", "apps/sales", "--no-excel"], "--no-excel" },
+        { ["show", "--project", Directory.GetCurrentDirectory(), "--app", Path.GetTempPath()], "PATH_NOT_ALLOWED" },
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidShowArguments))]
+    public async Task ShowExitsWithUsageErrorOnInvalidArguments(string[] arguments, string named)
+    {
+        var (exitCode, standardError) = await ServerProcess.RunAsync(arguments, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains(named, standardError);
+    }
+
+    [Fact]
+    public async Task ShowEndsWithoutCreatingARecordWhenThereIsNone()
+    {
+        using var repo = new TempRepository();
+        repo.AddApp("apps/sales", "Sales.xlsm");
+
+        var (exitCode, _) = await ServerProcess.RunAsync(["show", "--project", repo.Root, "--app", "apps/sales"],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, exitCode);
+        Assert.False(File.Exists(Path.Combine(repo.Root, "apps", "sales", ".xlwright", "session.json")));
+    }
 }

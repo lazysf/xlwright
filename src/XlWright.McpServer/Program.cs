@@ -5,6 +5,20 @@ using XlWright.Core;
 using XlWright.Core.Com;
 using XlWright.McpServer;
 
+// The show command for the person runs instead of the server (docs/api.md "表示要求のコマンド").
+if (args is ["show", .. var showArgs])
+{
+    var app = ShowOptions.Parse(showArgs, out var showError);
+    if (app is null)
+    {
+        Console.Error.WriteLine(showError);
+        Console.Error.WriteLine(ShowOptions.Usage);
+        return 2;
+    }
+
+    return new ExcelShow(new WindowsProcessQuery(), new WorkbookWindows(), Console.In, Console.Out, SessionTimeouts.Default.TerminateExit).Run(app);
+}
+
 var options = ServerOptions.Parse(args, out var error);
 if (options is null)
 {

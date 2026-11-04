@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace XlWright.Core.Com;
 
@@ -13,7 +12,7 @@ public sealed class WindowConnector : IExcelConnector
 
     public LeftoverWindow Connect(int pid)
     {
-        var books = WorkbookWindows(pid);
+        var books = ExcelWindows.Of(pid).SelectMany(window => window.Books).ToList();
         if (books.Count == 0)
         {
             return new LeftoverWindow.NoWorkbookWindow();
@@ -56,36 +55,5 @@ public sealed class WindowConnector : IExcelConnector
         }
 
         return new LeftoverWindow.NotReachable("no workbook window gave an Excel of the process");
-    }
-
-    private static List<IntPtr> WorkbookWindows(int pid)
-    {
-        var books = new List<IntPtr>();
-        NativeMethods.EnumWindows((hwnd, parameter) =>
-        {
-            _ = NativeMethods.GetWindowThreadProcessId(hwnd, out var owner);
-            if (owner == pid && ClassOf(hwnd) == "XLMAIN")
-            {
-                NativeMethods.EnumChildWindows(hwnd, (child, childParameter) =>
-                {
-                    if (ClassOf(child) == "EXCEL7")
-                    {
-                        books.Add(child);
-                    }
-
-                    return true;
-                }, IntPtr.Zero);
-            }
-
-            return true;
-        }, IntPtr.Zero);
-        return books;
-    }
-
-    private static string ClassOf(IntPtr hwnd)
-    {
-        var name = new StringBuilder(256);
-        _ = NativeMethods.GetClassName(hwnd, name, name.Capacity);
-        return name.ToString();
     }
 }

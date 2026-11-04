@@ -51,6 +51,29 @@ public sealed class AppLock : IDisposable
         }
     }
 
+    /// <summary>
+    /// Takes the lock on the record only when it exists, never creating it (docs/api.md "表示要求のコマンド").
+    /// Returns null when there is no record (<paramref name="missing"/> is true) or another server holds it.
+    /// </summary>
+    public static AppLock? TakeExisting(AppFolder app, out bool missing)
+    {
+        var path = Path.Combine(app.FullPath, ".xlwright", "session.json");
+        missing = false;
+        try
+        {
+            return new AppLock(new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None), created: false);
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            missing = true;
+            return null;
+        }
+        catch (IOException e) when (e.HResult == SharingViolation)
+        {
+            return null;
+        }
+    }
+
     /// <summary>The whole file as UTF-8 without a BOM. Throws when it cannot be read or decoded.</summary>
     public string Read()
     {

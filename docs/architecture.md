@@ -283,7 +283,8 @@ apps/sales/                  アプリのフォルダ（リポジトリの中。
 - 反映のために変換したファイルは、`<アプリ>/.xlwright/sync/<id>/`に書き、取り込んだ後に消します。
 - 確認済み（段階1、[記録](notes/workbook-save-open.md)）: `AccessVBOM`が0の時、`Workbook.VBProject`の取得は`0x800A03EC`で失敗した。この値はExcelの一般的な失敗の値のため、値ではなく、`VBProject`の取得が失敗したことを、`AccessVBOM`が無効として拒否する`detail`に対応付けます。
 - 既存のブックから取り出す時は、アプリのフォルダへ写したブックを`AutomationSecurity=ForceDisable`で開きます。開く前に、ブックのパッケージに`xl/macrosheets/`があれば拒否します。`ForceDisable`がExcel 4.0のマクロを止めるかを、確かめていないためです。
-- 未確認（段階4）: `ForceDisable`で開いたブックで、イベントとUDFが動かず、VBAを取り出せるか。成立しない時は、止めて人と相談します。
+- 確認済み（段階4、[記録](notes/vba-extract.md)）: `ForceDisable`で開いたブックでは、`EnableEvents`が真でも、開く時・再計算・セルの書込みでイベントとUDFが動かず、`Application.Run`は失敗した。開いた後に`AutomationSecurity`を`Low`に戻しても、そのブックのマクロは無効のままだった。`VBProject`に触れられ、標準・クラス・シート・ブックのモジュールのコードを`CodeModule.Lines`で、参照設定を`References`で読めた。再計算でUDFのセルは`#NAME?`になるため、写しは保存せずに閉じます。
+- 確認済み（段階4、[記録](notes/vba-extract.md#excel-40のマクロシートの見分け方)）: Excel 4.0のマクロシートを持つ`.xlsm`のパッケージには`xl/macrosheets/`があり、VBAだけのブックには無かった。
 - 確認済み（段階3、[記録](notes/test-copy.md#シートとブックのモジュールの書き換え)）: シートとブックのモジュールを`VBComponents.Item(<CodeName>)`で見つけ、`DeleteLines`と`AddFromString`でコードを書き換えられた。保存して開き直した後も残り、イベントが動いた。シート名を変えても`CodeName`は変わらなかった（[Microsoftの説明](https://learn.microsoft.com/en-us/office/vba/api/excel.worksheet.codename)）。無い名前の`Item`は例外になった。
 - `Workbooks.Add`で作ったばかりのブックでは、`VBProject`に触れる前の`Worksheet.CodeName`は空でした。そのため、CodeNameは`Worksheet.CodeName`でなく、`VBComponents`の名前で照合します。
 

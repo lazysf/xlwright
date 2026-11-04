@@ -3,9 +3,9 @@
 // process without releasing COM, as if the server were killed. watch and probe act only on the recorded Excel,
 // after matching its PID and creation time; they never touch another Excel.
 //
-// Usage: dotnet run --project spikes\leftover -- leave <state.json> [<workbook> [hidden|protected]]
+// Usage: dotnet run --project spikes\leftover -- leave <state.json> [<workbook> [hidden|protected|busy]]
 //        dotnet run --project spikes\leftover -- watch <state.json> <seconds>
-//        dotnet run --project spikes\leftover -- probe <state.json>
+//        dotnet run --project spikes\leftover -- probe <state.json> [<seconds>]
 //        dotnet run --project spikes\leftover -- kill <state.json>
 
 using System.Diagnostics;
@@ -23,10 +23,11 @@ internal static class Program
             {
                 ["leave", var state] => Leave(state, null, "open"),
                 ["leave", var state, var workbook] => Leave(state, Path.GetFullPath(workbook), "open"),
-                ["leave", var state, var workbook, var form] when form is "hidden" or "protected" =>
+                ["leave", var state, var workbook, var form] when form is "hidden" or "protected" or "busy" =>
                     Leave(state, Path.GetFullPath(workbook), form),
                 ["watch", var state, var seconds] => Watch(Read(state), int.Parse(seconds)),
-                ["probe", var state] => Probe(Read(state)),
+                ["probe", var state] => Probe(Read(state), 90),
+                ["probe", var state, var seconds] => Probe(Read(state), int.Parse(seconds)),
                 ["kill", var state] => Kill(Read(state)),
                 _ => Usage(),
             };
@@ -70,6 +71,7 @@ internal static class Program
                 else if (workbook is not null)
                 {
                     dynamic book = app.Workbooks.Open(workbook);
+                    Log($"opened {Path.GetFileName(workbook)}: ReadOnly {(bool)book.ReadOnly}");
                     if (form == "hidden")
                     {
                         book.Windows[1].Visible = false;
@@ -78,6 +80,13 @@ internal static class Program
 
                 File.WriteAllText(state, JsonSerializer.Serialize(new Recorded((int)pid, created.Ticks)));
                 Log($"owned PID {pid} created {created:O}; workbook {(workbook is null ? "none" : Path.GetFileName(workbook))} ({form}); Workbooks {(int)app.Workbooks.Count}, ProtectedViewWindows {(int)app.ProtectedViewWindows.Count}; killing this process without releasing COM");
+                if (form == "busy")
+                {
+                    // The macro never returns, so another thread kills this process while the call is pending.
+                    new Thread(() => { Thread.Sleep(3_000); Process.GetCurrentProcess().Kill(); }) { IsBackground = true }.Start();
+                    app.Run($"'{Path.GetFileName(workbook)}'!Calc.Forever");
+                }
+
                 Process.GetCurrentProcess().Kill();
             }
             catch (Exception e)
@@ -115,7 +124,7 @@ internal static class Program
         return 1;
     }
 
-    private static int Probe(Recorded recorded)
+    private static int Probe(Recorded recorded, int seconds)
     {
         if (!Matches(recorded))
         {
@@ -128,9 +137,9 @@ internal static class Program
         foreach (var (kind, handle) in mains.Select(h => ("XLMAIN", h)).Concat(books.Select(h => ("EXCEL7", h))))
         {
             var connected = false;
-            if (!OnSta(() => connected = TryConnect(kind, handle, recorded), TimeSpan.FromSeconds(90)))
+            if (!OnSta(() => connected = TryConnect(kind, handle, recorded), TimeSpan.FromSeconds(seconds)))
             {
-                Log($"{kind}: the call did not return within 90 s");
+                Log($"{kind}: the call did not return within {seconds} s; the thread is left behind");
             }
 
             if (connected)

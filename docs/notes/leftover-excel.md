@@ -56,13 +56,34 @@ dotnet run --project spikes\leftover -- leave .xlwright\spikes\leftover\protecte
 - `hidden`は、ブックを開いてから`Windows(1).Visible`を偽にする。`EXCEL7`が1つあり、そこから接続できた。`Workbooks`にブックが返った。閉じてQuitした後も、プロセスは75秒で終わらなかった。
 - `protected`は、`ProtectedViewWindows.Open`で開く。`Workbooks`は0、`ProtectedViewWindows`は1だった。`EXCEL7`が2つあった。1つ目から得たオブジェクトには`Application`が無く、2つ目から得た`Application.Hwnd`は0だった。実験は接続を止め、Excelに触れなかった。
 
+### 応答しない残ったExcelへの照会
+
+支持（1回）。期限を付けた使い捨てのSTAで、照会を10秒で見切れた。
+
+```powershell
+dotnet run --project spikes\leftover -- leave .xlwright\spikes\leftover\busy.json .xlwright\spikes\leftover\Leftover.xlsm busy
+dotnet run --project spikes\leftover -- probe .xlwright\spikes\leftover\busy.json 10
+```
+
+- `busy`は、ブックを開いた後に`Application.Run`で`Calc.Forever`（中身の無い`Do`〜`Loop`）を呼び、3秒後に別のスレッドから自分のプロセスを強制終了する。
+- `probe`は、ウィンドウごとに使い捨てのSTAで`AccessibleObjectFromWindow`を呼び、10秒で見切る。`XLMAIN`の2つと`EXCEL7`の1つは、どれも10秒では戻らなかった。
+- 見切った呼出しのうち2つは、後から`0x80004005`を返した。`XLMAIN`は30,023 ms、`EXCEL7`は10,008 msだった。
+
+### 強制終了の後に残るもの
+
+支持（2回）。ブックを開いた専用のExcelを強制終了した後、`~$Leftover.xlsm`は残らなかった。
+
+- 1回は、上の`busy`のExcel。実行中は`~$Leftover.xlsm`があり、`kill`の後に無くなった。
+- 1回は、開き直したExcel（`reopen.json`）。閉じてQuitした後も残ったため、`kill`で終了させた。
+- 開き直すと、`Workbooks.Open`は約2秒で戻り、`ReadOnly`は偽だった。
+
 ## 後始末とGit差分
 
-- 残った4つのExcel（PID 11096、18344、12392、8632）は、記録と照合してから`kill`で終了させた。
+- 残った6つのExcel（PID 11096、18344、12392、8632、7124、3484）は、記録と照合してから`kill`で終了させた。
 - `EXCEL.EXE`は、実験の前と後で0だった。
 - 実験の後の`git status`は、TODO.mdの周期の追記と、`spikes/leftover/`の追加だけだった。
 
 ## 未確認
 
-- 応答しない残ったExcelへの照会を、時間で打ち切れるか（設計の未確認の4つ目）。実施していない。
+- 変更して自動回復の記録が作られた後に強制終了した主ブックを、次に開く時の影響。今回の試行は、どれもブックを変更していない。
 - Quitの後もプロセスが残る理由。強制終了したプロセスが持っていた参照が残っていると見られるが、確かめていない。

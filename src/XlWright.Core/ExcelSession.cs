@@ -216,7 +216,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
     {
         var (json, typeName) = MacroCall.ReturnValue(value);
         var result = Returned(macro, json, typeName, time, sync);
-        if (value is not string text || JsonValue.Create(text).ToJsonString().Length <= MacroCall.MaxReturnCharacters)
+        if (value is not string text || JsonValue.Create(text).ToJsonString(JsonText.Options).Length <= MacroCall.MaxReturnCharacters)
         {
             return result;
         }
@@ -224,7 +224,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, SessionTimeouts timeou
         var id = Guid.NewGuid().ToString("N");
         var folder = Path.Combine(app.FullPath, ".xlwright", "results");
         Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, id + ".json"), new JsonObject { ["macro"] = macro.ToString(), ["return"] = text }.ToJsonString());
+        File.WriteAllText(Path.Combine(folder, id + ".json"), new JsonObject { ["macro"] = macro.ToString(), ["return"] = text }.ToJsonString(JsonText.Options));
         var summary = Returned(macro, JsonValue.Create(text[..MacroCall.SummaryCharacters]), null, time, sync);
         summary["result_file"] = $"{app.RelativePath}/.xlwright/results/{id}.json";
         return summary;

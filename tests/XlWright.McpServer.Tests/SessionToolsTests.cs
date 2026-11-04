@@ -104,6 +104,15 @@ public sealed class SessionToolsTests : IAsyncLifetime
         Assert.Equal(["A.xlsm", "B.xlsx"], names);
     }
 
+    [Fact]
+    public async Task WritesNonAsciiTextWithoutEscaping()
+    {
+        var result = await Call("session_start", new() { ["app"] = "apps/日本語" });
+
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content)).Text;
+        Assert.Contains("apps/日本語", text);
+    }
+
     public static TheoryData<string, Dictionary<string, object?>> InvalidArguments => new()
     {
         { "session_start", new() },

@@ -120,7 +120,9 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
             ["formulas"] = new[] { new[] { "=A1*2", "=1/0", "=NA()" } },
         }));
 
-        var values = Success(await Call("range_read", new() { ["sheet"] = "Sheet1", ["range"] = "A1:D2" }));
+        var read = await Call("range_read", new() { ["sheet"] = "Sheet1", ["range"] = "A1:D2" });
+        Assert.Contains("日本語", Assert.IsType<TextContentBlock>(Assert.Single(read.Content)).Text);
+        var values = Success(read);
         Assert.True(JsonNode.DeepEquals(
             JsonNode.Parse("""[[1.5,"日本語",true,null],[3,{"error":"#DIV/0!"},{"error":"#N/A"},null]]"""),
             JsonNode.Parse(values.GetProperty("values").GetRawText())), values.GetProperty("values").GetRawText());

@@ -17,7 +17,7 @@ internal static class ToolResults
     };
 
     public static CallToolResult Success(JsonObject structured) =>
-        Success(JsonSerializer.SerializeToElement(structured));
+        Success(JsonSerializer.SerializeToElement(structured, JsonText.Options));
 
     // Success adds "session" to the result fields; failure reports the session after the operation.
     public static CallToolResult From(SessionOutcome outcome)
@@ -61,7 +61,7 @@ internal static class ToolResults
         return new CallToolResult
         {
             IsError = true,
-            Content = [new TextContentBlock { Text = body.ToJsonString() }],
+            Content = [new TextContentBlock { Text = body.ToJsonString(JsonText.Options) }],
         };
     }
 }

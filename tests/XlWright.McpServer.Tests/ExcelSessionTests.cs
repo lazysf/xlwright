@@ -647,6 +647,30 @@ public sealed class ExcelSessionTests : IDisposable
     }
 
     [Fact]
+    public async Task RunCountsANonAsciiReturnValueWithoutEscaping()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.MacroResult = new MacroResult.Returned(new string('あ', 9_000));
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "Kana"), [], TimeSpan.FromSeconds(5));
+
+        Assert.Equal(new string('あ', 9_000), outcome.Result!["return"]!.GetValue<string>());
+        Assert.False(outcome.Result.ContainsKey("result_file"));
+    }
+
+    [Fact]
+    public async Task RunWritesANonAsciiResultFileWithoutEscaping()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.MacroResult = new MacroResult.Returned(new string('あ', 30_000));
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "Kana"), [], TimeSpan.FromSeconds(5));
+
+        var text = File.ReadAllText(Path.Combine(_repo.Root, outcome.Result!["result_file"]!.GetValue<string>()));
+        Assert.Contains(new string('あ', 30_000), text);
+    }
+
+    [Fact]
     public async Task RunDoesNotRunWhenTheSyncFails()
     {
         await _session.StartAsync(_app);

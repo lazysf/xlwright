@@ -178,6 +178,8 @@ internal sealed class FakeProcess : IOwnedProcess
         return Dialog;
     }
 
+    public IReadOnlyList<bool> MainWindowsEnabled() => [true];
+
     public void Exit() => _exited.Set();
 
     public bool WaitForExit(TimeSpan timeout) => _exited.Wait(timeout);

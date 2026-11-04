@@ -78,6 +78,11 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         Assert.True(end.GetProperty("saved").GetBoolean());
         Assert.True(File.GetLastWriteTimeUtc(Workbook) > savedBefore);
         AssertNothingLeft(pid);
+
+        // The diagnostic log stays after the session (docs/architecture.md "診断の記録の形式").
+        var log = Assert.Single(Directory.GetFiles(Path.Combine(_repo.Root, "apps", "sales", ".xlwright", "logs")));
+        var events = File.ReadAllLines(log).Select(line => JsonNode.Parse(line)!["event"]!.GetValue<string>()).ToList();
+        Assert.Equal(["start", "owned", "call", "end", "call"], events);
     }
 
     [Fact]

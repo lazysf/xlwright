@@ -93,6 +93,27 @@ internal sealed class WindowsProcess : IOwnedProcess
         return dialog == IntPtr.Zero ? null : ReadDialog(dialog);
     }
 
+    public IReadOnlyList<bool> MainWindowsEnabled()
+    {
+        var enabled = new List<bool>();
+        if (_handle.IsInvalid)
+        {
+            return enabled;
+        }
+
+        NativeMethods.EnumWindows((hwnd, _) =>
+        {
+            NativeMethods.GetWindowThreadProcessId(hwnd, out var pid);
+            if (pid == (uint)Facts.Pid && ClassOf(hwnd) == "XLMAIN")
+            {
+                enabled.Add(NativeMethods.IsWindowEnabled(hwnd));
+            }
+
+            return true;
+        }, IntPtr.Zero);
+        return enabled;
+    }
+
     public void Dispose() => _handle.Dispose();
 
     // The title and the visible Static children, read with WM_GETTEXT within 500 ms in all, as ExcelMcp does,

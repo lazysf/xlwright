@@ -131,6 +131,9 @@ public interface IOwnedProcess : IDisposable
     /// Reads windows only; it never touches COM.
     /// </summary>
     DialogText? FindDialog();
+
+    /// <summary>Whether each XLMAIN window of the process is enabled, for the diagnostic log. Reads windows only.</summary>
+    IReadOnlyList<bool> MainWindowsEnabled();
 }
 
 /// <summary>The title and the body text of a dialog. It goes only into the response, never into a log.</summary>

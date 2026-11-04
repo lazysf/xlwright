@@ -25,6 +25,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
     private long _operationStarted;
     private bool _unusable;
     private Active? _active;
+    private DiagnosticLog? _log;
 
     // App locks kept while a call is pending; holding them here keeps the finalizer from closing the file.
     private readonly List<AppLock> _keptLocks = [];
@@ -154,7 +155,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
             MacroResult.Returned returned => (ReturnedValue(active.App, macro, returned.Value, time, sync!), null),
             _ => throw new InvalidOperationException("Unknown macro result."),
         };
-    });
+    }, new JsonObject { ["macro"] = macro.ToString() });
 
     private async Task<(JsonObject?, ToolFailure?)> SyncCore(Active active)
     {
@@ -258,23 +259,26 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
     }
 
     // Checks the state and marks the operation under the lock, runs it, then reports the session after it.
-    private async Task<SessionOutcome> Run(string operation, Func<(JsonObject?, ToolFailure?)?> check, Func<Task<(JsonObject?, ToolFailure?)>> body)
+    // `call` adds names to the log's call line, never values (docs/architecture.md "診断の記録の形式").
+    private async Task<SessionOutcome> Run(string operation, Func<(JsonObject?, ToolFailure?)?> check, Func<Task<(JsonObject?, ToolFailure?)>> body,
+        JsonObject? call = null)
     {
+        var started = Stopwatch.GetTimestamp();
         lock (_gate)
         {
             if (_operation is not null)
             {
-                return new SessionOutcome(null, new ToolFailure(ToolFailure.Conflict, "BUSY",
-                    $"{_operation} is running. Check it with session_status and call again when it has finished."), Snapshot());
+                return new SessionOutcome(null, Logged(operation, started, call, new ToolFailure(ToolFailure.Conflict, "BUSY",
+                    $"{_operation} is running. Check it with session_status and call again when it has finished.")), Snapshot());
             }
 
             if (check() is var (result, failure))
             {
-                return new SessionOutcome(result, failure, Snapshot());
+                return new SessionOutcome(result, Logged(operation, started, call, failure), Snapshot());
             }
 
             _operation = operation;
-            _operationStarted = Stopwatch.GetTimestamp();
+            _operationStarted = started;
         }
 
         try
@@ -283,7 +287,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
             lock (_gate)
             {
                 _operation = null;
-                return new SessionOutcome(result, failure, Snapshot());
+                return new SessionOutcome(result, Logged(operation, started, call, failure), Snapshot());
             }
         }
         finally
@@ -295,16 +299,94 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
         }
     }
 
+    // Called under _gate: writes the call line, then points a failure to the log while it belongs to a session.
+    // The log stays with the session, so it is dropped once no session is open (a failed start, or an end).
+    private ToolFailure? Logged(string operation, long started, JsonObject? call, ToolFailure? failure)
+    {
+        var log = _log;
+        if (log is null)
+        {
+            return failure;
+        }
+
+        var line = call?.DeepClone().AsObject() ?? [];
+        line["tool"] = operation;
+        line["elapsed_ms"] = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        if (failure is null)
+        {
+            line["ok"] = true;
+        }
+        else
+        {
+            line["code"] = failure.Code;
+            if (failure.Detail is not null)
+            {
+                line["detail"] = failure.Detail;
+            }
+        }
+
+        log.Write("call", line);
+        if (_active is null)
+        {
+            _log = null;
+        }
+
+        if (failure is null || log.RelativePath is not { } path)
+        {
+            return failure;
+        }
+
+        var data = failure.Data ?? new JsonObject();
+        data["log"] = path;
+        return failure with { Data = data };
+    }
+
     // The cleanup goes into the result, and into a failure after it, since the record is completed by then
     // (docs/api.md "session_start に段階2で加えるもの").
     private async Task<(JsonObject?, ToolFailure?)> StartCore(AppFolder app)
     {
+        var log = DiagnosticLog.Create(app);
+        log.Write("start", new JsonObject
+        {
+            ["app"] = app.RelativePath,
+            ["build_id"] = ServerIdentity.Current.BuildId,
+            ["server_pid"] = Environment.ProcessId,
+        });
+        lock (_gate)
+        {
+            _log = log;
+        }
+
         var cleanedUp = new StrongBox<JsonObject?>();
         var (result, failure) = await StartSteps(app, cleanedUp);
         if (cleanedUp.Value is not { } cleanup)
         {
+            // Only the failures about an earlier session's Excel carry both the record and that Excel.
+            if (failure?.Data is { } stop && stop["record"] is not null && stop["excel"] is JsonObject leftover)
+            {
+                var stopped = new JsonObject
+                {
+                    ["pid"] = leftover["pid"]!.DeepClone(),
+                    ["started_at_utc"] = leftover["started_at_utc"]!.DeepClone(),
+                };
+                if (stop["cleanup"]?["ended_by"] is { } endedBy)
+                {
+                    stopped["ended_by"] = endedBy.DeepClone();
+                }
+
+                stopped["detail"] = failure.Detail;
+                log.Write("cleanup", stopped);
+            }
+
             return (result, failure);
         }
+
+        log.Write("cleanup", new JsonObject
+        {
+            ["pid"] = cleanup["excel"]!["pid"]!.DeepClone(),
+            ["started_at_utc"] = cleanup["excel"]!["started_at_utc"]!.DeepClone(),
+            ["ended_by"] = cleanup["ended_by"]!.DeepClone(),
+        });
 
         if (failure is null)
         {
@@ -391,6 +473,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
 
         appLock.Write(new OwnershipRecord(OwnershipRecord.Owned, marked, app.WorkbookName,
             new RecordedProcess(process.Facts.Pid, process.Facts.CreatedUtc, Path.GetFileNameWithoutExtension(process.Facts.ImageName))));
+        _log?.Write("owned", ExcelJson(process.Facts));
         var active = new Active(app, worker, excel, process, appLock, marked);
         var open = worker.Run(() =>
         {
@@ -455,7 +538,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
                 MarkUnusable();
             }
 
-            Close(active, ended: false);
+            Close(active, ended: false, endedBy: null);
             var data = Handover(active.Process.Facts);
             data["saved"] = save;
             var why = foreign is null
@@ -497,13 +580,14 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
         }
 
         var ended = active.Process.WaitForExit(quitExit);
+        var endedBy = ended ? "quit" : "terminate";
         if (!ended)
         {
             active.Process.Terminate();
             ended = active.Process.WaitForExit(timeouts.TerminateExit);
         }
 
-        Close(active, ended);
+        Close(active, ended, endedBy);
         if (ended)
         {
             return null;
@@ -519,6 +603,11 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
     // A dialog ends the owned Excel the same way, with its own detail and the dialog in data.
     private async Task<(JsonObject?, ToolFailure?)> AfterTimeout(Active active, Task pending, string what, string detail = "TIMEOUT", JsonObject? extra = null)
     {
+        _log?.Write("windows", new JsonObject
+        {
+            ["xlmain_enabled"] = new JsonArray(active.Process.MainWindowsEnabled().Select(enabled => (JsonNode?)enabled).ToArray()),
+            ["dialog"] = detail == "DIALOG" || active.Process.FindDialog() is not null,
+        });
         active.Process.Terminate();
         var ended = active.Process.WaitForExit(timeouts.TerminateExit);
         var returned = await Completes(pending, timeouts.PendingReturn);
@@ -527,7 +616,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
             MarkUnusable();
         }
 
-        Close(active, ended);
+        Close(active, ended, "terminate");
         var lost = " The changes since the last save are lost.";
         return ended && returned
             ? Unknown(detail, excelEnded: true, restartable: true, null, what + " The dedicated Excel was ended." + lost + " You can start a new session.", extra)
@@ -538,8 +627,16 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
 
     // The record is completed only when the OS confirmed the exit (docs/architecture.md "完了にする条件"); otherwise it
     // stays owned for the next start. The app stays locked while a call is pending ("状態と結果不明").
-    private void Close(Active active, bool ended)
+    private void Close(Active active, bool ended, string? endedBy)
     {
+        var end = new JsonObject();
+        if (endedBy is not null)
+        {
+            end["ended_by"] = endedBy;
+        }
+
+        end["exit_confirmed"] = ended;
+        _log?.Write("end", end);
         lock (_gate)
         {
             if (ReferenceEquals(_active, active))

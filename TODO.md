@@ -480,6 +480,20 @@
 - [x] 実験を作って実行する。
 - [x] 記録し、設計の未確認を直す（[記録](docs/notes/vba-extract.md)）。どれも支持。
 
+## 周期39（段階4）: 段階4の契約
+
+作るもの: APIの段階4の契約の案。`vba_extract`・`vba_edit`・`workbook_create`・`workbook_get`・`workbook_edit`、主ブックの無いセッション、`vba_get`の参照設定、`macro_run`と`test_run`のダイアログへの事前の応答。人の判断を待っている事項（`test_run`の前のコンパイル、`LEFTOVER_EXCEL`の`message`、周期28の独立レビューの低の2件）と、まとめて承認を得る。本体は変えない。
+
+完了の条件:
+
+- 契約の各項目が、要件・設計か[記録](docs/notes/vba-extract.md)の事実に辿れる。
+- 人が承認するか、直す箇所を示す。
+
+作業:
+
+- [x] 契約の案をAPIに書く。
+- [x] 人の承認を得て、APIと設計を確定する（2026-11-05、案のとおり）。`test_run`の応答はテストの中のVBAで決め、テストの前に写しをコンパイルする。低の3件（`LEFTOVER_EXCEL`の`message`、`/automation`の部分一致、`show-excel.ps1`）は、利用する版の入口を決める周期で扱う。
+
 ## 書き留めたこと
 
 周期の中で後へ回した事項を書きます。
@@ -520,7 +534,7 @@
 - 確認の入口のInspectorの`tools/list`が、schemaの移植性の警告を3件出す。`range_write`の`values`の要素と、`macro_run`の`args`の要素と`return`の、配列の`type`。JSON Schemaとしては正しく、Claude Codeでは動いている。`anyOf`へ分けるかは、ほかのクライアントを考える時に決める。
 - `vba_get`は、種類が3（UserForm）と11（ActiveXのデザイナー）のモジュールを、どちらも`form`で返す。APIの種類は4つのため。
 - `test_run`で専用のExcelを終えた後や、写しのフォルダを消せなかった時の`.xlwright/test/<run-id>/`は、だれも片付けない。次の`test_run`か`session_start`で消すかを決める。
-- `test_run`は、まだ無い関数を呼ぶテストでも、コンパイルエラーのダイアログで専用のExcelを終える（[記録](docs/notes/stage3-scenarios.md#分かったこと)）。写しでテストを実行する前に`vba_check`と同じコンパイルを行えば、Excelを終えずに返せる。契約の変更になるため、人が判断する。
+- `test_run`は、まだ無い関数を呼ぶテストでも、コンパイルエラーのダイアログで専用のExcelを終える（[記録](docs/notes/stage3-scenarios.md#分かったこと)）。写しでテストを実行する前に`vba_check`と同じコンパイルを行えば、Excelを終えずに返せる。人が、コンパイルすると決めた（2026-11-05、[API](docs/api.md#test_runの前のコンパイル)）。
 - `session_start`の`LEFTOVER_EXCEL`の`message`は、タスク マネージャーで確かめるよう書き、表示要求のコマンドを挙げていない。利用する版の入口を決める段階4で、`message`に入口を書くかを決める。
 - 設計の段階4の未確認の2つ目（プラグインの入手元の制限、GitHubからの取得）は、開発に使うこのPCでなく、会社のPCで確かめる（人、2026-11-05）。このPCの照会（Claude Codeの管理設定が無い、GitHubに届く）は根拠にしない。利用する版を発行した後に、会社のPCでの人の操作を1回にまとめる。
 - 周期32の始めに、古いビルドの開発版のサーバーが5つ動いていた。開いたままの別の会話のものと推測し、確かめていない。古いビルドを消す工程（上の1つ目）と合わせて扱う。

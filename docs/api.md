@@ -92,7 +92,7 @@
 | 段階5 | `button_get`・`button_edit` | シートのボタンとマクロの割り当て |
 | 段階5 | `page_setup_get`・`page_setup_edit` | 印刷の設定 |
 
-- 段階4で、`macro_run`と`test_run`に、ダイアログへの事前の応答を加えます。
+- 段階4で、`macro_run`の引数と`test_run`のテストの中に、ダイアログへの事前の応答を加えます（[段階4の契約](#ダイアログへの事前の応答)）。
 - 段階3で、`session_status`に実行中のテストの情報を加えます。
 
 ### 範囲の表との対応
@@ -112,7 +112,7 @@
 | 図形 | `button_get`・`button_edit` |
 | 印刷・出力 | `page_setup_get`・`page_setup_edit` |
 | VBA | 一覧と参照設定の読み取りは`vba_get`、反映は`vba_sync`、取り出しは`vba_extract`、コンパイルの確認は`vba_check`、参照設定の追加と解除は`vba_edit` |
-| 実行・テスト | マクロの実行は`macro_run`、実行中の状態は`session_status`、テストは`test_run`。ダイアログへの事前の応答は、`macro_run`と`test_run`の引数 |
+| 実行・テスト | マクロの実行は`macro_run`、実行中の状態は`session_status`、テストは`test_run`。ダイアログへの事前の応答は、`macro_run`の引数と、`test_run`のテストの中のVBA |
 
 ## 各ツールの契約
 
@@ -358,6 +358,128 @@
 #### `session_status`の実行中のテスト
 
 - `test_run`の実行中は、`operation`に`test`を加えます。`{"tool":"test_run","elapsed_ms":4210,"test":{"name":"Tests.TestLoad","index":3,"count":5}}`。`index`は1から数えます。写しを開く前と開き直す間は、`test`を付けません。
+
+### 段階4の契約（人が承認、2026-11-05）
+
+段階4の確認（[記録](notes/vba-extract.md)）と、[要件の範囲](requirements.md#操作)のブック・VBA・実行とテストの行を受けた契約です。`test_run`の応答をテストの中で決めることと、`test_run`の前のコンパイルも、人が選びました。段階1のツールに共通の扱いは、段階4のツールにも当てはめます。
+
+#### 主ブックの無いセッション
+
+- `session_start`は、直下にブックが無い時に`NO_WORKBOOK`で拒否せず、主ブックの無いセッションを始めます（[アプリのフォルダ](architecture.md#アプリのフォルダ)）。専用のExcelを起動し、ブックは開きません。結果の`workbook`は`null`です。
+- このセッションでは、`workbook_create`・`session_status`・`session_end`・`server_info`だけを受け付けます。ほかのツールは`CONFLICT`・`detail: NO_WORKBOOK`で拒否し、`workbook_create`を呼ぶよう`message`に書きます。
+- `session_end`の`save`は、主ブックが無ければ無視し、結果の`saved`は偽です。
+- 所有記録の`workbook`には、開始の時の主ブックの名前を書きます。主ブックの無いセッションでは空の文字列です。記録の形式は変えません。
+
+#### `workbook_create`
+
+- 用途: 主ブックの無いセッションで、新しいブックを作り、アプリのフォルダの直下に保存します。作ったブックが主ブックになり、ほかのツールを使えるようになります。
+- 引数: `name`（文字列、必須）。ファイルの名前で、拡張子は`.xlsm`か`.xlsx`です。フォルダの区切り、`~$`で始まる名前、Windowsでファイル名に使えない文字は拒否します。
+- 手順: `Workbooks.Add`で作り、`SaveAs`で拡張子に合う形式（`.xlsm`は52、`.xlsx`は51）で保存します。
+- 結果: `{"session":{…},"workbook":"Sales.xlsm"}`。
+- 失敗:
+
+| `code` | `detail` | 場合 |
+| --- | --- | --- |
+| `INVALID_REQUEST` | `INVALID_WORKBOOK_NAME` | `name`の形が違う |
+| `CONFLICT` | `WORKBOOK_EXISTS` | セッションに主ブックがある |
+| `CONFLICT` | `FILE_EXISTS` | 直下に同じ名前のファイルがある |
+| `EXCEL_ERROR` | `SAVE_FAILED` | 保存に失敗した。作ったブックは保存せずに閉じ、主ブックの無いセッションのまま |
+| `STATE_UNKNOWN` | `TIMEOUT` | 保存の期限（120秒）が切れた |
+
+- 注釈: `ReadOnly`は偽、`Destructive`は偽、`Idempotent`は偽、`OpenWorld`は偽です。
+
+#### `workbook_get`と`workbook_edit`
+
+- `workbook_get`の用途: 主ブックの名前、形式、保存していない変更の有無を返します。結果: `{"session":{…},"workbook":"Sales.xlsx","format":"xlsx","saved":true}`。`format`は`xlsm`か`xlsx`です。失敗は`STATE_UNKNOWN`・`TIMEOUT`（30秒）だけです。注釈: `ReadOnly`は真、`Destructive`は偽、`Idempotent`は真、`OpenWorld`は偽です。
+- `workbook_edit`の引数: `action`（文字列、必須）。段階4では`"convert_to_xlsm"`だけです。段階5で、ブックの保護を加えます。
+- `convert_to_xlsm`: `.xlsx`の主ブックを、同じ名前の`.xlsm`として直下に`SaveAs`（52）で保存します。以後、セッションの主ブックは`.xlsm`です。元の`.xlsx`は、前の保存のまま残ります。AIエージェントがGitの操作で消すまで、次の`session_start`は`MULTIPLE_WORKBOOKS`で止まります（[要件](requirements.md#操作)）。このことを`message`ではなく、ツールの説明に書きます。
+- 結果: `{"session":{…},"workbook":"Sales.xlsm","previous":"Sales.xlsx"}`。
+- 失敗:
+
+| `code` | `detail` | 場合 |
+| --- | --- | --- |
+| `INVALID_REQUEST` | `ALREADY_MACRO_ENABLED` | 主ブックが既に`.xlsm` |
+| `CONFLICT` | `FILE_EXISTS` | 直下に同じ名前の`.xlsm`がある |
+| `EXCEL_ERROR` | `SAVE_FAILED` | 保存に失敗した。主ブックは`.xlsx`のまま |
+| `STATE_UNKNOWN` | `TIMEOUT` | 保存の期限（120秒）が切れた |
+
+- 注釈: `ReadOnly`は偽、`Destructive`は偽、`Idempotent`は偽、`OpenWorld`は偽です。
+
+#### `vba_extract`
+
+- 用途: アプリのフォルダの中の既存のブックから、VBAのソースを`src/`へ取り出します（[VBAの反映](architecture.md#vbaの反映)）。ブックの中にしか無いモジュールは次の反映で消えるため、既存のブックでは`vba_sync`の前に呼びます。
+- 引数: `workbook`（文字列、任意）。アプリのフォルダからの相対パスです。省くと主ブックです。アプリのフォルダの外は`PATH_NOT_ALLOWED`で拒否します。
+- 手順:
+  1. ブックが`.xlsm`であることと、パッケージに`xl/macrosheets/`が無いことを確かめます。
+  2. ファイルを`.xlwright/extract/<id>/`へ、`<id>.xlsm`の名前で写します。主ブックと同じ名前のブックは同時に開けないためです（[記録](notes/test-copy.md#テストの写しの流れ)）。
+  3. 写しを`AutomationSecurity=ForceDisable`・`EnableEvents=False`で開きます。開いた後、`AutomationSecurity`を元に戻します。戻しても写しのマクロは無効のままでした（[記録](notes/vba-extract.md)）。
+  4. 標準・クラス・シートとブックのモジュールを`Export`し、システムのANSIコードページからUTF-8へ変えて、`src/modules/<名前>.bas`・`src/classes/<名前>.cls`・`src/workbook/<CodeName>.cls`へ書きます。UserFormと`XlWright`という名前のモジュールは書きません。
+  5. 写しを保存せずに閉じ、`<id>/`を消します。
+- 開いているブック（主ブック）は変えません。保存もしません。
+- 結果: `{"session":{…},"workbook":"Sales.xlsm","files":[{"file":"src/modules/Calc.bas","type":"standard"},{"file":"src/workbook/Sheet1.cls","type":"document"}],"skipped":[{"name":"Form1","type":"form"}]}`。`file`はアプリのフォルダからの相対パスで、区切りは`/`です。
+- 失敗:
+
+| `code` | `detail` | 場合 |
+| --- | --- | --- |
+| `INVALID_REQUEST` | `PATH_NOT_ALLOWED` | `workbook`がアプリのフォルダの外 |
+| `NOT_FOUND` | `WORKBOOK_NOT_FOUND` | `workbook`のファイルが無い |
+| `INVALID_REQUEST` | `NOT_MACRO_ENABLED` | `.xlsm`でない |
+| `INVALID_REQUEST` | `EXCEL4_MACROS` | パッケージに`xl/macrosheets/`がある。開かずに止まる |
+| `CONFLICT` | `SOURCE_EXISTS` | `src/`に、`.`で始まるものと`XlWright.bas`を除くファイルがある。上書きしないため。`data.files`に一覧 |
+| `CONFLICT` | `VBA_ACCESS_NOT_TRUSTED` | `vba_sync`と同じ |
+| `CONFLICT` | `VBA_PROJECT_LOCKED` | `vba_sync`と同じ |
+| `EXCEL_ERROR` | `OPEN_FAILED` | 写しを開けなかった |
+| `EXCEL_ERROR` | `EXTRACT_FAILED` | 途中で失敗した。`data.done`に書いたファイル。書いたファイルは消さない |
+| `STATE_UNKNOWN` | `TIMEOUT` | 30秒の期限が切れた。開く操作は保存の期限（120秒）で測る |
+
+- 注釈: `ReadOnly`は偽、`Destructive`は偽、`Idempotent`は偽、`OpenWorld`は偽です。
+
+#### `vba_get`の参照設定
+
+- 結果に`references`を加えます。`[{"name":"Scripting","guid":"{420B2830-E718-11CF-893D-00A0C9054228}","major":1,"minor":0,"builtin":false,"broken":false}]`。読めた参照設定の順です（[記録](notes/vba-extract.md#forcedisableでvbaを取り出せるか)）。`broken`が真で`name`を読めない時は、`name`を省きます。
+
+#### `vba_edit`
+
+- 用途: 主ブックの参照設定を追加と解除します。保存はしません。
+- 引数: `action`（`"add_reference"`か`"remove_reference"`、必須）、`guid`（文字列、必須）。`add_reference`では`major`と`minor`（整数、必須）も渡します。`vba_get`の`references`の値をそのまま使えます。
+- 手順: 追加は`References.AddFromGuid`、解除は`References.Remove`です。ファイルのパスからの追加（`AddFromFile`）は作りません。
+- 結果: `{"session":{…},"changed":true,"references":[…]}`。同じ`guid`が既にある時の追加は、変えずに`changed`を偽で返します。
+- 失敗:
+
+| `code` | `detail` | 場合 |
+| --- | --- | --- |
+| `INVALID_REQUEST` | `NOT_MACRO_ENABLED` | 主ブックが`.xlsx` |
+| `NOT_FOUND` | `REFERENCE_NOT_FOUND` | 解除する`guid`の参照設定が無い |
+| `INVALID_REQUEST` | `BUILTIN_REFERENCE` | `builtin`が真の参照設定（`VBA`・`Excel`）の解除 |
+| `CONFLICT` | `VBA_ACCESS_NOT_TRUSTED` | `vba_sync`と同じ |
+| `CONFLICT` | `VBA_PROJECT_LOCKED` | `vba_sync`と同じ |
+| `EXCEL_ERROR` | `REFERENCE_FAILED` | Excelが追加か解除を断った（登録されていないライブラリなど） |
+| `STATE_UNKNOWN` | `TIMEOUT` | 30秒の期限が切れた |
+
+- 注釈: `ReadOnly`は偽、`Destructive`は真、`Idempotent`は真、`OpenWorld`は偽です。
+
+#### ダイアログへの事前の応答
+
+[要件の利用の前提](requirements.md#利用の前提)のとおり、マクロが`XlWright.bas`の関数でダイアログを出す時だけ働きます。
+
+- 関数: どれも、xlwrightの実行の外では標準のダイアログを出します。
+  - `XlWright.Message(prompt[, buttons][, title])`: `VBA.MsgBox`の代わり。押したボタンの値を返します。
+  - `XlWright.Input(prompt[, title][, default])`: 入力。文字列を、キャンセルでは`False`を返します（`Application.InputBox`の`Type:=2`）。
+  - `XlWright.OpenFile([filter][, title])`・`XlWright.SaveFile([initial][, filter][, title])`: ファイルの選択と保存先の指定。完全なパスを、キャンセルでは`False`を返します（`Application.GetOpenFilename`・`GetSaveAsFilename`）。
+  - `XlWright.Folder([title])`: フォルダーの選択。完全なパスを、キャンセルでは`False`を返します（`FileDialog`のフォルダーの選択）。
+  - VBAの`MsgBox`と同じ名前にしないのは、修飾の無い`MsgBox`の呼出しをすべて置き換えてしまうためです。
+- `macro_run`の引数に`dialogs`（配列、任意、30個まで）を加えます。要素は順に使う応答です。
+  - `{"kind":"message","answer":"yes"}`。`answer`は`ok`・`cancel`・`yes`・`no`・`abort`・`retry`・`ignore`です。
+  - `{"kind":"input","value":"東京"}`、`{"kind":"open_file","path":"data/in.csv"}`、`{"kind":"save_file","path":"data/out.csv"}`、`{"kind":"folder","path":"data"}`。`path`はアプリのフォルダからの相対パスで、外を指すと`PATH_NOT_ALLOWED`で拒否します。xlwrightが完全なパスに変えて渡します。
+  - どの`kind`でも、`answer`・`value`・`path`の代わりに`"cancel":true`を渡せます。
+- xlwrightの実行の中では、`dialogs`を省いても、関数はダイアログを出しません。応答が尽きた時、次の応答の`kind`が違う時、`message`の`answer`が`buttons`に無い時は、`Err.Source`が`XlWright`のエラーを上げます。マクロは`MACRO_ERROR`で止まり、専用のExcelは終えません。
+- 結果に`dialogs`を加えます。`{"answered":2,"unused":1}`。使われなかった応答があっても、失敗にしません。
+- `test_run`では、テストの中で応答を決めます。`XlWright.Answer kind, value`をテストが呼び、そのテストの中の関数が順に使います。応答はテストごとに空にします。`test_run`の引数には加えません。テストごとに応答が違い、テストの書き手が知っているためです。
+
+#### `test_run`の前のコンパイル
+
+- 写しへテストを取り込んだ後、テストを実行する前に、`vba_check`と同じコンパイルを行います。エラーの時はテストを実行せず、写しを閉じて主ブックを開き直し、`EXCEL_ERROR`・`detail: COMPILE_ERROR`と`data.error`（`vba_check`の`error`と同じ形）を返します。`ready`のままです。
+- まだ無い関数を呼ぶテストで、専用のExcelを終えずに返すためです（[記録](notes/stage3-scenarios.md#分かったこと)）。
 
 ## 表示要求のコマンド（段階2、人が承認、2026-11-04）
 

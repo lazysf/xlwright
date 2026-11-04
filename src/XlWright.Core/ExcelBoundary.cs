@@ -77,6 +77,21 @@ public interface IExcel
 
     void Save();
 
+    /// <summary>Closes the main workbook without saving, with events off; test_run saves it first.</summary>
+    void CloseMain();
+
+    /// <summary>
+    /// Closes without saving, with events and alerts off, every open workbook whose full path is inside
+    /// <paramref name="folder"/>: the test copy and what the tests opened from it (docs/api.md "test_run").
+    /// </summary>
+    void CloseUnder(string folder);
+
+    /// <summary>
+    /// Imports <paramref name="modules"/> into the open main workbook (the test copy during test_run) and checks each
+    /// imported name and type, as <see cref="SyncVba"/> does. Throws <see cref="VbaSyncException"/> with SYNC_FAILED.
+    /// </summary>
+    void ImportModules(IReadOnlyList<VbaModule> modules);
+
     /// <summary>
     /// Recalculates and waits for CalculationState xlDone, then reads Value2 of the main workbook's range as double,
     /// string, bool, null, or <see cref="CellError"/>; null when no sheet has that name.
@@ -175,6 +190,9 @@ public enum CompileStart
     /// <summary>The control was executed.</summary>
     Started,
 }
+
+/// <summary>The test that test_run is running: its name, its place from 1, and the number of tests.</summary>
+public sealed record TestProgress(string Name, int Index, int Count);
 
 /// <summary>Where the VBE put the selection for a compile error.</summary>
 public sealed record CompileErrorPlace(string Module, int Line);

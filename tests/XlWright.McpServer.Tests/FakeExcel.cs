@@ -63,13 +63,45 @@ internal sealed class FakeExcel : IExcel
 
     public void TakeControl() => Record("TakeControl");
 
+    // For test_run, which opens the copy and then the main workbook again: called with each path before it opens.
+    public Func<string, Exception?>? OpenFails { get; set; }
+
+    public Func<string, bool>? OpensReadOnlyAt { get; set; }
+
+    public Action<string>? OnOpen { get; set; }
+
     public bool Open(string path)
     {
         Record("Open " + path);
         Process.WaitIf(OpenBlock);
         if (OpenThrows is not null) throw OpenThrows;
+        if (OpenFails?.Invoke(path) is { } fails) throw fails;
+        OnOpen?.Invoke(path);
         _main = path;
-        return OpensReadOnly;
+        return OpensReadOnlyAt?.Invoke(path) ?? OpensReadOnly;
+    }
+
+    public Exception? CloseMainThrows { get; set; }
+
+    public void CloseMain()
+    {
+        Record("CloseMain");
+        if (CloseMainThrows is not null) throw CloseMainThrows;
+        _main = null;
+    }
+
+    public void CloseUnder(string folder)
+    {
+        Record("CloseUnder " + folder);
+        if (_main is not null && _main.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) _main = null;
+    }
+
+    public Exception? ImportThrows { get; set; }
+
+    public void ImportModules(IReadOnlyList<VbaModule> modules)
+    {
+        Record("ImportModules " + string.Join(",", modules.Select(m => m.Name)));
+        if (ImportThrows is not null) throw ImportThrows;
     }
 
     public void Save()
@@ -189,11 +221,21 @@ internal sealed class FakeExcel : IExcel
 
     public Block MacroBlock { get; set; } = Block.None;
 
+    // Per macro name, for test_run; MacroResult for the others.
+    public Dictionary<string, MacroResult> MacroResults { get; } = [];
+
+    public Dictionary<string, Block> MacroBlocks { get; } = [];
+
+    // A macro of this name waits until the gate is set, so a test can look at the session while it runs.
+    public (string Name, ManualResetEventSlim Gate)? MacroGate { get; set; }
+
     public MacroResult RunMacro(MacroName macro, IReadOnlyList<object> args)
     {
         Record($"RunMacro {macro} {string.Join(",", args)}".TrimEnd());
         Process.WaitIf(MacroBlock);
-        return MacroResult;
+        Process.WaitIf(MacroBlocks.GetValueOrDefault(macro.ToString()));
+        if (MacroGate is { } gate && gate.Name == macro.ToString()) gate.Gate.Wait();
+        return MacroResults.GetValueOrDefault(macro.ToString()) ?? MacroResult;
     }
 
     private bool Range(string call, string sheet, CellRange range)

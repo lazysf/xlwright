@@ -5,7 +5,7 @@ using XlWright.Core;
 
 namespace XlWright.McpServer;
 
-/// <summary>vba_sync and macro_run (docs/api.md, stage 1), and vba_get and vba_check (stage 3).</summary>
+/// <summary>vba_sync and macro_run (docs/api.md, stage 1), and vba_get, vba_check, and test_run (stage 3).</summary>
 internal sealed class VbaTools(ExcelSession? session)
 {
     private const int DefaultTimeoutSeconds = 300;
@@ -49,6 +49,20 @@ internal sealed class VbaTools(ExcelSession? session)
                 "xlwright ends the dedicated Excel and the changes since the last save are lost. It does not save.",
             ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true,
         }, RunInput, RunOutput),
+        ToolDefinition.Create(TestRun, new()
+        {
+            Name = "test_run",
+            Description = "Syncs src/ as vba_sync does and saves the main workbook, including the changes made before this call. " +
+                "Then it copies the app folder (without src/, tests/, and folders that start with a dot) to .xlwright/test/, " +
+                "imports tests/ and the assertion module XlWrightAssert into the copy, runs each test, and opens the main workbook " +
+                "again; the tests' changes stay in the copy, which is removed. A test is a Sub without arguments, not Private, " +
+                "whose name starts with Test, in tests/*.bas. Assert with XlWrightAssert.AreEqual expected, actual[, message], " +
+                "XlWrightAssert.IsTrue condition[, message], and XlWrightAssert.Fail message. A failing test is a result, not a " +
+                "failure. xlwright does not stop a test from changing files outside the app folder, or the main workbook's folder " +
+                "through a full path. If a test stops at a dialog or runs past timeout_seconds (the whole call), xlwright ends " +
+                "the dedicated Excel; the main workbook was saved before the tests.",
+            ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true,
+        }, TestRunInput, TestRunOutput),
     ];
 
     private async Task<CallToolResult> Sync(RequestContext<CallToolRequestParams> context)
@@ -84,6 +98,27 @@ internal sealed class VbaTools(ExcelSession? session)
         return session is null ? NoSession() : ToolResults.From(await session.CheckAsync());
     }
 
+    private async Task<CallToolResult> TestRun(RequestContext<CallToolRequestParams> context)
+    {
+        var arguments = ToolArguments.From("test_run", context);
+        var (tests, seconds) = ((IReadOnlyList<string>?)null, DefaultTimeoutSeconds);
+        var invalid = arguments.RejectUnknown("tests", "timeout_seconds")
+            ?? Tests(context.Params!.Arguments ?? new Dictionary<string, JsonElement>(), out tests)
+            ?? Timeout("test_run", context.Params!.Arguments ?? new Dictionary<string, JsonElement>(), out seconds);
+        if (invalid is not null)
+        {
+            return ToolResults.InvalidRequest(invalid, Current());
+        }
+
+        if (tests?.FirstOrDefault(name => MacroName.Parse(name).Failure is not null) is { } wrong)
+        {
+            return ToolResults.Failure(new ToolFailure(ToolFailure.InvalidRequest, "INVALID_TEST_NAME",
+                $"tests has \"{wrong}\", which is not <module>.<procedure>, such as CalcTests.TestAdd. Leave out the workbook name."), Current());
+        }
+
+        return session is null ? NoSession() : ToolResults.From(await session.TestRunAsync(tests, TimeSpan.FromSeconds(seconds)));
+    }
+
     private async Task<CallToolResult> Run(RequestContext<CallToolRequestParams> context)
     {
         var arguments = ToolArguments.From("macro_run", context);
@@ -91,7 +126,7 @@ internal sealed class VbaTools(ExcelSession? session)
         var invalid = arguments.RejectUnknown("macro", "args", "timeout_seconds")
             ?? arguments.RequireString("macro", out text)
             ?? Arguments(context.Params!.Arguments!, out args)
-            ?? Timeout(context.Params!.Arguments!, out seconds);
+            ?? Timeout("macro_run", context.Params!.Arguments!, out seconds);
         if (invalid is not null)
         {
             return ToolResults.InvalidRequest(invalid, Current());
@@ -148,7 +183,7 @@ internal sealed class VbaTools(ExcelSession? session)
         return null;
     }
 
-    private static string? Timeout(IDictionary<string, JsonElement> arguments, out int seconds)
+    private static string? Timeout(string tool, IDictionary<string, JsonElement> arguments, out int seconds)
     {
         seconds = DefaultTimeoutSeconds;
         if (!arguments.TryGetValue("timeout_seconds", out var element))
@@ -158,7 +193,25 @@ internal sealed class VbaTools(ExcelSession? session)
 
         return element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out seconds) && seconds is >= 1 and <= MaxTimeoutSeconds
             ? null
-            : $"macro_run: timeout_seconds must be a whole number from 1 to {MaxTimeoutSeconds}.";
+            : $"{tool}: timeout_seconds must be a whole number from 1 to {MaxTimeoutSeconds}.";
+    }
+
+    private static string? Tests(IDictionary<string, JsonElement> arguments, out IReadOnlyList<string>? tests)
+    {
+        tests = null;
+        if (!arguments.TryGetValue("tests", out var element))
+        {
+            return null;
+        }
+
+        if (element.ValueKind != JsonValueKind.Array || element.GetArrayLength() == 0 ||
+            element.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.String))
+        {
+            return "test_run: tests must be a non-empty array of <module>.<procedure> strings; leave it out to run every test.";
+        }
+
+        tests = element.EnumerateArray().Select(item => item.GetString()!).ToList();
+        return null;
     }
 
     private static readonly string SyncResult = """
@@ -183,6 +236,24 @@ internal sealed class VbaTools(ExcelSession? session)
          "error":{"type":"object","properties":{"message":{"type":"string"},"module":{"type":"string"},"line":{"type":"integer"}},"required":["message"]},
          "sync":{"type":"object","properties":{ {{{SyncResult}}} },"required":["modules","removed"]}},
          "required":["session","compiled","sync"]}
+        """;
+
+    private const string TestRunInput = """
+        {"type":"object","properties":{
+         "tests":{"type":"array","minItems":1,"items":{"type":"string"},"description":"The tests to run, as <module>.<procedure>, such as CalcTests.TestAdd. Leave it out to run every test."},
+         "timeout_seconds":{"type":"integer","minimum":1,"maximum":1200,"description":"How long the whole call may take. The default is 300."}},
+         "additionalProperties":false}
+        """;
+
+    private static readonly string TestRunOutput = $$$"""
+        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},
+         "summary":{"type":"object","properties":{"passed":{"type":"integer"},"failed":{"type":"integer"},"errors":{"type":"integer"}},"required":["passed","failed","errors"]},
+         "tests":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"result":{"enum":["passed","failed","error"]},
+          "message":{"type":"string"},"number":{"type":"integer"},"description":{"type":"string"},"source":{"type":"string"},"elapsed_ms":{"type":"integer"}},
+          "required":["name","result"]}},
+         "elapsed_ms":{"type":"integer"},"result_file":{"type":"string"},"leftover_copy":{"type":"string"},
+         "sync":{"type":"object","properties":{ {{{SyncResult}}} },"required":["modules","removed"]}},
+         "required":["session","summary","tests","elapsed_ms","sync"]}
         """;
 
     private const string RunInput = """

@@ -12,4 +12,5 @@ public sealed record ToolFailure(string Code, string? Detail, string Message, Js
     public const string Conflict = "CONFLICT";
     public const string ExcelError = "EXCEL_ERROR";
     public const string StateUnknown = "STATE_UNKNOWN";
+    public const string InternalError = "INTERNAL_ERROR";
 }

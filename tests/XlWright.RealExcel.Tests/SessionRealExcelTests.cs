@@ -229,6 +229,48 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         AssertNothingLeft(pid);
     }
 
+    // Needs AccessVBOM 1. The tests change a cell and a data file; both changes stay in the copy.
+    [Fact]
+    public async Task RunsTheTestsInACopyAndLeavesTheAppAsItWas()
+    {
+        _repo.AddApp("apps/tested");
+        var app = Path.Combine(_repo.Root, "apps", "tested");
+        MinimalWorkbook.Write(Path.Combine(app, "Tested.xlsm"));
+        Source(app, "data/note.txt", "original");
+        Source(app, "src/modules/Calc.bas", "Option Explicit\nPublic Function Twice(ByVal x As Long) As Long\n    Twice = x * 2\nEnd Function\n");
+        Source(app, "tests/CalcTests.bas",
+            "Option Explicit\n\nPublic Sub TestTwice()\n    XlWrightAssert.AreEqual 6, Calc.Twice(3)\nEnd Sub\n\n" +
+            "Public Sub TestWrong()\n    XlWrightAssert.AreEqual 7, Calc.Twice(3), \"三の二倍\"\nEnd Sub\n\n" +
+            "Public Sub TestError()\n    Dim x As Long\n    x = 1 / 0\nEnd Sub\n\n" +
+            "Public Sub TestWrites()\n    ThisWorkbook.Worksheets(1).Range(\"A1\").Value = \"changed by test\"\n    Dim f As Integer\n    f = FreeFile\n" +
+            "    Open ThisWorkbook.Path & \"\\data\\note.txt\" For Output As #f\n    Print #f, \"changed by test\"\n    Close #f\n" +
+            "    XlWrightAssert.IsTrue InStr(ThisWorkbook.Path, \"\\.xlwright\\test\\\") > 0, \"runs in the copy\"\nEnd Sub\n");
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/tested" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+        Success(await Call("range_write", new() { ["sheet"] = "Sheet1", ["range"] = "A1", ["values"] = new[] { new[] { "original" } } }));
+
+        var run = Success(await Call("test_run", new()));
+
+        Assert.Equal("""{"passed":2,"failed":1,"errors":1}""", run.GetProperty("summary").GetRawText());
+        var tests = run.GetProperty("tests").EnumerateArray().ToDictionary(t => t.GetProperty("name").GetString()!);
+        Assert.Equal("AreEqual: expected 7, actual 6. 三の二倍", tests["CalcTests.TestWrong"].GetProperty("message").GetString());
+        Assert.Equal(11, tests["CalcTests.TestError"].GetProperty("number").GetInt32());
+        Assert.Equal("passed", tests["CalcTests.TestWrites"].GetProperty("result").GetString());
+        Assert.Equal("ready", run.GetProperty("session").GetProperty("state").GetString());
+        Assert.False(run.TryGetProperty("leftover_copy", out _));
+
+        var a1 = Success(await Call("range_read", new() { ["sheet"] = "Sheet1", ["range"] = "A1" }));
+        Assert.Equal("original", a1.GetProperty("values")[0][0].GetString());
+        Assert.Equal("original", File.ReadAllText(Path.Combine(app, "data", "note.txt")));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(Path.Combine(app, ".xlwright", "test")));
+        var modules = Success(await Call("vba_get", new())).GetProperty("modules").EnumerateArray().Select(m => m.GetProperty("name").GetString());
+        Assert.DoesNotContain("CalcTests", modules);
+        Assert.DoesNotContain("XlWrightAssert", modules);
+
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(pid);
+    }
+
     // Needs AccessVBOM 1. The compile error shows its dialog and the VBA editor on the person's screen for a moment.
     [Fact]
     public async Task ChecksTheCompileAndReportsACompileErrorWithItsLine()

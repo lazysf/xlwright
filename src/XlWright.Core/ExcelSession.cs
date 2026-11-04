@@ -4,9 +4,10 @@ using System.Text.Json.Nodes;
 
 namespace XlWright.Core;
 
-/// <summary>The session state that every stage 1 result reports (docs/api.md).</summary>
+/// <summary>The session state that every stage 1 result reports (docs/api.md); Test is the test that test_run runs.</summary>
 public sealed record SessionSnapshot(
-    string State, bool Busy, string? Operation = null, TimeSpan Elapsed = default, string? App = null, string? Workbook = null);
+    string State, bool Busy, string? Operation = null, TimeSpan Elapsed = default, string? App = null, string? Workbook = null,
+    TestProgress? Test = null);
 
 /// <summary>A tool's outcome: the result fields without "session", or a failure; and the session after it.</summary>
 public sealed record SessionOutcome(JsonObject? Result, ToolFailure? Failure, SessionSnapshot Session);
@@ -15,7 +16,7 @@ public sealed record SessionOutcome(JsonObject? Result, ToolFailure? Failure, Se
 /// One session: start (docs/architecture.md "開始の順序" 1-6, "所有記録の形式", and "所有の確定"), status, save, and end ("終了").
 /// Timeouts end only the Excel whose ownership this session confirmed ("状態と結果不明").
 /// </summary>
-public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processes, IExcelConnector connector, SessionTimeouts timeouts) : IDisposable
+public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery processes, IExcelConnector connector, SessionTimeouts timeouts) : IDisposable
 {
     // docs/notes/dialog-probe.md: every dialog was found at the first 250 ms check.
     private static readonly TimeSpan DialogInterval = TimeSpan.FromMilliseconds(250);
@@ -24,6 +25,7 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
     private string? _operation;
     private long _operationStarted;
     private bool _unusable;
+    private TestProgress? _test;
     private Active? _active;
     private DiagnosticLog? _log;
 
@@ -1162,7 +1164,8 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
         _operation,
         _operation is null ? TimeSpan.Zero : Stopwatch.GetElapsedTime(_operationStarted),
         _active?.App.RelativePath,
-        _active?.App.WorkbookName);
+        _active?.App.WorkbookName,
+        _operation is null ? null : _test);
 
     private static async Task<bool> Completes(Task task, TimeSpan timeout) =>
         await Task.WhenAny(task, Task.Delay(timeout)) == task;

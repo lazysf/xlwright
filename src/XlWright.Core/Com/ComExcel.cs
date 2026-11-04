@@ -229,25 +229,7 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
                 foreach (var module in modules)
                 {
                     step = "importing " + module.Name;
-                    dynamic imported = components.Import(module.ImportPath);
-                    try
-                    {
-                        string name = imported.Name;
-                        int type = imported.Type;
-                        var expected = module.Kind == VbaModuleKind.Class ? ClassModule : StdModule;
-                        if (!name.Equals(module.Name, StringComparison.Ordinal) || type != expected)
-                        {
-                            components.Remove(imported);
-                            throw new VbaSyncException("SYNC_FAILED", done.ToList(),
-                                $"{module.Name} was imported as {name} (type {type}). Its name is taken by a sheet or workbook module, or Excel cannot use it; rename the module.");
-                        }
-                    }
-                    finally
-                    {
-                        Release(imported);
-                    }
-
-                    done.Add(module.Name);
+                    ImportChecked(components, module, done);
                 }
 
                 foreach (var document in documents)
@@ -298,6 +280,116 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
         finally
         {
             Release(project);
+        }
+    }
+
+    // Imports one module and checks its name and type; adds the name to done (docs/notes/vba-sync.md).
+    private static void ImportChecked(dynamic components, VbaModule module, List<string> done)
+    {
+        dynamic imported = components.Import(module.ImportPath);
+        try
+        {
+            string name = imported.Name;
+            int type = imported.Type;
+            var expected = module.Kind == VbaModuleKind.Class ? ClassModule : StdModule;
+            if (!name.Equals(module.Name, StringComparison.Ordinal) || type != expected)
+            {
+                components.Remove(imported);
+                throw new VbaSyncException("SYNC_FAILED", done.ToList(),
+                    $"{module.Name} was imported as {name} (type {type}). Its name is taken by a sheet or workbook module, or Excel cannot use it; rename the module.");
+            }
+        }
+        finally
+        {
+            Release(imported);
+        }
+
+        done.Add(module.Name);
+    }
+
+    public void ImportModules(IReadOnlyList<VbaModule> modules)
+    {
+        dynamic project = TrustedProject();
+        var done = new List<string>();
+        try
+        {
+            dynamic components = project.VBComponents;
+            try
+            {
+                foreach (var module in modules)
+                {
+                    ImportChecked(components, module, done);
+                }
+            }
+            finally
+            {
+                Release(components);
+            }
+        }
+        catch (Exception e) when (e is not VbaSyncException)
+        {
+            throw new VbaSyncException("SYNC_FAILED", done.ToList(), $"Excel failed while importing the tests: {e.Message}");
+        }
+        finally
+        {
+            Release(project);
+        }
+    }
+
+    public void CloseMain()
+    {
+        bool events = App.EnableEvents;
+        App.EnableEvents = false;
+        try
+        {
+            Main.Close(false);
+        }
+        finally
+        {
+            App.EnableEvents = events;
+        }
+
+        Release(_main!);
+        _main = null;
+    }
+
+    public void CloseUnder(string folder)
+    {
+        var inside = Path.TrimEndingDirectorySeparator(folder) + Path.DirectorySeparatorChar;
+        string? main = _main is null ? null : (string)_main.FullName;
+        bool events = App.EnableEvents;
+        App.EnableEvents = false;
+        App.DisplayAlerts = false;
+        dynamic workbooks = App.Workbooks;
+        try
+        {
+            for (var i = (int)workbooks.Count; i >= 1; i--)
+            {
+                dynamic workbook = workbooks.Item(i);
+                try
+                {
+                    if (((string)workbook.FullName).StartsWith(inside, StringComparison.OrdinalIgnoreCase))
+                    {
+                        workbook.Close(false);
+                    }
+                }
+                finally
+                {
+                    Release(workbook);
+                }
+            }
+        }
+        finally
+        {
+            Release(workbooks);
+            App.DisplayAlerts = true;
+            App.EnableEvents = events;
+        }
+
+        if (main is not null && main.StartsWith(inside, StringComparison.OrdinalIgnoreCase))
+        {
+            Release(_main!);
+            _main = null;
         }
     }
 

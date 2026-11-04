@@ -25,7 +25,7 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
         {
             Name = "session_status",
             Description = "Returns the session state (closed or ready), whether an operation is running, and how long it has run. " +
-                "Answers even while a macro runs. Takes no arguments.",
+                "Answers even while a macro runs. During test_run it also gives the running test. Takes no arguments.",
             ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false,
         }, ToolDefinition.NoInput, StatusOutput),
         ToolDefinition.Create(End, new()
@@ -86,11 +86,17 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
 
         if (snapshot.Operation is not null)
         {
-            result["operation"] = new JsonObject
+            var operation = new JsonObject
             {
                 ["tool"] = snapshot.Operation,
                 ["elapsed_ms"] = (long)snapshot.Elapsed.TotalMilliseconds,
             };
+            if (snapshot.Test is { } test)
+            {
+                operation["test"] = new JsonObject { ["name"] = test.Name, ["index"] = test.Index, ["count"] = test.Count };
+            }
+
+            result["operation"] = operation;
         }
 
         return Task.FromResult(ToolResults.Success(result));
@@ -152,7 +158,9 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
 
     private static readonly string StatusOutput = $$$"""
         {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"app":{"type":"string"},"workbook":{"type":"string"},
-         "operation":{"type":"object","properties":{"tool":{"type":"string"},"elapsed_ms":{"type":"integer"}},"required":["tool","elapsed_ms"]}},
+         "operation":{"type":"object","properties":{"tool":{"type":"string"},"elapsed_ms":{"type":"integer"},
+          "test":{"type":"object","properties":{"name":{"type":"string"},"index":{"type":"integer"},"count":{"type":"integer"}},"required":["name","index","count"]}},
+          "required":["tool","elapsed_ms"]}},
          "required":["session"]}
         """;
 

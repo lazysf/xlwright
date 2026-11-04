@@ -337,8 +337,9 @@
 - 写しには、`tests/`のモジュールと、アサーションのモジュール`XlWrightAssert`を取り込みます。取り込むファイルは、`vba_sync`と同じ検査を通します。`src/`と同じ名前のモジュール、`XlWright`・`XlWrightCall`・`XlWrightAssert`という名前のモジュールは、`SOURCE_INVALID`で拒否します。
 - アサーション: `XlWrightAssert.AreEqual expected, actual[, message]`、`XlWrightAssert.IsTrue condition[, message]`、`XlWrightAssert.Fail message`。失敗すると、`Err.Source`が`XlWrightAssert`のエラーを上げ、そのテストはそこで止まります。値の比較はVBAの`=`で行い、オブジェクトと配列は比べずに失敗にします。テストが`On Error`でアサーションの失敗を握りつぶすと、`passed`になります。
 - テストは、`macro_run`と同じく、名前で直接呼ぶ関数を実行ごとに作って呼びます。実行の間は`EnableEvents`を変えません。
-- 結果: `{"session":{…},"summary":{"passed":2,"failed":1,"errors":1},"tests":[{"name":"Tests.TestAdd","result":"passed","elapsed_ms":3},{"name":"Tests.TestSplit","result":"failed","message":"AreEqual: expected 3, actual 2. 列の数"},{"name":"Tests.TestLoad","result":"error","number":53,"description":"ファイルが見つかりません。","source":"VBAProject"}],"elapsed_ms":1520,"sync":{…}}`。テストが失敗しても、ツールは成功を返します。結果が大きい時は要約し、全体を`result_file`へ書きます。
-- 後始末: 写しのフォルダ（`.xlwright/test/<run-id>/`）の中のブックは、保存せずに閉じます。ほかのブックは閉じません（`session_end`の`FOREIGN_WORKBOOK`で知らせます）。写しのフォルダを消せない時は、結果の`leftover_copy`にそのパスを返します。
+- 結果: `{"session":{…},"summary":{"passed":2,"failed":1,"errors":1},"tests":[{"name":"Tests.TestAdd","result":"passed","elapsed_ms":3},{"name":"Tests.TestSplit","result":"failed","message":"AreEqual: expected 3, actual 2. 列の数"},{"name":"Tests.TestLoad","result":"error","number":53,"description":"ファイルが見つかりません。","source":"VBAProject"}],"elapsed_ms":1520,"sync":{…}}`。テストが失敗しても、ツールは成功を返します。各テストには`elapsed_ms`も付きます。結果が大きい時（18,000文字を超える時）は、全体を`<アプリ>/.xlwright/results/<id>.json`へ書いて`result_file`にそのパスを返し、`tests`には`passed`でないテストを収まるだけ返します。
+- 後始末: 写しのフォルダ（`.xlwright/test/<run-id>/`）の中のブックは、保存せずに閉じます。ほかのブックは閉じません（`session_end`の`FOREIGN_WORKBOOK`で知らせます）。写しのフォルダを消せない時は、結果の`leftover_copy`にそのパス（リポジトリからの相対パスで、区切りは`/`）を返します。
+- 写しへのテストの取り込みに失敗した時は、主ブックを開き直してから、`vba_sync`と同じ`SYNC_FAILED`を返します。
 - 失敗: `vba_sync`の失敗（反映の前に止まった時は実行しない）に加えて、次です。主ブックを閉じた後に止まった時は、主ブックを開き直してから返します。開き直せない時は、下の`WORKBOOK_NOT_REOPENED`です。止まるまでのテストの結果は、`data.tests`に入れます。
 
 | `code` | `detail` | 場合 |

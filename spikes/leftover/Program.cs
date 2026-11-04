@@ -1,11 +1,13 @@
 // Throwaway experiment for the stage 2 open questions in docs/architecture.md "残った専用のExcelの片付け".
 // leave starts a dedicated Excel, confirms ownership, records its PID and creation time, and kills its own
-// process without releasing COM, as if the server were killed. watch and probe act only on the recorded Excel,
-// after matching its PID and creation time; they never touch another Excel.
+// process without releasing COM, as if the server were killed. watch, probe, list, show, and kill act only on the
+// recorded Excel, after matching its PID and creation time; they never touch another Excel.
 //
 // Usage: dotnet run --project spikes\leftover -- leave <state.json> [<workbook> [hidden|protected|busy]]
 //        dotnet run --project spikes\leftover -- watch <state.json> <seconds>
 //        dotnet run --project spikes\leftover -- probe <state.json> [<seconds>]
+//        dotnet run --project spikes\leftover -- list <state.json>
+//        dotnet run --project spikes\leftover -- show <state.json>
 //        dotnet run --project spikes\leftover -- kill <state.json>
 
 using System.Diagnostics;
@@ -28,6 +30,8 @@ internal static class Program
                 ["watch", var state, var seconds] => Watch(Read(state), int.Parse(seconds)),
                 ["probe", var state] => Probe(Read(state), 90),
                 ["probe", var state, var seconds] => Probe(Read(state), int.Parse(seconds)),
+                ["list", var state] => Probe(Read(state), 90, closeAndQuit: false),
+                ["show", var state] => Show(Read(state)),
                 ["kill", var state] => Kill(Read(state)),
                 _ => Usage(),
             };
@@ -124,7 +128,7 @@ internal static class Program
         return 1;
     }
 
-    private static int Probe(Recorded recorded, int seconds)
+    private static int Probe(Recorded recorded, int seconds, bool closeAndQuit = true)
     {
         if (!Matches(recorded))
         {
@@ -137,7 +141,7 @@ internal static class Program
         foreach (var (kind, handle) in mains.Select(h => ("XLMAIN", h)).Concat(books.Select(h => ("EXCEL7", h))))
         {
             var connected = false;
-            if (!OnSta(() => connected = TryConnect(kind, handle, recorded), TimeSpan.FromSeconds(seconds)))
+            if (!OnSta(() => connected = TryConnect(kind, handle, recorded, closeAndQuit), TimeSpan.FromSeconds(seconds)))
             {
                 Log($"{kind}: the call did not return within {seconds} s; the thread is left behind");
             }
@@ -150,6 +154,34 @@ internal static class Program
 
         Log("no window gave an Excel object; the Excel is left running");
         return 1;
+    }
+
+    // Shows the recorded Excel's main window that holds a workbook window, without COM, as the handoff script would.
+    private static int Show(Recorded recorded)
+    {
+        if (!Matches(recorded))
+        {
+            Log($"PID {recorded.Pid} with the recorded creation time is not running");
+            return 1;
+        }
+
+        var (mains, books) = Windows(recorded.Pid);
+        var targets = mains.Where(main => books.Any(book => Native.GetAncestor(book, 2) == main)).ToList();
+        if (targets.Count == 0)
+        {
+            Log("no XLMAIN holds an EXCEL7 window; nothing is shown");
+            return 1;
+        }
+
+        foreach (var main in targets)
+        {
+            var wasVisible = Native.ShowWindow(main, 5); // SW_SHOW
+            var foreground = Native.SetForegroundWindow(main);
+            Log($"XLMAIN 0x{main.ToInt64():X}: ShowWindow (was visible {wasVisible}), SetForegroundWindow {foreground}, now visible {Native.IsWindowVisible(main)}");
+        }
+
+        _ = Windows(recorded.Pid);
+        return 0;
     }
 
     private static int Kill(Recorded recorded)
@@ -167,7 +199,7 @@ internal static class Program
         return ended ? 0 : 1;
     }
 
-    private static bool TryConnect(string kind, IntPtr handle, Recorded recorded)
+    private static bool TryConnect(string kind, IntPtr handle, Recorded recorded, bool closeAndQuit)
     {
         var iid = new Guid("00020400-0000-0000-C000-000000000046");
         var watch = Stopwatch.StartNew();
@@ -192,7 +224,16 @@ internal static class Program
             names.Add((string)book.Name);
         }
 
-        Log($"{kind}: connected; Application.Hwnd PID {pid}; Workbooks [{string.Join(", ", names)}]; ProtectedViewWindows {protectedViews}");
+        Log($"{kind}: connected; Application.Hwnd PID {pid}; Workbooks [{string.Join(", ", names)}]; ProtectedViewWindows {protectedViews}; Visible {(bool)app.Visible}");
+        if (!closeAndQuit)
+        {
+            Marshal.FinalReleaseComObject(app);
+            Marshal.FinalReleaseComObject(accessible);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            return true;
+        }
+
         foreach (dynamic book in app.Workbooks)
         {
             book.Close(false);
@@ -299,6 +340,15 @@ internal static class Native
 
     [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr window);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetAncestor(IntPtr window, uint flags); // GA_ROOT is 2
+
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr window, int command);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr window);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetClassName(IntPtr window, StringBuilder name, int length);

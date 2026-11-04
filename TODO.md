@@ -428,6 +428,24 @@
 - [x] 実Excelの結合テストと確認の入口を通す。テストは377件と実Excelの11件。`vba_check`の結合テストは4回続けて通った。
 - [x] 文書を直す。
 
+## 周期36（段階3）: `test_run`
+
+作るもの: APIの[`test_run`](docs/api.md#test_run)と、`session_status`の実行中のテスト。`tests/`のテストの見つけ方と検査、アサーションのモジュール`XlWrightAssert`、保存して閉じ、写し、写しを開いて取り込み、1つずつ実行し、写しを閉じて消し、主ブックを開き直す流れ。
+
+完了の条件:
+
+- テストで、テストの見つけ方（`Private`と引数のあるものを除く）、`tests`の絞り込み、`INVALID_TEST_NAME`・`TEST_NOT_FOUND`、`tests/`の検査（`src/`と同じ名前、予約した名前）、結果の`passed`・`failed`・`error`と`summary`、写す範囲、流れの順、`SAVE_FAILED`・`COPY_FAILED`・`OPEN_FAILED`・`WORKBOOK_NOT_REOPENED`・`DIALOG`・`TIMEOUT`と`data.tests`、`leftover_copy`、実行中の`session_status`の`test`を返す。どれも、テストを先に書いて失敗を確かめてから作る。
+- 実Excelの結合テストで、通るテスト・アサーションの失敗・実行時エラーを1回で受け取り、テストが書き換えたセルとファイルが主ブックとアプリのフォルダに残らず、写しのフォルダが消え、セッションが続く。
+- 確認の入口が通る。
+
+作業:
+
+- [x] テストのソースとアサーションをTDDで作る。
+- [x] 流れを偽物でTDDする。
+- [x] COMの部品とツールを作る。
+- [x] 実Excelの結合テストと確認の入口を通す。テストは416件と実Excelの12件。
+- [x] 文書を直す。
+
 ## 書き留めたこと
 
 周期の中で後へ回した事項を書きます。
@@ -467,4 +485,6 @@
 - `AddFromString`に、システムのANSIコードページに無い文字を渡した時の扱いは確かめていない。シートとブックのモジュールの反映も、ファイルと同じ検査を通すことにした（[API](docs/api.md#vba_syncをシートとブックのモジュールに広げる)、[記録](docs/notes/test-copy.md#未確認)）。
 - 確認の入口のInspectorの`tools/list`が、schemaの移植性の警告を3件出す。`range_write`の`values`の要素と、`macro_run`の`args`の要素と`return`の、配列の`type`。JSON Schemaとしては正しく、Claude Codeでは動いている。`anyOf`へ分けるかは、ほかのクライアントを考える時に決める。
 - `vba_get`は、種類が3（UserForm）と11（ActiveXのデザイナー）のモジュールを、どちらも`form`で返す。APIの種類は4つのため。
+- `test_run`で専用のExcelを終えた後や、写しのフォルダを消せなかった時の`.xlwright/test/<run-id>/`は、だれも片付けない。次の`test_run`か`session_start`で消すかを決める。
+- 開発版のプラグインのスキル（`plugins/xlwright-dev/skills/xlwright/SKILL.md`）に、段階3のツール（`vba_get`・`vba_check`・`test_run`）の扱いがまだ無い。段階3の完了の根拠を会話から通す前に加える。
 - 周期32の始めに、古いビルドの開発版のサーバーが5つ動いていた。開いたままの別の会話のものと推測し、確かめていない。古いビルドを消す工程（上の1つ目）と合わせて扱う。

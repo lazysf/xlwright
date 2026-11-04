@@ -16,10 +16,13 @@ internal sealed class FakeLauncher : IExcelLauncher
 
     public int Launches { get; private set; }
 
+    public Exception? LaunchThrows { get; set; }
+
     public LaunchedExcel Launch()
     {
         Launches++;
         Process.WaitIf(LaunchBlock);
+        if (LaunchThrows is not null) throw LaunchThrows;
         return new LaunchedExcel(Excel, Process);
     }
 }

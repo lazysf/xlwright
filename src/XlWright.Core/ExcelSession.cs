@@ -457,7 +457,8 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
         {
             worker.Dispose();
             appLock.Dispose();
-            return Fail(ToolFailure.ExcelError, null, $"Excel did not start: {launch.Exception!.InnerException!.Message}");
+            return Fail(ToolFailure.ExcelError, "EXCEL_NOT_STARTED",
+                $"Excel did not start: {launch.Exception!.InnerException!.Message} Check that Excel is installed and starts, then call session_start again.");
         }
 
         var (excel, process) = launch.Result;

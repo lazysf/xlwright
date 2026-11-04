@@ -90,6 +90,18 @@ public sealed class ExcelSessionTests : IDisposable
     }
 
     [Fact]
+    public async Task StartReportsAnExcelThatDidNotStart()
+    {
+        _launcher.LaunchThrows = new InvalidOperationException("class not registered");
+
+        var outcome = await _session.StartAsync(_app);
+
+        AssertFailure(outcome, "EXCEL_ERROR", "EXCEL_NOT_STARTED", "closed");
+        Assert.Contains("class not registered", outcome.Failure!.Message);
+        Assert.Empty(_launcher.Excel.Calls);
+    }
+
+    [Fact]
     public async Task StartRejectsASecondSession()
     {
         await _session.StartAsync(_app);

@@ -12,6 +12,7 @@
 段階1の完了の根拠が揃いました。Claude Codeの会話から人の操作なしで流れを通し、終わらないマクロで上限の終了を確かめました（[記録](docs/notes/stage1-flow.md)）。
 応答の本文のescapeをやめ、日本語の約20,000文字の応答が打ち切られずに届くことを確かめました（[記録](docs/notes/response-size.md)）。
 段階2の確かめることのうち、人の操作の要らないものを確かめ、アプリの排他、所有記録、主ブックの共有の検査、次の開始での片付けを作りました（[記録](docs/notes/leftover-excel.md)、[記録](docs/notes/main-workbook-share.md)）。
+Claude Codeの会話から、`session_start`の後に閉じた会話が残した専用のExcelを、次の会話の`session_start`が片付けて`cleanup`を返すことを確かめました（[記録](docs/notes/stage2-cleanup.md)）。
 
 ## ロードマップ
 

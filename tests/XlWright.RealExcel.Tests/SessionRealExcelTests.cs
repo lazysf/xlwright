@@ -278,6 +278,31 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TheNextStartCleansUpTheExcelOfAClosedConversation()
+    {
+        int leftover;
+        await using (var closed = await ServerProcess.ConnectAsync(_repo.Root, TestContext.Current.CancellationToken, noExcel: false))
+        {
+            var start = await closed.CallToolAsync("session_start", new Dictionary<string, object?> { ["app"] = "apps/sales" },
+                cancellationToken: TestContext.Current.CancellationToken);
+            leftover = Success(start).GetProperty("excel").GetProperty("pid").GetInt32();
+        }
+
+        // Closing the conversation ends its server and leaves its Excel (docs/architecture.md "実行時の状態と所有記録").
+        Assert.Contains(leftover, ExcelProcesses().Keys);
+
+        var started = Success(await Call("session_start", new() { ["app"] = "apps/sales" }));
+
+        var cleanup = started.GetProperty("cleanup");
+        Assert.Equal(leftover, cleanup.GetProperty("excel").GetProperty("pid").GetInt32());
+        Assert.Contains(cleanup.GetProperty("ended_by").GetString(), new[] { "quit", "terminate" });
+        Assert.DoesNotContain(leftover, ExcelProcesses().Keys);
+        var pid = started.GetProperty("excel").GetProperty("pid").GetInt32();
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(pid);
+    }
+
+    [Fact]
     public async Task LocksTheAppAndCompletesTheRecord()
     {
         var pid = Success(await Call("session_start", new() { ["app"] = "apps/sales" }))

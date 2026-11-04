@@ -211,14 +211,40 @@ internal sealed class FakeProcessQuery : IProcessQuery
 
     public List<RecordedProcess> Unchecked { get; } = [];
 
-    public ProcessLookup Find(RecordedProcess process) =>
-        Running.Contains(process)
-            ? new ProcessLookup(ProcessPresence.Running, new FakeProcess { Facts = new ProcessFacts(process.Pid, process.Name + ".EXE", process.StartedAtUtc, null) })
-            : new ProcessLookup(Unchecked.Contains(process) ? ProcessPresence.Unknown : ProcessPresence.Gone);
+    // The process handed out for a running record; a leftover FakeExcel ends it on quit.
+    public FakeProcess Leftover { get; } = new();
+
+    public ProcessLookup Find(RecordedProcess process)
+    {
+        if (!Running.Contains(process))
+        {
+            return new ProcessLookup(Unchecked.Contains(process) ? ProcessPresence.Unknown : ProcessPresence.Gone);
+        }
+
+        Leftover.Facts = new ProcessFacts(process.Pid, process.Name + ".EXE", process.StartedAtUtc, null);
+        return new ProcessLookup(ProcessPresence.Running, Leftover);
+    }
 
     public IReadOnlyList<ProcessFacts> AutomationExcelsSince(DateTime utc)
     {
         AutomationSince = utc;
         return Automation;
+    }
+}
+
+// Stands in for the window connection to a leftover Excel. Not reachable unless a test says otherwise.
+internal sealed class FakeConnector : IExcelConnector
+{
+    public LeftoverWindow Result { get; set; } = new LeftoverWindow.NotReachable("no window gave an Excel");
+
+    public bool BlocksForever { get; set; }
+
+    public List<int> Connects { get; } = [];
+
+    public LeftoverWindow Connect(int pid)
+    {
+        Connects.Add(pid);
+        if (BlocksForever) Thread.Sleep(Timeout.Infinite);
+        return Result;
     }
 }

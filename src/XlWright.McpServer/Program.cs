@@ -16,7 +16,7 @@ if (options is null)
 // One server holds at most one session (docs/architecture.md "構成"). When stdin closes, the server ends
 // without touching the Excel or ending it; the next start cleans up (stage 2). The session is not disposed,
 // so the app lock is closed by the OS when the process ends, never by a running server ("実行時の状態と所有記録").
-var session = options.NoExcel ? null : new ExcelSession(new ComExcelLauncher(), new WindowsProcessQuery(), SessionTimeouts.Default);
+var session = options.NoExcel ? null : new ExcelSession(new ComExcelLauncher(), new WindowsProcessQuery(), new WindowConnector(), SessionTimeouts.Default);
 
 // The empty builder reads no configuration files and adds no stdout logging.
 // stdout carries only JSON-RPC frames, so logs go to stderr.

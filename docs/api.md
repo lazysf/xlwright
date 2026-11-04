@@ -136,7 +136,7 @@
 - `STATE_UNKNOWN`の`data`には、`excel_ended`と`restartable`に加えて、専用のExcelを残して止まった時は`excel`（`pid`と`started_at_utc`）と人が取る手順を入れます。
 - 失敗の`data.log`に、診断の記録のパスを入れます（[失敗の返し方と記録](architecture.md#失敗の返し方と記録)）。
 - 保留中のCOM呼出しが残って、このサーバーで新しいセッションを始められない時は、`session_start`を`CONFLICT`・`detail: SERVER_UNUSABLE`で拒否し、会話を閉じて新しい会話で始めるよう`message`に書きます（[状態と結果不明](architecture.md#状態と結果不明)）。
-- アプリの排他、所有記録、開始の順序の4の検査は、段階2で作りました。次の開始での片付けは、まだありません。残った専用のExcelが動いている時は、`LEFTOVER_EXCEL`で止まります。
+- アプリの排他、所有記録、開始の順序の4の検査、次の開始での片付けは、段階2で作りました。
 
 ### `session_start`（段階1）
 

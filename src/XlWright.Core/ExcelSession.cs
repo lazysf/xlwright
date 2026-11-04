@@ -14,7 +14,7 @@ public sealed record SessionOutcome(JsonObject? Result, ToolFailure? Failure, Se
 /// One session: start (docs/architecture.md "開始の順序" 1-6, "所有記録の形式", and "所有の確定"), status, save, and end ("終了").
 /// Timeouts end only the Excel whose ownership this session confirmed ("状態と結果不明").
 /// </summary>
-public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processes, SessionTimeouts timeouts) : IDisposable
+public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processes, IExcelConnector connector, SessionTimeouts timeouts) : IDisposable
 {
     // docs/notes/dialog-probe.md: every dialog was found at the first 250 ms check.
     private static readonly TimeSpan DialogInterval = TimeSpan.FromMilliseconds(250);
@@ -315,12 +315,14 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
         }
 
         DateTime marked;
+        JsonObject? cleanup;
         try
         {
-            var ready = CheckRecord(app, appLock) ?? CheckWorkbookFile(app);
+            (var ready, cleanup) = await CheckRecord(app, appLock, deadline);
+            ready ??= CheckWorkbookFile(app);
             if (ready is not null)
             {
-                appLock.Dispose();
+                ReleaseLock(appLock);
                 return ready.Value;
             }
 
@@ -330,8 +332,8 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
         }
         catch
         {
-            // Nothing is started yet, so the app is freed now instead of by the finalizer.
-            appLock.Dispose();
+            // This session has started nothing yet, so the app is freed now instead of by the finalizer.
+            ReleaseLock(appLock);
             throw;
         }
 
@@ -400,12 +402,18 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
             _active = active;
         }
 
-        return (new JsonObject
+        var result = new JsonObject
         {
             ["app"] = app.RelativePath,
             ["workbook"] = app.WorkbookName,
             ["excel"] = ExcelJson(process.Facts),
-        }, null);
+        };
+        if (cleanup is not null)
+        {
+            result["cleanup"] = cleanup;
+        }
+
+        return (result, null);
     }
 
     private async Task<(JsonObject?, ToolFailure?)> EndCore(Active active, bool save)
@@ -557,15 +565,15 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
     }
 
     // docs/architecture.md "所有記録の形式" and "完了にする条件": a first start completes the new record; a starting
-    // mark completes when no Excel started after it; an owned record completes when its Excel has ended.
-    // A leftover that still runs stops the start (its cleanup comes with "残った専用のExcelの片付け").
-    private (JsonObject?, ToolFailure?)? CheckRecord(AppFolder app, AppLock appLock)
+    // mark completes when no Excel started after it; an owned record completes when its Excel has ended or was
+    // cleaned up. Returns the cleanup for the result when a leftover was ended.
+    private async Task<((JsonObject?, ToolFailure?)? Failure, JsonObject? Cleanup)> CheckRecord(AppFolder app, AppLock appLock, Stopwatch deadline)
     {
         var completed = new OwnershipRecord(OwnershipRecord.Completed, DateTime.UtcNow, app.WorkbookName, null);
         if (appLock.Created)
         {
             appLock.Write(completed);
-            return null;
+            return (null, null);
         }
 
         OwnershipRecord? record;
@@ -575,49 +583,204 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
         }
         catch (Exception e) when (e is IOException or System.Text.DecoderFallbackException)
         {
-            return RecordInvalid(app, $"The ownership record could not be read: {e.Message}");
+            return (RecordInvalid(app, $"The ownership record could not be read: {e.Message}"), null);
         }
 
+        JsonObject? cleanup = null;
         switch (record?.State)
         {
             case null:
-                return RecordInvalid(app, "The ownership record is empty or not in the expected form.");
+                return (RecordInvalid(app, "The ownership record is empty or not in the expected form."), null);
             case OwnershipRecord.Starting:
                 var started = processes.AutomationExcelsSince(record.MarkedAtUtc);
                 if (started.Count > 0)
                 {
                     var data = RecordData(app);
                     data["processes"] = new JsonArray(started.Select(facts => (JsonNode)ExcelJson(facts)).ToArray());
-                    return Fail(ToolFailure.Conflict, "UNKNOWN_EXCEL",
+                    return (Fail(ToolFailure.Conflict, "UNKNOWN_EXCEL",
                         $"An earlier start of {app.RelativePath} stopped while starting Excel, and an Excel started from COM since then is running " +
                         $"(PID {string.Join(", ", started.Select(facts => facts.Pid))}). Ask the person to check it in Task Manager and close it, then start again.",
-                        data);
+                        data), null);
                 }
 
                 break;
             case OwnershipRecord.Owned:
                 var lookup = processes.Find(record.Process!);
-                lookup.Process?.Dispose();
-                if (lookup.Presence != ProcessPresence.Gone)
+                if (lookup.Presence == ProcessPresence.Unknown)
                 {
-                    var data = RecordData(app);
-                    data["excel"] = new JsonObject
+                    return (Leftover(app, record.Process!, "could not be checked"), null);
+                }
+
+                if (lookup.Presence == ProcessPresence.Running)
+                {
+                    using var leftover = lookup.Process!;
+                    (var failure, cleanup) = await CleanUp(app, record.Process!, leftover, deadline);
+                    if (_unusable && failure is not { Item2.Code: ToolFailure.StateUnknown })
                     {
-                        ["pid"] = record.Process!.Pid,
-                        ["started_at_utc"] = record.Process.StartedAtUtc.ToString("O"),
-                    };
-                    var state = lookup.Presence == ProcessPresence.Running ? "is still running" : "could not be checked";
-                    return Fail(ToolFailure.Conflict, "LEFTOVER_EXCEL",
-                        $"The dedicated Excel of an earlier session (PID {record.Process.Pid}) {state} and was left untouched. " +
-                        "Ask the person to check it in Task Manager, save what they need, and close it, then start again.",
-                        data);
+                        // A call to the leftover is still pending, so this server starts no session ("状態と結果不明").
+                        if (cleanup is not null)
+                        {
+                            appLock.Write(completed);
+                        }
+
+                        return (CleanupPending(app, record.Process!, cleanup), null);
+                    }
+
+                    if (failure is not null)
+                    {
+                        return (failure, null);
+                    }
                 }
 
                 break;
         }
 
         appLock.Write(completed);
-        return null;
+        return (null, cleanup);
+    }
+
+    // docs/architecture.md "残った専用のExcelの片付け" 3-5, after the lock and the identity check (1-2). Every call to
+    // the leftover runs on a throwaway STA with the start's time limit; a call that does not return is pending.
+    private async Task<((JsonObject?, ToolFailure?)? Failure, JsonObject? Cleanup)> CleanUp(
+        AppFolder app, RecordedProcess recorded, IOwnedProcess leftover, Stopwatch deadline)
+    {
+        var worker = new StaWorker();
+        var connect = worker.Run(() => connector.Connect(recorded.Pid));
+        if (!await Completes(connect, Within(deadline, timeouts.Sync)))
+        {
+            return (CheckTimedOut(app, recorded), null);
+        }
+
+        if (connect.IsFaulted || connect.Result is LeftoverWindow.NotReachable)
+        {
+            worker.Dispose();
+            var why = connect.IsFaulted ? connect.Exception!.InnerException!.Message : ((LeftoverWindow.NotReachable)connect.Result).Reason;
+            return (Leftover(app, recorded, $"could not be reached ({why})"), null);
+        }
+
+        if (connect.Result is LeftoverWindow.NoWorkbookWindow)
+        {
+            // No workbook window, so nothing to lose; the lock and the identity are checked (人の判断, 2026-11-04).
+            worker.Dispose();
+            leftover.Terminate();
+            return Ended(app, recorded, leftover.WaitForExit(timeouts.TerminateExit), "terminate");
+        }
+
+        var excel = ((LeftoverWindow.Connected)connect.Result).Excel;
+        var listing = worker.Run(excel.OpenWorkbookPaths);
+        if (!await Completes(listing, Within(deadline, timeouts.Sync)))
+        {
+            return (CheckTimedOut(app, recorded), null);
+        }
+
+        var outside = listing.IsFaulted ? null : listing.Result.Where(path => path is null || !IsInside(path, app.FullPath)).ToList();
+        if (outside is null || outside.Count > 0)
+        {
+            if (!await Completes(worker.Run(excel.ReleaseReferences), timeouts.Sync))
+            {
+                MarkUnusable();
+            }
+            else
+            {
+                worker.Dispose();
+            }
+
+            var why = outside is null ? "its open workbooks could not be listed" : "a workbook outside the app folder or without a path is open";
+            return (Leftover(app, recorded, $"was not closed because {why}"), null);
+        }
+
+        // Checked: only app workbooks are open, so a close or quit that does not end it in time ends it by handle.
+        var quit = worker.Run(excel.CloseAllAndQuit);
+        if (await Completes(quit, Within(deadline, timeouts.Sync)) && !quit.IsFaulted
+            && leftover.WaitForExit(Within(deadline, timeouts.QuitExit)))
+        {
+            worker.Dispose();
+            return Ended(app, recorded, ended: true, "quit");
+        }
+
+        leftover.Terminate();
+        var ended = leftover.WaitForExit(timeouts.TerminateExit);
+        if (await Completes(quit, timeouts.PendingReturn))
+        {
+            worker.Dispose();
+        }
+        else
+        {
+            MarkUnusable();
+        }
+
+        return Ended(app, recorded, ended, "terminate");
+    }
+
+    private ((JsonObject?, ToolFailure?)? Failure, JsonObject? Cleanup) Ended(AppFolder app, RecordedProcess recorded, bool ended, string endedBy)
+    {
+        if (ended)
+        {
+            return (null, new JsonObject { ["excel"] = RecordedJson(recorded), ["ended_by"] = endedBy });
+        }
+
+        var data = RecordData(app);
+        data["excel"] = RecordedJson(recorded);
+        return (Fail(ToolFailure.Conflict, "EXIT_NOT_CONFIRMED",
+            $"The dedicated Excel of an earlier session (PID {recorded.Pid}) was asked to end but its end could not be confirmed. " +
+            "Ask the person to check it in Task Manager, then start again.", data), null);
+    }
+
+    // The check did not finish within the start's limit: the leftover is left untouched ("残った専用のExcelの片付け").
+    private (JsonObject?, ToolFailure?) CheckTimedOut(AppFolder app, RecordedProcess recorded)
+    {
+        MarkUnusable();
+        var extra = RecordData(app);
+        extra["excel"] = RecordedJson(recorded);
+        return Unknown("TIMEOUT", excelEnded: false, restartable: false, null,
+            $"Checking the dedicated Excel of an earlier session (PID {recorded.Pid}) did not finish within the time limit, so it was left untouched. " +
+            "Close this conversation and start the session in a new one.", extra);
+    }
+
+    private (JsonObject?, ToolFailure?) CleanupPending(AppFolder app, RecordedProcess recorded, JsonObject? cleanup)
+    {
+        var extra = RecordData(app);
+        extra["excel"] = RecordedJson(recorded);
+        if (cleanup is not null)
+        {
+            extra["cleanup"] = cleanup;
+        }
+
+        var outcome = cleanup is null
+            ? "It was left running."
+            : "It was ended, and the changes in it since its last save are lost.";
+        return Unknown("TIMEOUT", excelEnded: cleanup is not null, restartable: false, null,
+            $"A call to the dedicated Excel of an earlier session (PID {recorded.Pid}) did not return within the time limit. {outcome} " +
+            "Close this conversation and start the session in a new one.", extra);
+    }
+
+    private static (JsonObject?, ToolFailure?) Leftover(AppFolder app, RecordedProcess recorded, string state)
+    {
+        var data = RecordData(app);
+        data["excel"] = RecordedJson(recorded);
+        return Fail(ToolFailure.Conflict, "LEFTOVER_EXCEL",
+            $"The dedicated Excel of an earlier session (PID {recorded.Pid}) {state} and was left untouched. " +
+            "Ask the person to check it in Task Manager, save what they need, and close it, then start again.",
+            data);
+    }
+
+    private static JsonObject RecordedJson(RecordedProcess recorded) => new()
+    {
+        ["pid"] = recorded.Pid,
+        ["started_at_utc"] = recorded.StartedAtUtc.ToString("O"),
+    };
+
+    // A lock held while a call is pending stays until the process ends ("状態と結果不明").
+    private void ReleaseLock(AppLock appLock)
+    {
+        if (_unusable)
+        {
+            KeepLock(appLock);
+        }
+        else
+        {
+            appLock.Dispose();
+        }
     }
 
     // docs/architecture.md "開始の順序" 4: open the file for writing for a moment, letting others read and write.
@@ -717,6 +880,13 @@ public sealed class ExcelSession(IExcelLauncher launcher, IProcessQuery processe
 
     private static TimeSpan Remaining(Stopwatch elapsed, TimeSpan limit) =>
         limit > elapsed.Elapsed ? limit - elapsed.Elapsed : TimeSpan.Zero;
+
+    // A step of the start's cleanup: its own limit from the table, cut short by what is left of the start.
+    private TimeSpan Within(Stopwatch startElapsed, TimeSpan step)
+    {
+        var left = Remaining(startElapsed, timeouts.Start);
+        return step < left ? step : left;
+    }
 
     // A path Excel reports that is not a full local path (a URL, a bare name) counts as outside the app folder.
     private static bool IsInside(string path, string folder) =>

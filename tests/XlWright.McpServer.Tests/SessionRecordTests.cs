@@ -20,6 +20,7 @@ public sealed class SessionRecordTests : IDisposable
     private readonly TempRepository _repo = new();
     private readonly FakeLauncher _launcher = new();
     private readonly FakeProcessQuery _processes = new();
+    private readonly FakeConnector _connector = new();
     private readonly ExcelSession _session;
     private readonly AppFolder _app;
 
@@ -27,7 +28,7 @@ public sealed class SessionRecordTests : IDisposable
     {
         _repo.AddApp("apps/sales", "Sales.xlsm");
         _app = AppFolder.Resolve(_repo.Root, "apps/sales").Folder!;
-        _session = new ExcelSession(_launcher, _processes, Short);
+        _session = new ExcelSession(_launcher, _processes, _connector, Short);
     }
 
     private string RecordPath => Path.Combine(_app.FullPath, ".xlwright", "session.json");
@@ -73,7 +74,7 @@ public sealed class SessionRecordTests : IDisposable
     {
         await _session.StartAsync(_app);
         var other = new FakeLauncher();
-        using var second = new ExcelSession(other, new FakeProcessQuery(), Short);
+        using var second = new ExcelSession(other, new FakeProcessQuery(), new FakeConnector(), Short);
 
         var outcome = await second.StartAsync(_app);
 
@@ -86,7 +87,7 @@ public sealed class SessionRecordTests : IDisposable
     {
         await _session.StartAsync(_app);
         await _session.EndAsync(save: false);
-        using var second = new ExcelSession(new FakeLauncher(), new FakeProcessQuery(), Short);
+        using var second = new ExcelSession(new FakeLauncher(), new FakeProcessQuery(), new FakeConnector(), Short);
 
         var outcome = await second.StartAsync(_app);
 
@@ -172,7 +173,7 @@ public sealed class SessionRecordTests : IDisposable
         _launcher.Excel.OpenBlock = Block.Forever;
 
         var outcome = await _session.StartAsync(_app);
-        using var second = new ExcelSession(new FakeLauncher(), new FakeProcessQuery(), Short);
+        using var second = new ExcelSession(new FakeLauncher(), new FakeProcessQuery(), new FakeConnector(), Short);
         var again = await second.StartAsync(_app);
 
         Assert.Equal("TIMEOUT", outcome.Failure!.Detail);
@@ -266,7 +267,7 @@ public sealed class SessionRecordTests : IDisposable
         _launcher.LaunchBlock = Block.Forever;
 
         var outcome = await _session.StartAsync(_app);
-        using var second = new ExcelSession(new FakeLauncher(), new FakeProcessQuery(), Short);
+        using var second = new ExcelSession(new FakeLauncher(), new FakeProcessQuery(), new FakeConnector(), Short);
         var again = await second.StartAsync(_app);
 
         Assert.Equal("TIMEOUT", outcome.Failure!.Detail);

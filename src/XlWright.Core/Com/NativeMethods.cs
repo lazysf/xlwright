@@ -53,6 +53,10 @@ internal static class NativeMethods
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint message, int wParam, StringBuilder lParam, uint flags, uint timeoutMs, out IntPtr result);
 
+    [DllImport("oleacc.dll")]
+    public static extern int AccessibleObjectFromWindow(
+        IntPtr hwnd, uint objectId, ref Guid iid, [MarshalAs(UnmanagedType.IDispatch)] out object? accessible);
+
     [DllImport("ole32.dll")]
     public static extern int CoRegisterMessageFilter(IOleMessageFilter? newFilter, out IOleMessageFilter? oldFilter);
 }

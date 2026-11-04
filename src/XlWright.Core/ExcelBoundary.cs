@@ -34,6 +34,35 @@ public enum ProcessPresence
 /// <summary>What the OS says about a recorded process; Process is the one held through a handle when it runs.</summary>
 public sealed record ProcessLookup(ProcessPresence Presence, IOwnedProcess? Process = null);
 
+/// <summary>
+/// Connects to a leftover dedicated Excel through its windows (docs/architecture.md "残った専用のExcelの片付け" 3).
+/// </summary>
+public interface IExcelConnector
+{
+    /// <summary>
+    /// Runs on the calling STA thread, and the Excel it returns stays on that thread. It reads windows first and
+    /// connects only through a workbook window (EXCEL7) of the process.
+    /// </summary>
+    LeftoverWindow Connect(int pid);
+}
+
+/// <summary>What the windows of a leftover Excel gave.</summary>
+public abstract record LeftoverWindow
+{
+    private LeftoverWindow()
+    {
+    }
+
+    /// <summary>The process has no workbook window, so it holds no workbook to lose (docs/notes/leftover-excel.md).</summary>
+    public sealed record NoWorkbookWindow : LeftoverWindow;
+
+    /// <summary>No workbook window gave an Excel whose Hwnd belongs to the process.</summary>
+    public sealed record NotReachable(string Reason) : LeftoverWindow;
+
+    /// <summary>The Excel of the process, for listing the open workbooks and closing them.</summary>
+    public sealed record Connected(IExcel Excel) : LeftoverWindow;
+}
+
 /// <summary>The Excel that one session started, and the process that Hwnd points to.</summary>
 public sealed record LaunchedExcel(IExcel Excel, IOwnedProcess Process);
 

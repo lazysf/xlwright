@@ -77,6 +77,25 @@ dotnet run --project spikes\leftover -- probe .xlwright\spikes\leftover\busy.jso
 - 1回は、開き直したExcel（`reopen.json`）。閉じてQuitした後も残ったため、`kill`で終了させた。
 - 開き直すと、`Workbooks.Open`は約2秒で戻り、`ReadOnly`は偽だった。
 
+### 変更した後の強制終了と自動回復（2026-11-04）
+
+自動回復の記録は作られなかった（1回）。強制終了の後に開き直す影響は無かった。
+
+```powershell
+dotnet run --project spikes\leftover -- leave .xlwright\spikes\recover\a.json .xlwright\spikes\recover\Recover.xlsm dirty
+dotnet run --project spikes\leftover -- kill .xlwright\spikes\recover\a.json
+dotnet run --project spikes\leftover -- leave .xlwright\spikes\recover\b.json .xlwright\spikes\recover\Recover.xlsm
+dotnet run --project spikes\leftover -- list .xlwright\spikes\recover\b.json
+dotnet run --project spikes\leftover -- kill .xlwright\spikes\recover\b.json
+```
+
+- `dirty`は、ブックを開いてA1を変え、660秒待ってから自分のプロセスを強制終了する。待つ間、60秒ごとに`%APPDATA%\Microsoft\Excel`を列挙する。
+- 変えた後、`Saved`は偽、`EnableAutoRecover`と`AutoRecover.Enabled`は真、`AutoRecover.Time`は10だった。自動回復の設定は既定のまま変えていない。
+- 660秒の間、`%APPDATA%\Microsoft\Excel`には、前からある`XLSTART`しか無かった。`%LOCALAPPDATA%\Microsoft\Office\UnsavedFiles`も無かった。
+- 残ったExcelを`kill`で終了させた後も、回復のファイルは無く、`~$Recover.xlsm`は無くなった。
+- 新しい専用のExcelで開き直すと、約2秒で戻り、`ReadOnly`は偽、`Workbooks`は`Recover.xlsm`だけだった。ブックのハッシュは、前と後で変わらなかった。
+- 非表示のCOMのExcelで、自動回復が記録を作る条件は確かめていない。表示されて人が操作するExcelでは、作られうる。
+
 ## 後始末とGit差分
 
 - 残った6つのExcel（PID 11096、18344、12392、8632、7124、3484）は、記録と照合してから`kill`で終了させた。
@@ -85,5 +104,5 @@ dotnet run --project spikes\leftover -- probe .xlwright\spikes\leftover\busy.jso
 
 ## 未確認
 
-- 変更して自動回復の記録が作られた後に強制終了した主ブックを、次に開く時の影響。今回の試行は、どれもブックを変更していない。
+- 非表示のCOMのExcelで、自動回復が記録を作る条件。表示要求で人へ見せて人が操作したExcelを強制終了した時の、自動回復の記録の影響。
 - Quitの後もプロセスが残る理由。強制終了したプロセスが持っていた参照が残っていると見られるが、確かめていない。

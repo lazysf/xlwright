@@ -3,7 +3,7 @@
 // process without releasing COM, as if the server were killed. watch, probe, list, show, and kill act only on the
 // recorded Excel, after matching its PID and creation time; they never touch another Excel.
 //
-// Usage: dotnet run --project spikes\leftover -- leave <state.json> [<workbook> [hidden|protected|busy]]
+// Usage: dotnet run --project spikes\leftover -- leave <state.json> [<workbook> [hidden|protected|busy|dirty]]
 //        dotnet run --project spikes\leftover -- watch <state.json> <seconds>
 //        dotnet run --project spikes\leftover -- probe <state.json> [<seconds>]
 //        dotnet run --project spikes\leftover -- list <state.json>
@@ -25,7 +25,7 @@ internal static class Program
             {
                 ["leave", var state] => Leave(state, null, "open"),
                 ["leave", var state, var workbook] => Leave(state, Path.GetFullPath(workbook), "open"),
-                ["leave", var state, var workbook, var form] when form is "hidden" or "protected" or "busy" =>
+                ["leave", var state, var workbook, var form] when form is "hidden" or "protected" or "busy" or "dirty" =>
                     Leave(state, Path.GetFullPath(workbook), form),
                 ["watch", var state, var seconds] => Watch(Read(state), int.Parse(seconds)),
                 ["probe", var state] => Probe(Read(state), 90),
@@ -79,6 +79,21 @@ internal static class Program
                     if (form == "hidden")
                     {
                         book.Windows[1].Visible = false;
+                    }
+
+                    if (form == "dirty")
+                    {
+                        // Changes the workbook and waits past the AutoRecover interval (10 minutes by default),
+                        // listing the AutoRecover folder, before this process is killed as below.
+                        book.Worksheets[1].Range["A1"].Value2 = 99;
+                        Log($"changed A1; Saved {(bool)book.Saved}, EnableAutoRecover {(bool)book.EnableAutoRecover}, AutoRecover.Enabled {(bool)app.AutoRecover.Enabled}, AutoRecover.Time {(int)app.AutoRecover.Time}");
+                        var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Microsoft", "Excel");
+                        for (var waited = 0; waited < 660; waited += 60)
+                        {
+                            Thread.Sleep(60_000);
+                            var entries = Directory.EnumerateFileSystemEntries(folder, "*", SearchOption.AllDirectories).Select(Path.GetFileName);
+                            Log($"after {waited + 60} s: {string.Join(", ", entries)}");
+                        }
                     }
                 }
 

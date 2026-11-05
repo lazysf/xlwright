@@ -635,6 +635,27 @@
 - [x] 確認の入口を通し、新しい会話で読み込まれることを確かめる。テストは553件。別のセッションで、スキルの一覧と説明に段階4のツールの名前があり、本文に新しい2つの節があり、`server_info`の`build_id`が`latest.json`と一致した。
 - [x] 文書を直す。
 
+## 周期48（段階4）: 段階4の操作を会話から通す
+
+作るもの: 段階4の完了の根拠のうち、「この段階で加える操作を、実Excelのシナリオで確かめる」。新しいビルドを読み込んだ新しい会話（別のセッション）から、開発版のツールとスキルだけで、次を人の操作なしで通す。本体は変えない。捨てる前提の`.xlwright/scratch/stage4/`（Git管理外）を使う。「自分のアプリ1つで依頼から報告まで回す」は、利用する版で行うため、配り方と一緒に保留する。
+
+1. VBAがブックの中にしか無い既存の`.xlsm`から`vba_extract`で取り出し、反映して実行する。取り出しの間に`Workbook_Open`が動かない。
+2. `.xlsx`の主ブックを`workbook_get`で見て、`workbook_edit`の`convert_to_xlsm`で変え、次の開始が`MULTIPLE_WORKBOOKS`で止まり、`.xlsx`を消すと開始できる。
+3. 空のアプリのフォルダで開始し、`workbook_create`で主ブックを作る。
+4. `vba_edit`でScripting Runtimeの参照設定を加え、`Scripting.Dictionary`を使うコードを`vba_check`と`macro_run`で通す。
+5. `XlWright.Message`と`XlWright.InputText`を使うマクロを、`macro_run`の`dialogs`で答えて実行する。同じコードのテストを、`XlWright.Answer`で答えて`test_run`で通す。
+6. まだ無い関数を呼ぶテストを先に書いて`test_run`が`COMPILE_ERROR`になり、関数を書いて通す。
+
+完了の条件:
+
+- 各場合を、判定とともに記録する。
+- 前後で`EXCEL.EXE`が0で、所有を確かめられないExcelに触れていない。
+
+作業:
+
+- [ ] 新しいセッションで1〜6を通す。
+- [ ] 記録し、ROADMAPを直す。
+
 ## 書き留めたこと
 
 周期の中で後へ回した事項を書きます。

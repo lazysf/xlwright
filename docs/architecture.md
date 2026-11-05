@@ -256,12 +256,13 @@ apps/sales/                  アプリのフォルダ（リポジトリの中。
 - `macro_run`は、反映の後、標準モジュール`XlWrightCall`を`VBComponents.Add`と`AddFromString`で作ります。中身は、受け取った引数を括弧で囲んでマクロを名前で直接呼び、`On Error`で捕まえて`Err.Number`・`Err.Description`・`Err.Source`を返す関数だけです。実行の後、モジュールを`Remove`します。
 - 呼ぶ前に、VBIDEでマクロの有無を見分けます。モジュールが無い、標準モジュールでない、手続きが無い（`ProcBodyLine`が失敗する）、宣言の行が`Private`で始まる時は、`MACRO_NOT_FOUND`です。宣言の行から、`Sub`か`Function`かを決めます。
 - 戻り値は、`XlWright.bas`の関数に`ByVal`の`Variant`で渡し、オブジェクト・配列・`CVErr`の値・日付を、型の名前に変えます。オブジェクトの既定のメンバーを読まないためと、`CVErr`の値が.NETでは`Long`と同じ`Int32`で届くためです（[記録](notes/macro-run.md)）。
+- `macro_run`の`dialogs`は、`Application.Run`の2つ目の引数で`XlWrightCall.Run`へ渡し、`XlWright.BeginRun`が積みます。パスは、xlwrightが完全なパスに変えてから渡し、キャンセルは`False`で渡します。日本語の応答を、`AddFromString`で作るコードの文字列に入れないためです。`Run`は、上の結果と、`XlWright.EndRun`が返す使った数と残りの数を、組にして返します。
 - `XlWrightCall`は、ソースに置きません。実行の間だけ主ブックにあり、全置換の反映には含まれません。ソースに`XlWrightCall`という名前のモジュールがあれば、反映の前に拒否します。
 
 ### xlwrightのVBAのモジュール
 
 - xlwrightが主ブックに置くVBAの関数は、`src/modules/XlWright.bas`（モジュールの名前は`XlWright`）にまとめます。戻り値を型の名前に変える関数（上の「実行ごとに作るモジュール」）と、ダイアログへの事前の応答の関数（段階4、[API](api.md#ダイアログへの事前の応答)）が入ります。
-- xlwrightの実行の中かは、`XlWright`のモジュールの変数で持ちます。`XlWrightCall`が、マクロやテストを呼ぶ前に`XlWright.BeginRun`で立てて応答を空にし、呼んだ後に`XlWright.EndRun`で戻します。2つは`Result`と同じく`Public`で、APIの契約の外です。人が日常のExcelでブックを開くと変数は空から始まるため、関数は標準のダイアログを出します（人が承認、2026-11-05）。
+- xlwrightの実行の中かは、`XlWright`のモジュールの変数で持ちます。`XlWrightCall`が、マクロやテストを呼ぶ前に`XlWright.BeginRun`で立てて応答を入れ替え（`test_run`では空にし）、呼んだ後に`XlWright.EndRun`で戻します。2つは`Result`と同じく`Public`で、APIの契約の外です。人が日常のExcelでブックを開くと変数は空から始まるため、関数は標準のダイアログを出します（人が承認、2026-11-05）。
 - 全置換の反映で消えないよう、アプリのソースに置きます。要件の利用の前提のとおり、出来上がった主ブックにも残ります。
 - このファイルは、xlwrightが書きます。反映の前に（`vba_sync`・`macro_run`・`test_run`のどれでも）、ファイルが無いか、先頭の版の行がxlwrightの版より新しくなく中身が違えば、プラグインに同梱した内容で書き換えます。同じ版のまま中身が変わる開発中の版でも、古い中身を残さないためです。AIエージェントは編集しません。
 - アプリのソースに、ほかに`XlWright`という名前のモジュールがあれば、反映の前に拒否します。

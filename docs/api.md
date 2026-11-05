@@ -474,7 +474,7 @@
   - `{"kind":"input","value":"東京"}`、`{"kind":"open_file","path":"data/in.csv"}`、`{"kind":"save_file","path":"data/out.csv"}`、`{"kind":"folder","path":"data"}`。`path`はアプリのフォルダからの相対パスで、外を指すと`PATH_NOT_ALLOWED`で拒否します。xlwrightが完全なパスに変えて渡します。
   - どの`kind`でも、`answer`・`value`・`path`の代わりに`"cancel":true`を渡せます。
 - xlwrightの実行の中では、`dialogs`を省いても、関数はダイアログを出しません。応答が尽きた時、次の応答の`kind`が違う時、`message`の`answer`が`buttons`に無い時は、`Err.Source`が`XlWright`のエラーを上げます。マクロは`MACRO_ERROR`で止まり、専用のExcelは終えません。
-- 結果に`dialogs`を加えます。`{"answered":2,"unused":1}`。使われなかった応答があっても、失敗にしません。
+- 結果に`dialogs`を加えます。`{"answered":2,"unused":1}`。使われなかった応答があっても、失敗にしません。`dialogs`を省いた時も、`{"answered":0,"unused":0}`を返します。
 - `test_run`では、テストの中で応答を決めます。`XlWright.Answer kind, value`をテストが呼び、そのテストの中の関数が順に使います。応答はテストごとに空にします。`test_run`の引数には加えません。テストごとに応答が違い、テストの書き手が知っているためです。
   - `kind`は`dialogs`と同じです。`value`は、`message`ではボタンの名前（`"yes"`など）、`input`では文字列、ほかではパスです。キャンセルは`value`に`False`を渡します。
   - 相対パスは`ThisWorkbook.Path`（`test_run`では写しのフォルダ）から解決し、絶対パスはそのまま渡します。テストがアプリのフォルダの外を変えることは、もともと防がないためです。

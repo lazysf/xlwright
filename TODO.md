@@ -602,6 +602,23 @@
 - [x] 実Excelの結合テストと確認の入口を通す。テストは535件と実Excelの19件。1つの式の`&`で関数を並べて呼んだ時、応答が左から順に使われず、順がずれた（1回の観察）。テストのマクロは1文ずつ呼ぶ形に直した。
 - [x] 文書を直す。APIに`InputText`への変更と`Answer`の値・エラー・ボタンの組を、設計に`BeginRun`・`EndRun`を書いた。
 
+## 周期46（段階4）: `macro_run`の`dialogs`
+
+作るもの: APIの[ダイアログへの事前の応答](docs/api.md#ダイアログへの事前の応答)の`macro_run`の引数`dialogs`と、結果の`dialogs`（`answered`・`unused`）。応答は`Application.Run`の2つ目の引数で`XlWrightCall.Run`へ渡し、`XlWright.BeginRun`が積み、`EndRun`が使った数と残りの数を返す。結果の`dialogs`は、`dialogs`を省いた時も`{"answered":0,"unused":0}`で返す。
+
+完了の条件:
+
+- テストで、`dialogs`の形の検査（配列、30個まで、`kind`、`answer`・`value`・`path`・`cancel`のどれか1つ、`message`の`answer`の値、未知のキー）、アプリのフォルダの外を指す`path`の`PATH_NOT_ALLOWED`（Excelに触れない）、完全なパスへの変換、結果の`dialogs`を返す。どれも、テストを先に書いて失敗を確かめてから作る。
+- 実Excelの結合テストで、`dialogs`の応答を各関数が順に使い、`answered`と`unused`が合い、応答が尽きた時に`MACRO_ERROR`で止まってセッションが続き、終了の後に専用のExcelが残らない。
+- 確認の入口が通る。
+
+作業:
+
+- [x] 失敗するテストを書く。`dialogs`の形の不正な引数の13件は、作る前から通った（未知のキーとして拒否されたため）。受け付けた後の検査として残す。受け付けることは、セッションの無い時の`NO_SESSION`のテストが、作る前に失敗して確かめた。
+- [x] `XlWrightCall`と`XlWright.bas`、Excelの境界、セッション、ツールを作る。
+- [x] 実Excelの結合テストと確認の入口を通す。テストは553件と実Excelの20件。`dialogs`の応答（キャンセルを含む）を関数が順に使い、`{"answered":4,"unused":1}`が返り、応答が尽きた時に`MACRO_ERROR`でセッションが続き、外を指すパスが`PATH_NOT_ALLOWED`になった。
+- [x] 文書を直す。`macro_run`のツールの説明は変えていない（`dialogs`の説明はスキーマにある）。
+
 ## 書き留めたこと
 
 周期の中で後へ回した事項を書きます。
@@ -658,3 +675,6 @@
 - `XlWright.bas`の`AnsweredPath`は、`C:/out/x.csv`や`//server/share`のようにスラッシュで書いた絶対パスを相対パスとみなし、`ThisWorkbook.Path`の後ろへつなぐ。APIの「絶対パスはそのまま渡します」と食い違う。判定の前に`/`を`\`へ変えれば直る（周期45の独立レビュー、低）。
 - 実Excelの結合テストは、`Answer`に`True`を渡した時のエラー、UNCのパス、`abort`・`retry`・`ignore`と`yes no cancel`・`retry cancel`のボタンの組、文字列の`"cancel"`を通っていない。`XlWrightText`がASCIIだけであることを固定するテストも無い。`Message`に`False`を渡してボタンに`cancel`が無い時、エラーの説明は`the answer cancel ...`になる（周期45の独立レビュー、低）。
 - アプリのコードが1つの式で複数のダイアログの関数を呼ぶと、応答の使われる順が書いた順とずれうる（周期45の観察）。APIの「順に使います」に注意を書き足すか、開発版のスキルに書くかは、人の判断で決める。スキルには`XlWright.Message`などと`XlWright.Answer`の使い方もまだ無い（段階4の残りの4で扱う）（周期45の独立レビュー、低）。
+- 生成する`XlWrightCall.Run`のローカル変数`result`は、`XlWright.Result`と大文字小文字だけが違う。VBEはプロジェクト全体で識別子の大文字小文字を揃えることがあるため、主ブックの`XlWright`や利用者のモジュールの`Result`が`result`に書き換わり、そのブックから`vba_extract`すると大文字小文字だけの差分が出うる。実機で確かめていない。衝突しにくい名前にすれば避けられる（周期46の独立レビュー、低）。
+- パスがアプリのフォルダの中かの判定が、`DialogAnswer.Resolve`・`AppFolder.IsSameOrInside`・`VbaExtraction.Check`・`ExcelSession`の4か所にある。`dialogs`の`path`は、中を指す絶対パスも受け付ける（APIは相対パスと書く）。`path`にNUL文字があると、`Path.GetFullPath`の例外で`INVALID_REQUEST`でない失敗になりうる（`session_start`と`vba_extract`にも以前からある）（周期46の独立レビュー、低）。
+- テストに、同じ接頭辞の隣のフォルダ（`../sales2/x`）を拒否する場合、実Excelで`folder`の応答を使う経路と`kind`が合わない`MACRO_ERROR`が無い。偽物は`Dialogs`を設定した値で返すだけで、数え方は実Excelのテストだけが確かめる。`NextAnswer`は、`kind`の照合で失敗する前に使った数を増やす（失敗の結果に`dialogs`が無いため、今は外から見えない）（周期46の独立レビュー、低）。

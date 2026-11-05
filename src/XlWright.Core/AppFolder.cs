@@ -3,10 +3,33 @@ using System.Text.Json.Nodes;
 namespace XlWright.Core;
 
 /// <summary>
-/// An app folder inside the repository and its main workbook (docs/architecture.md "アプリのフォルダ").
+/// An app folder inside the repository and its main workbook (docs/architecture.md "アプリのフォルダ"). The workbook is null
+/// for a session without one, until workbook_create makes it (docs/api.md "主ブックの無いセッション").
 /// </summary>
-public sealed record AppFolder(string FullPath, string RelativePath, string WorkbookPath, string WorkbookName)
+public sealed record AppFolder(string FullPath, string RelativePath, string? WorkbookPath, string? WorkbookName)
 {
+    public bool HasWorkbook => WorkbookName is not null;
+
+    /// <summary>The folder with the workbook that workbook_create saved directly under it as the main workbook.</summary>
+    public AppFolder WithWorkbook(string name) => this with { WorkbookPath = Path.Combine(FullPath, name), WorkbookName = name };
+
+    /// <summary>
+    /// Checks the file name workbook_create is given (docs/api.md "workbook_create"): a name without folders, ending in
+    /// .xlsm or .xlsx, not an owner file (~$), and one Windows accepts. Returns null when it is good.
+    /// </summary>
+    public static ToolFailure? CheckNewWorkbookName(string name)
+    {
+        var stem = Path.GetFileNameWithoutExtension(name);
+        var good = WorkbookExtensions.Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase)
+            && stem.Length > 0 && stem == stem.Trim()
+            && !name.StartsWith("~$", StringComparison.Ordinal)
+            && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
+        return good
+            ? null
+            : new ToolFailure(ToolFailure.InvalidRequest, "INVALID_WORKBOOK_NAME",
+                $"name must be a file name without folders that ends in .xlsm or .xlsx, such as Sales.xlsm. Rejected: {name}");
+    }
+
     private static readonly string[] WorkbookExtensions = [".xlsm", ".xlsx"];
 
     /// <summary>
@@ -51,9 +74,10 @@ public sealed record AppFolder(string FullPath, string RelativePath, string Work
             .Select(file => file.Name)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var relative = Path.GetRelativePath(root, full).Replace(Path.DirectorySeparatorChar, '/');
         if (workbooks.Count == 0)
         {
-            return Fail(ToolFailure.InvalidRequest, "NO_WORKBOOK", "The app folder has no .xlsm or .xlsx workbook directly under it. Put the main workbook there.");
+            return (new AppFolder(full, relative, null, null), null);
         }
 
         if (workbooks.Count > 1)
@@ -62,7 +86,6 @@ public sealed record AppFolder(string FullPath, string RelativePath, string Work
             return Fail(ToolFailure.InvalidRequest, "MULTIPLE_WORKBOOKS", "The app folder has more than one workbook directly under it. Keep only the main workbook there; move others into a subfolder.", data);
         }
 
-        var relative = Path.GetRelativePath(root, full).Replace(Path.DirectorySeparatorChar, '/');
         return (new AppFolder(full, relative, Path.Combine(full, workbooks[0]), workbooks[0]), null);
     }
 

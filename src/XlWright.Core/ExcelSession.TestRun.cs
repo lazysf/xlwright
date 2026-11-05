@@ -89,7 +89,7 @@ public sealed partial class ExcelSession
                 $"The app folder could not be copied for the tests: {e.Message} No test ran."));
         }
 
-        var opening = active.Worker.Run(() => active.Excel.Open(Path.Combine(copy, active.App.WorkbookName)));
+        var opening = active.Worker.Run(() => active.Excel.Open(Path.Combine(copy, active.App.WorkbookName!)));
         if (!await Completes(opening, timeouts.Save))
         {
             return await AfterTimeout(active, opening, "Opening the test copy did not finish within the time limit." + Saved, extra: TestData(results, null));
@@ -177,7 +177,7 @@ public sealed partial class ExcelSession
         }
 
         var leftover = RemoveCopy(active.App, copy);
-        var opening = active.Worker.Run(() => active.Excel.Open(active.App.WorkbookPath));
+        var opening = active.Worker.Run(() => active.Excel.Open(active.App.WorkbookPath!));
         if (!await Completes(opening, timeouts.Save))
         {
             return (leftover, await AfterTimeout(active, opening, $"Opening {active.App.WorkbookName} again did not finish within the time limit." + Saved, extra: TestData(results, null)));

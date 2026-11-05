@@ -77,6 +77,13 @@ public interface IExcel
 
     void Save();
 
+    /// <summary>
+    /// Adds a new workbook and saves it as <paramref name="path"/> in <paramref name="format"/> (52 .xlsm, 51 .xlsx); it
+    /// becomes the main workbook (docs/api.md "workbook_create"). When the save fails, it closes the new workbook
+    /// without saving and throws.
+    /// </summary>
+    void Create(string path, int format);
+
     /// <summary>Closes the main workbook without saving, with events off; test_run saves it first.</summary>
     void CloseMain();
 

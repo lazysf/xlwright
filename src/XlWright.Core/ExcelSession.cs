@@ -59,6 +59,53 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
         _active is null ? Fail(ToolFailure.Conflict, "NO_SESSION", "There is no session to end. Start one with session_start.") : null,
         () => EndCore(_active!, save));
 
+    /// <summary>
+    /// Creates the main workbook of a session without one and saves it directly under the app folder
+    /// (docs/api.md "workbook_create"). The other tools work on it from then on.
+    /// </summary>
+    public Task<SessionOutcome> CreateWorkbookAsync(string name) => Run("workbook_create", () =>
+        _active is null ? Fail(ToolFailure.Conflict, "NO_SESSION", "There is no session. Start one with session_start.")
+        : _active.App.HasWorkbook ? Fail(ToolFailure.Conflict, "WORKBOOK_EXISTS",
+            $"The session already has the main workbook {_active.App.WorkbookName}. An app folder has one main workbook.")
+        : null,
+        async () =>
+        {
+            var active = _active!;
+            if (AppFolder.CheckNewWorkbookName(name) is { } invalid)
+            {
+                return (null, invalid);
+            }
+
+            var path = Path.Combine(active.App.FullPath, name);
+            if (File.Exists(path) || Directory.Exists(path))
+            {
+                return Fail(ToolFailure.Conflict, "FILE_EXISTS", $"The app folder already has {name}. Choose another name, or move that file away.");
+            }
+
+            var format = Path.GetExtension(name).Equals(".xlsm", StringComparison.OrdinalIgnoreCase) ? FormatXlsm : FormatXlsx;
+            var creating = active.Worker.Run(() => active.Excel.Create(path, format));
+            if (!await Completes(creating, timeouts.Save))
+            {
+                return await AfterTimeout(active, creating, $"Saving the new workbook {name} did not finish within the time limit.");
+            }
+
+            if (creating.IsFaulted)
+            {
+                return Fail(ToolFailure.ExcelError, "SAVE_FAILED",
+                    $"Saving the new workbook {name} failed: {creating.Exception!.InnerException!.Message} The session still has no main workbook; fix the cause and call workbook_create again.");
+            }
+
+            lock (_gate)
+            {
+                _active = active with { App = active.App.WithWorkbook(name) };
+            }
+
+            return (new JsonObject { ["workbook"] = name }, null);
+        });
+
+    private const int FormatXlsm = 52; // xlOpenXMLWorkbookMacroEnabled
+    private const int FormatXlsx = 51; // xlOpenXMLWorkbook
+
     public Task<SessionOutcome> SaveAsync() => Run("workbook_save", NoSession,
         async () =>
         {
@@ -466,7 +513,7 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
     }, new JsonObject { ["macro"] = macro.ToString() });
 
     private static (JsonObject?, ToolFailure?)? MacrosRejected(Active active) =>
-        Path.GetExtension(active.App.WorkbookName).Equals(".xlsm", StringComparison.OrdinalIgnoreCase)
+        Path.GetExtension(active.App.WorkbookName!).Equals(".xlsm", StringComparison.OrdinalIgnoreCase)
             ? null
             : Fail(ToolFailure.InvalidRequest, "NOT_MACRO_ENABLED",
                 $"{active.App.WorkbookName} is not a macro-enabled workbook (.xlsm), so it cannot hold VBA.");
@@ -751,7 +798,7 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
 
             RemoveResults(app);
             marked = DateTime.UtcNow;
-            appLock.Write(new OwnershipRecord(OwnershipRecord.Starting, marked, app.WorkbookName, null));
+            appLock.Write(new OwnershipRecord(OwnershipRecord.Starting, marked, app.WorkbookName ?? "", null));
         }
         catch
         {
@@ -791,14 +838,16 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
                 $"The started Excel could not be confirmed as this session's ({problem}), so it was left untouched. Ask the person to check the process in Task Manager.");
         }
 
-        appLock.Write(new OwnershipRecord(OwnershipRecord.Owned, marked, app.WorkbookName,
+        appLock.Write(new OwnershipRecord(OwnershipRecord.Owned, marked, app.WorkbookName ?? "",
             new RecordedProcess(process.Facts.Pid, process.Facts.CreatedUtc, Path.GetFileNameWithoutExtension(process.Facts.ImageName))));
         _log?.Write("owned", ExcelJson(process.Facts));
         var active = new Active(app, worker, excel, process, appLock, marked);
         var open = worker.Run(() =>
         {
             excel.TakeControl();
-            return excel.Open(app.WorkbookPath);
+
+            // A session without a main workbook opens none (docs/api.md "主ブックの無いセッション").
+            return app.WorkbookPath is not null && excel.Open(app.WorkbookPath);
         });
         if (!await Completes(open, Remaining(deadline, timeouts.Start)))
         {
@@ -838,6 +887,7 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
 
     private async Task<(JsonObject?, ToolFailure?)> EndCore(Active active, bool save)
     {
+        save &= active.App.HasWorkbook;
         if (save && await SaveCore(active, "Call session_end with save false to discard the changes.") is { } saveFailed)
         {
             return saveFailed;
@@ -975,7 +1025,7 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
         {
             if (ended)
             {
-                active.Lock.Write(new OwnershipRecord(OwnershipRecord.Completed, active.Marked, active.App.WorkbookName, null));
+                active.Lock.Write(new OwnershipRecord(OwnershipRecord.Completed, active.Marked, active.App.WorkbookName ?? "", null));
             }
         }
         finally
@@ -1003,7 +1053,7 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
     // cleaned up. Returns the cleanup for the result when a leftover was ended.
     private async Task<((JsonObject?, ToolFailure?)? Failure, JsonObject? Cleanup)> CheckRecord(AppFolder app, AppLock appLock, Stopwatch deadline)
     {
-        var completed = new OwnershipRecord(OwnershipRecord.Completed, DateTime.UtcNow, app.WorkbookName, null);
+        var completed = new OwnershipRecord(OwnershipRecord.Completed, DateTime.UtcNow, app.WorkbookName ?? "", null);
         if (appLock.Created)
         {
             appLock.Write(completed);
@@ -1231,6 +1281,11 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
     // docs/architecture.md "開始の順序" 4: open the file for writing for a moment, letting others read and write.
     private static (JsonObject?, ToolFailure?)? CheckWorkbookFile(AppFolder app)
     {
+        if (app.WorkbookPath is null)
+        {
+            return null;
+        }
+
         if (File.GetAttributes(app.WorkbookPath).HasFlag(FileAttributes.ReadOnly))
         {
             return Fail(ToolFailure.Conflict, "WORKBOOK_FILE_READ_ONLY",
@@ -1276,7 +1331,9 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
 
     // Called under the lock by Run.
     private (JsonObject?, ToolFailure?)? NoSession() =>
-        _active is null ? Fail(ToolFailure.Conflict, "NO_SESSION", "There is no session. Start one with session_start.") : null;
+        _active is null ? Fail(ToolFailure.Conflict, "NO_SESSION", "There is no session. Start one with session_start.")
+        : _active.App.HasWorkbook ? null
+        : Fail(ToolFailure.Conflict, "NO_WORKBOOK", "The session has no main workbook. Create it with workbook_create, then call again.");
 
     // Nothing is saved, so the next sync replaces every module again (docs/architecture.md "VBAの反映").
     private static (JsonObject?, ToolFailure?) SyncFailed(string message, IReadOnlyList<string> done) =>

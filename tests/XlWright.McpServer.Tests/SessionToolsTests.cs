@@ -88,7 +88,7 @@ public sealed class SessionToolsTests : IAsyncLifetime
     [InlineData("../outside", "INVALID_REQUEST", "PATH_NOT_ALLOWED")]
     [InlineData(@"\\server\share\app", "INVALID_REQUEST", "PATH_NOT_ALLOWED")]
     [InlineData("apps/missing", "NOT_FOUND", "APP_NOT_FOUND")]
-    [InlineData("apps", "INVALID_REQUEST", "NO_WORKBOOK")]
+    [InlineData("apps", "INVALID_REQUEST", "NOT_IMPLEMENTED")]
     [InlineData("apps/two", "INVALID_REQUEST", "MULTIPLE_WORKBOOKS")]
     public async Task StartRejectsABadAppFolder(string app, string code, string detail)
     {

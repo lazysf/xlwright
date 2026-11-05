@@ -73,6 +73,50 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
 
     public void Save() => Main.Save();
 
+    public void Create(string path, int format)
+    {
+        bool events = App.EnableEvents;
+        bool alerts = App.DisplayAlerts;
+        App.EnableEvents = false;
+        dynamic workbooks = App.Workbooks;
+        dynamic book;
+        try
+        {
+            book = workbooks.Add();
+        }
+        finally
+        {
+            Release(workbooks);
+        }
+
+        try
+        {
+            // The name was checked to be free, so no overwrite question is answered here.
+            App.DisplayAlerts = false;
+            book.SaveAs(path, format);
+        }
+        catch
+        {
+            try
+            {
+                book.Close(false);
+            }
+            finally
+            {
+                Release(book);
+            }
+
+            throw;
+        }
+        finally
+        {
+            App.DisplayAlerts = alerts;
+            App.EnableEvents = events;
+        }
+
+        _main = book;
+    }
+
     public object?[,]? ReadValues(string sheet, CellRange range)
     {
         // Calculate and the check run in the same operation as the read (docs/architecture.md "起動時の設定").

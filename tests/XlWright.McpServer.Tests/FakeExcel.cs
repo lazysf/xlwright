@@ -185,6 +185,18 @@ internal sealed class FakeExcel : IExcel
         return Components;
     }
 
+    public Exception? CreateThrows { get; set; }
+
+    public Block CreateBlock { get; set; } = Block.None;
+
+    public void Create(string path, int format)
+    {
+        Record($"Create {path} {format}");
+        Process.WaitIf(CreateBlock);
+        if (CreateThrows is not null) throw CreateThrows;
+        File.WriteAllBytes(path, []);
+    }
+
     /// <summary>What the copy holds: each module's name, type, and the text that its export writes in CP932.</summary>
     public List<(string Name, string Type, string Text)> CopyModules { get; set; } = [];
 

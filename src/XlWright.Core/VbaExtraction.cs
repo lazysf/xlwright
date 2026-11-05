@@ -18,7 +18,7 @@ public static class VbaExtraction
     /// <summary>Returns the full path of the workbook to extract from, or the failure that stops before Excel.</summary>
     public static (string? Source, ToolFailure? Failure) Check(AppFolder app, string? workbook)
     {
-        var source = app.WorkbookPath;
+        var source = app.WorkbookPath!;
         if (workbook is not null)
         {
             source = Path.GetFullPath(Path.Combine(app.FullPath, workbook));

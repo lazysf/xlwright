@@ -6,7 +6,7 @@ using XlWright.Core;
 namespace XlWright.McpServer;
 
 /// <summary>
-/// session_start, session_status, session_end, and workbook_save (docs/api.md, stage 1). With --no-excel there is no
+/// session_start, session_status, session_end, and workbook_save (docs/api.md, stage 1), and workbook_create (stage 4). With --no-excel there is no
 /// ExcelSession: session_start stops after the app folder checks, and there is never a session.
 /// </summary>
 internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
@@ -17,7 +17,9 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
         {
             Name = "session_start",
             Description = "Starts a session for one app folder: starts a dedicated hidden Excel and opens the app's main workbook " +
-                "(the only .xlsm or .xlsx directly in the folder). Pass app as a path relative to the repository, or absolute. " +
+                "(the only .xlsm or .xlsx directly in the folder). If the folder has no workbook, the session has none (workbook is null) " +
+                "and only workbook_create, session_status, and session_end work until workbook_create makes it. " +
+                "Pass app as a path relative to the repository, or absolute. " +
                 "A conversation has at most one session; end it with session_end before you report.",
             ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false,
         }, StartInput, StartOutput),
@@ -41,6 +43,13 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
             Description = "Saves the main workbook over its file. The session stays open. Takes no arguments.",
             ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false,
         }, ToolDefinition.NoInput, SaveOutput),
+        ToolDefinition.Create(CreateWorkbook, new()
+        {
+            Name = "workbook_create",
+            Description = "In a session without a main workbook, creates a new workbook and saves it directly in the app folder as name " +
+                "(a file name ending in .xlsm or .xlsx, such as Sales.xlsm). It becomes the main workbook, and the other tools work on it.",
+            ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false,
+        }, CreateInput, SaveOutput),
     ];
 
     private async Task<CallToolResult> Start(RequestContext<CallToolRequestParams> context)
@@ -140,10 +149,34 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
         return ToolResults.From(await session.SaveAsync());
     }
 
+    private async Task<CallToolResult> CreateWorkbook(RequestContext<CallToolRequestParams> context)
+    {
+        var arguments = ToolArguments.From("workbook_create", context);
+        var name = "";
+        var invalid = arguments.RejectUnknown("name") ?? arguments.RequireString("name", out name);
+        if (invalid is not null)
+        {
+            return ToolResults.InvalidRequest(invalid, Current());
+        }
+
+        if (session is null)
+        {
+            return ToolResults.Failure(
+                new ToolFailure(ToolFailure.Conflict, "NO_SESSION", "There is no session. Start one with session_start."),
+                SessionState.Closed);
+        }
+
+        return ToolResults.From(await session.CreateWorkbookAsync(name));
+    }
+
     private SessionState Current() => session is null ? SessionState.Closed : SessionState.From(session.Status());
 
     private const string StartInput = """
         {"type":"object","properties":{"app":{"type":"string","description":"The app folder, relative to the repository or absolute."}},"required":["app"],"additionalProperties":false}
+        """;
+
+    private const string CreateInput = """
+        {"type":"object","properties":{"name":{"type":"string","description":"The file name of the new main workbook, ending in .xlsm or .xlsx, such as Sales.xlsm."}},"required":["name"],"additionalProperties":false}
         """;
 
     private const string EndInput = """
@@ -151,13 +184,13 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
         """;
 
     private static readonly string StartOutput = $$$"""
-        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"app":{"type":"string"},"workbook":{"type":"string"},
+        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"app":{"type":"string"},"workbook":{"type":["string","null"]},
          "excel":{"type":"object","properties":{"pid":{"type":"integer"},"started_at_utc":{"type":"string"}},"required":["pid","started_at_utc"]}},
          "required":["session","app","workbook","excel"]}
         """;
 
     private static readonly string StatusOutput = $$$"""
-        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"app":{"type":"string"},"workbook":{"type":"string"},
+        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"app":{"type":"string"},"workbook":{"type":["string","null"]},
          "operation":{"type":"object","properties":{"tool":{"type":"string"},"elapsed_ms":{"type":"integer"},
           "test":{"type":"object","properties":{"name":{"type":"string"},"index":{"type":"integer"},"count":{"type":"integer"}},"required":["name","index","count"]}},
           "required":["tool","elapsed_ms"]}},

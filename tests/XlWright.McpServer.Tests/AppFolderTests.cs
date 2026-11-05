@@ -87,14 +87,46 @@ public sealed class AppFolderTests : IDisposable
     }
 
     [Fact]
-    public void RejectsAFolderWithoutAWorkbook()
+    public void AcceptsAFolderWithoutAWorkbookForASessionWithoutOne()
     {
         _repo.AddApp("apps/empty", "notes.txt", "data.csv", "Old.xls");
 
-        var failure = Fail("apps/empty");
+        var (folder, failure) = AppFolder.Resolve(_repo.Root, "apps/empty");
 
-        Assert.Equal("INVALID_REQUEST", failure.Code);
-        Assert.Equal("NO_WORKBOOK", failure.Detail);
+        Assert.Null(failure);
+        Assert.False(folder!.HasWorkbook);
+        Assert.Null(folder.WorkbookName);
+        Assert.Null(folder.WorkbookPath);
+    }
+
+    [Fact]
+    public void GivesTheCreatedWorkbookToTheFolder()
+    {
+        _repo.AddApp("apps/empty");
+        var folder = AppFolder.Resolve(_repo.Root, "apps/empty").Folder!;
+
+        var created = folder.WithWorkbook("New.xlsm");
+
+        Assert.True(created.HasWorkbook);
+        Assert.Equal("New.xlsm", created.WorkbookName);
+        Assert.Equal(Path.Combine(folder.FullPath, "New.xlsm"), created.WorkbookPath);
+    }
+
+    [Theory]
+    [InlineData("New.xlsm", null)]
+    [InlineData("売上.xlsx", null)]
+    [InlineData("New.xls", "INVALID_WORKBOOK_NAME")]
+    [InlineData("New", "INVALID_WORKBOOK_NAME")]
+    [InlineData(".xlsm", "INVALID_WORKBOOK_NAME")]
+    [InlineData("data/New.xlsm", "INVALID_WORKBOOK_NAME")]
+    [InlineData(@"data\New.xlsm", "INVALID_WORKBOOK_NAME")]
+    [InlineData("~$New.xlsm", "INVALID_WORKBOOK_NAME")]
+    [InlineData("New?.xlsm", "INVALID_WORKBOOK_NAME")]
+    [InlineData(" New.xlsm", "INVALID_WORKBOOK_NAME")]
+    [InlineData("", "INVALID_WORKBOOK_NAME")]
+    public void ChecksTheNameOfANewWorkbook(string name, string? detail)
+    {
+        Assert.Equal(detail, AppFolder.CheckNewWorkbookName(name)?.Detail);
     }
 
     [Fact]

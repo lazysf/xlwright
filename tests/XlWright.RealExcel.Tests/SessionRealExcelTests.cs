@@ -230,6 +230,40 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         AssertNothingLeft(pid);
     }
 
+    // Needs AccessVBOM 1. The name is Japanese, so the path is not ASCII.
+    [Fact]
+    public async Task CreatesTheMainWorkbookInAnEmptyAppFolder()
+    {
+        _repo.AddApp("apps/fresh");
+        var app = Path.Combine(_repo.Root, "apps", "fresh");
+        var started = Success(await Call("session_start", new() { ["app"] = "apps/fresh" }));
+        var pid = started.GetProperty("excel").GetProperty("pid").GetInt32();
+        Assert.Equal(JsonValueKind.Null, started.GetProperty("workbook").ValueKind);
+        var none = Body(await Call("range_read", new() { ["sheet"] = "Sheet1", ["range"] = "A1" }));
+        Assert.Equal("NO_WORKBOOK", none.GetProperty("error").GetProperty("detail").GetString());
+
+        var created = Success(await Call("workbook_create", new() { ["name"] = "新規.xlsm" }));
+        Assert.Equal("新規.xlsm", created.GetProperty("workbook").GetString());
+        Assert.True(File.Exists(Path.Combine(app, "新規.xlsm")));
+        Source(app, "src/modules/Calc.bas", "Option Explicit\nPublic Function Twice(ByVal x As Long) As Long\n    Twice = x * 2\nEnd Function\n");
+        var twice = Success(await Call("macro_run", new() { ["macro"] = "Calc.Twice", ["args"] = new object[] { 21 } }));
+        Assert.Equal(42, twice.GetProperty("return").GetInt32());
+        var sheet = Success(await Call("vba_get", new())).GetProperty("modules").EnumerateArray()
+            .Select(m => m.TryGetProperty("sheet", out var name) ? name.GetString() : null).First(name => name is not null)!;
+        Success(await Call("range_write", new() { ["sheet"] = sheet, ["range"] = "A1", ["values"] = new[] { new object[] { "作った" } } }));
+        var again = Body(await Call("workbook_create", new() { ["name"] = "Other.xlsm" }));
+        Assert.Equal("WORKBOOK_EXISTS", again.GetProperty("error").GetProperty("detail").GetString());
+        Success(await Call("session_end", new() { ["save"] = true }));
+        AssertNothingLeft(pid);
+
+        var next = Success(await Call("session_start", new() { ["app"] = "apps/fresh" }));
+        Assert.Equal("新規.xlsm", next.GetProperty("workbook").GetString());
+        var a1 = Success(await Call("range_read", new() { ["sheet"] = sheet, ["range"] = "A1" }));
+        Assert.Equal("作った", a1.GetProperty("values")[0][0].GetString());
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(next.GetProperty("excel").GetProperty("pid").GetInt32());
+    }
+
     // Needs AccessVBOM 1. The existing workbook is made with vba_sync, then src/ is removed, so its VBA is only in the
     // workbook. Workbook_Open writes a marker into the app folder by full path, so the removed copy cannot hide it.
     [Fact]

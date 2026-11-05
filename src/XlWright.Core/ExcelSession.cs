@@ -567,9 +567,15 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
     /// Syncs, then runs the macro and waits up to <paramref name="limit"/>, checking for a dialog every 250 ms
     /// (docs/architecture.md "マクロの実行"). A dialog or the limit ends the owned Excel.
     /// </summary>
-    public Task<SessionOutcome> RunAsync(MacroName macro, IReadOnlyList<object> args, TimeSpan limit) => Run("macro_run", NoSession, async () =>
+    public Task<SessionOutcome> RunAsync(MacroName macro, IReadOnlyList<object> args, TimeSpan limit, IReadOnlyList<DialogAnswer>? dialogs = null) => Run("macro_run", NoSession, async () =>
     {
         var active = _active!;
+        var (answers, outside) = DialogAnswer.Resolve(active.App, dialogs ?? []);
+        if (outside is not null)
+        {
+            return (null, outside);
+        }
+
         var (sync, syncFailure) = await SyncCore(active);
         if (syncFailure is not null)
         {
@@ -577,7 +583,7 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
         }
 
         var elapsed = Stopwatch.StartNew();
-        var running = active.Worker.Run(() => active.Excel.RunMacro(macro, args));
+        var running = active.Worker.Run(() => active.Excel.RunMacro(macro, args, answers!));
         while (!await Completes(running, DialogInterval))
         {
             if (active.Process.FindDialog() is { } dialog)
@@ -604,11 +610,17 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
         {
             MacroResult.NotFound missing => Fail(ToolFailure.NotFound, "MACRO_NOT_FOUND", missing.Reason),
             MacroResult.Failed failed => MacroError(macro, failed.Number, failed.Description, failed.Source),
-            MacroResult.OfType typed => (Returned(macro, null, typed.TypeName, time, sync!), null),
-            MacroResult.Returned returned => (ReturnedValue(active.App, macro, returned.Value, time, sync!), null),
+            MacroResult.OfType typed => (WithDialogs(Returned(macro, null, typed.TypeName, time, sync!), typed.Dialogs), null),
+            MacroResult.Returned returned => (WithDialogs(ReturnedValue(active.App, macro, returned.Value, time, sync!), returned.Dialogs), null),
             _ => throw new InvalidOperationException("Unknown macro result."),
         };
     }, new JsonObject { ["macro"] = macro.ToString() });
+
+    private static JsonObject WithDialogs(JsonObject result, DialogUse dialogs)
+    {
+        result["dialogs"] = new JsonObject { ["answered"] = dialogs.Answered, ["unused"] = dialogs.Unused };
+        return result;
+    }
 
     private static (JsonObject?, ToolFailure?)? MacrosRejected(Active active) =>
         Path.GetExtension(active.App.WorkbookName!).Equals(".xlsm", StringComparison.OrdinalIgnoreCase)

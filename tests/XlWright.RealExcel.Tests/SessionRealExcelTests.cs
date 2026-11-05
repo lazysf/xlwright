@@ -528,6 +528,53 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         AssertNothingLeft(pid);
     }
 
+    // Needs AccessVBOM 1. macro_run's dialogs reach the dialog functions in order; paths arrive as full paths.
+    [Fact]
+    public async Task MacroRunPassesTheDialogAnswers()
+    {
+        _repo.AddApp("apps/answered");
+        var app = Path.Combine(_repo.Root, "apps", "answered");
+        MinimalWorkbook.Write(Path.Combine(app, "Answered.xlsm"));
+        Source(app, "src/modules/Ask.bas",
+            "Option Explicit\n\n" +
+            "Public Function Some() As String\n" +
+            "    Dim parts(3) As String\n" +
+            "    parts(0) = XlWright.Message(\"続けますか\", vbYesNoCancel)\n    parts(1) = XlWright.InputText(\"都市\")\n" +
+            "    parts(2) = XlWright.OpenFile()\n    parts(3) = XlWright.SaveFile()\n" +
+            "    Some = Join(parts, \"|\")\n" +
+            "End Function\n");
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/answered" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+        var dialogs = new object[]
+        {
+            new Dictionary<string, object> { ["kind"] = "message", ["answer"] = "no" },
+            new Dictionary<string, object> { ["kind"] = "input", ["value"] = "大阪" },
+            new Dictionary<string, object> { ["kind"] = "open_file", ["path"] = "data/in.csv" },
+            new Dictionary<string, object> { ["kind"] = "save_file", ["cancel"] = true },
+            new Dictionary<string, object> { ["kind"] = "folder", ["path"] = "data" },
+        };
+
+        var run = Success(await Call("macro_run", new() { ["macro"] = "Ask.Some", ["dialogs"] = dialogs }));
+
+        Assert.Equal($"7|大阪|{Path.Combine(app, "data", "in.csv")}|False", run.GetProperty("return").GetString());
+        Assert.Equal("""{"answered":4,"unused":1}""", run.GetProperty("dialogs").GetRawText());
+
+        // One answer runs out at InputText: the macro stops with MACRO_ERROR and the session goes on.
+        var exhausted = Body(await Call("macro_run", new() { ["macro"] = "Ask.Some", ["dialogs"] = new object[] { dialogs[0] } }));
+        Assert.Equal("MACRO_ERROR", exhausted.GetProperty("error").GetProperty("detail").GetString());
+        Assert.Equal("XlWright.InputText: no answer is left for the dialog.", exhausted.GetProperty("error").GetProperty("data").GetProperty("description").GetString());
+        Assert.Equal("ready", exhausted.GetProperty("session").GetProperty("state").GetString());
+        var outside = Body(await Call("macro_run", new()
+        {
+            ["macro"] = "Ask.Some",
+            ["dialogs"] = new object[] { new Dictionary<string, object> { ["kind"] = "open_file", ["path"] = "../other.csv" } },
+        }));
+        Assert.Equal("PATH_NOT_ALLOWED", outside.GetProperty("error").GetProperty("detail").GetString());
+
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(pid);
+    }
+
     // Needs AccessVBOM 1. In test_run each test queues its own answers, and they are empty again for the next test.
     [Fact]
     public async Task EachTestQueuesItsOwnAnswers()

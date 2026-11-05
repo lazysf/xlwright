@@ -138,7 +138,7 @@ public sealed partial class ExcelSession
             }
 
             var started = Stopwatch.StartNew();
-            var running = active.Worker.Run(() => active.Excel.RunMacro(test, []));
+            var running = active.Worker.Run(() => active.Excel.RunMacro(test, [], []));
             while (!await Completes(running, DialogInterval))
             {
                 if (active.Process.FindDialog() is { } dialog)

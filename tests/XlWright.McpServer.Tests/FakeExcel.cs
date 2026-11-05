@@ -327,8 +327,11 @@ internal sealed class FakeExcel : IExcel
     // A macro of this name waits until the gate is set, so a test can look at the session while it runs.
     public (string Name, ManualResetEventSlim Gate)? MacroGate { get; set; }
 
-    public MacroResult RunMacro(MacroName macro, IReadOnlyList<object> args)
+    public IReadOnlyList<DialogAnswer> LastAnswers { get; private set; } = [];
+
+    public MacroResult RunMacro(MacroName macro, IReadOnlyList<object> args, IReadOnlyList<DialogAnswer> answers)
     {
+        LastAnswers = answers;
         Record($"RunMacro {macro} {string.Join(",", args)}".TrimEnd());
         Process.WaitIf(MacroBlock);
         Process.WaitIf(MacroBlocks.GetValueOrDefault(macro.ToString()));

@@ -40,7 +40,7 @@ public sealed class MacroToolsTests : IAsyncLifetime
         Assert.True(tool.Annotations.OpenWorldHint);
         Assert.NotNull(tool.OutputSchema);
         Assert.False(tool.InputSchema.GetProperty("additionalProperties").GetBoolean());
-        Assert.Equal(["macro", "args", "timeout_seconds"], tool.InputSchema.GetProperty("properties").EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["macro", "args", "dialogs", "timeout_seconds"], tool.InputSchema.GetProperty("properties").EnumerateObject().Select(p => p.Name));
         Assert.Equal(["macro"], tool.InputSchema.GetProperty("required").EnumerateArray().Select(r => r.GetString()));
     }
 
@@ -57,7 +57,22 @@ public sealed class MacroToolsTests : IAsyncLifetime
         new Dictionary<string, object?> { ["macro"] = "Calc.Twice", ["timeout_seconds"] = 1.5 },
         new Dictionary<string, object?> { ["macro"] = "Calc.Twice", ["timeout_seconds"] = "300" },
         new Dictionary<string, object?> { ["macro"] = "Calc.Twice", ["save"] = true },
+        Dialogs("message"),
+        Dialogs(new object[] { "yes" }),
+        Dialogs(Enumerable.Range(1, 31).Select(_ => (object)new Dictionary<string, object> { ["kind"] = "message", ["answer"] = "ok" }).ToArray()),
+        Dialogs(new object[] { new Dictionary<string, object> { ["kind"] = "color", ["value"] = "red" } }),
+        Dialogs(new object[] { new Dictionary<string, object> { ["answer"] = "yes" } }),
+        Dialogs(new object[] { new Dictionary<string, object> { ["kind"] = "message" } }),
+        Dialogs(new object[] { new Dictionary<string, object> { ["kind"] = "message", ["answer"] = "maybe" } }),
+        Dialogs(new object[] { new Dictionary<string, object> { ["kind"] = "message", ["value"] = "yes" } }),
+        Dialogs(new object[] { new Dictionary<string, object> { ["kind"] = "input", ["value"] = 1 } }),
+        Dialogs(new object[] { new Dictionary<string, object> { ["kind"] = "input", ["value"] = "a", ["cancel"] = true } }),
+        Dialogs(new object[] { new Dictionary<string, object> { ["kind"] = "folder", ["cancel"] = false } }),
+        Dialogs(new object[] { new Dictionary<string, object> { ["kind"] = "open_file", ["path"] = "" } }),
+        Dialogs(new object[] { new Dictionary<string, object> { ["kind"] = "save_file", ["path"] = "out.csv", ["note"] = "x" } }),
     };
+
+    private static Dictionary<string, object?> Dialogs(object dialogs) => new() { ["macro"] = "Calc.Twice", ["dialogs"] = dialogs };
 
     [Theory]
     [MemberData(nameof(InvalidArguments))]
@@ -88,6 +103,14 @@ public sealed class MacroToolsTests : IAsyncLifetime
             ["macro"] = "Calc.Twice",
             ["args"] = Enumerable.Range(1, 30).Select(i => (object)(i % 3 == 0 ? "a" : i % 3 == 1 ? i : true)).ToArray(),
             ["timeout_seconds"] = 1200,
+            ["dialogs"] = new object[]
+            {
+                new Dictionary<string, object> { ["kind"] = "message", ["answer"] = "retry" },
+                new Dictionary<string, object> { ["kind"] = "input", ["value"] = "東京" },
+                new Dictionary<string, object> { ["kind"] = "open_file", ["path"] = "data/in.csv" },
+                new Dictionary<string, object> { ["kind"] = "save_file", ["cancel"] = true },
+                new Dictionary<string, object> { ["kind"] = "folder", ["path"] = "data" },
+            },
         });
 
         Assert.Equal("CONFLICT", error.GetProperty("code").GetString());

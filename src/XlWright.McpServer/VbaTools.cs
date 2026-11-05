@@ -205,10 +205,11 @@ internal sealed class VbaTools(ExcelSession? session)
     private async Task<CallToolResult> Run(RequestContext<CallToolRequestParams> context)
     {
         var arguments = ToolArguments.From("macro_run", context);
-        var (text, args, seconds) = ("", (IReadOnlyList<object>)[], DefaultTimeoutSeconds);
-        var invalid = arguments.RejectUnknown("macro", "args", "timeout_seconds")
+        var (text, args, dialogs, seconds) = ("", (IReadOnlyList<object>)[], (IReadOnlyList<DialogAnswer>)[], DefaultTimeoutSeconds);
+        var invalid = arguments.RejectUnknown("macro", "args", "dialogs", "timeout_seconds")
             ?? arguments.RequireString("macro", out text)
             ?? Arguments(context.Params!.Arguments!, out args)
+            ?? Dialogs(context.Params!.Arguments!, out dialogs)
             ?? Timeout("macro_run", context.Params!.Arguments!, out seconds);
         if (invalid is not null)
         {
@@ -221,8 +222,74 @@ internal sealed class VbaTools(ExcelSession? session)
             return ToolResults.Failure(failure, Current());
         }
 
-        return session is null ? NoSession() : ToolResults.From(await session.RunAsync(macro!, args, TimeSpan.FromSeconds(seconds)));
+        return session is null ? NoSession() : ToolResults.From(await session.RunAsync(macro!, args, TimeSpan.FromSeconds(seconds), dialogs));
     }
+
+    // docs/api.md "ダイアログへの事前の応答": each answer has a kind and exactly one of answer (message), value
+    // (input), path (the others), or cancel true. Paths are checked against the app folder by the session.
+    private static string? Dialogs(IDictionary<string, JsonElement> arguments, out IReadOnlyList<DialogAnswer> dialogs)
+    {
+        dialogs = [];
+        if (!arguments.TryGetValue("dialogs", out var element))
+        {
+            return null;
+        }
+
+        if (element.ValueKind != JsonValueKind.Array || element.GetArrayLength() > MaxDialogs)
+        {
+            return $"macro_run: dialogs must be an array of at most {MaxDialogs} answers.";
+        }
+
+        var list = new List<DialogAnswer>();
+        foreach (var item in element.EnumerateArray())
+        {
+            if (Dialog(item) is not { } answer)
+            {
+                return "macro_run: each answer in dialogs is {\"kind\":…} with one of: \"answer\" (message: ok, cancel, yes, no, abort, retry, ignore), " +
+                    "\"value\" (input: a string), \"path\" (open_file, save_file, folder: a path relative to the app folder), or \"cancel\":true. " +
+                    $"Rejected: {item.GetRawText()}";
+            }
+
+            list.Add(answer);
+        }
+
+        dialogs = list;
+        return null;
+    }
+
+    private static DialogAnswer? Dialog(JsonElement item)
+    {
+        if (item.ValueKind != JsonValueKind.Object
+            || !item.TryGetProperty("kind", out var kindElement) || kindElement.ValueKind != JsonValueKind.String
+            || kindElement.GetString() is not { } kind || !DialogAnswer.Kinds.Contains(kind))
+        {
+            return null;
+        }
+
+        var field = kind switch { "message" => "answer", "input" => "value", _ => "path" };
+        var others = item.EnumerateObject().Where(p => p.Name != "kind").ToList();
+        if (others.Count != 1)
+        {
+            return null;
+        }
+
+        var only = others[0];
+        if (only.Name == "cancel")
+        {
+            return only.Value.ValueKind == JsonValueKind.True ? new DialogAnswer(kind, null) : null;
+        }
+
+        if (only.Name != field || only.Value.ValueKind != JsonValueKind.String || only.Value.GetString() is not { } text)
+        {
+            return null;
+        }
+
+        return (kind == "message" && !DialogAnswer.Buttons.Contains(text)) || (field == "path" && text.Length == 0)
+            ? null
+            : new DialogAnswer(kind, text);
+    }
+
+    private const int MaxDialogs = 30;
 
     private SessionState Current() => session is null ? SessionState.Closed : SessionState.From(session.Status());
 
@@ -378,6 +445,14 @@ internal sealed class VbaTools(ExcelSession? session)
         {"type":"object","properties":{
          "macro":{"type":"string","description":"<module>.<procedure> of a Public Sub or Function in a standard module, such as Calc.Twice."},
          "args":{"type":"array","maxItems":30,"items":{"type":["number","string","boolean"]},"description":"The arguments, in order."},
+         "dialogs":{"type":"array","maxItems":30,"description":"Answers, in order, for the dialogs the macro shows through XlWright.Message, InputText, OpenFile, SaveFile, and Folder.",
+          "items":{"type":"object","properties":{
+           "kind":{"enum":["message","input","open_file","save_file","folder"]},
+           "answer":{"enum":["ok","cancel","yes","no","abort","retry","ignore"],"description":"The button, for message."},
+           "value":{"type":"string","description":"The text, for input."},
+           "path":{"type":"string","description":"For open_file, save_file, and folder: a path relative to the app folder."},
+           "cancel":{"const":true,"description":"Cancels the dialog, in place of answer, value, or path."}},
+           "required":["kind"],"additionalProperties":false}},
          "timeout_seconds":{"type":"integer","minimum":1,"maximum":1200,"description":"How long the macro may run. The default is 300."}},
          "required":["macro"],"additionalProperties":false}
         """;
@@ -386,7 +461,8 @@ internal sealed class VbaTools(ExcelSession? session)
         {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"macro":{"type":"string"},
          "return":{"type":["number","string","boolean","null"]},"return_type":{"type":"string"},"result_file":{"type":"string"},
          "elapsed_ms":{"type":"integer"},
+         "dialogs":{"type":"object","properties":{"answered":{"type":"integer"},"unused":{"type":"integer"}},"required":["answered","unused"]},
          "sync":{"type":"object","properties":{ {{{SyncResult}}} },"required":["modules","removed"]}},
-         "required":["session","macro","return","elapsed_ms","sync"]}
+         "required":["session","macro","return","elapsed_ms","dialogs","sync"]}
         """;
 }

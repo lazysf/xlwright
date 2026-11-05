@@ -180,9 +180,10 @@ public interface IExcel
     /// <summary>
     /// Checks that the macro is a public Sub or Function of a standard module, adds the module that calls it by
     /// name, runs that module's Run with Application.Run, and removes the module (docs/architecture.md
-    /// "実行ごとに作るモジュール"). Blocks while the macro runs.
+    /// "実行ごとに作るモジュール"). Blocks while the macro runs. The XlWright dialog functions use
+    /// <paramref name="answers"/> in order; a path in them is a full path.
     /// </summary>
-    MacroResult RunMacro(MacroName macro, IReadOnlyList<object> args);
+    MacroResult RunMacro(MacroName macro, IReadOnlyList<object> args, IReadOnlyList<DialogAnswer> answers);
 
     /// <summary>Closes every workbook without saving, asks Excel to quit, and releases the references.</summary>
     void CloseAllAndQuit();
@@ -266,12 +267,18 @@ public sealed record CompileErrorPlace(string Module, int Line);
 /// <summary>The title and the body text of a dialog. It goes only into the response, never into a log.</summary>
 public sealed record DialogText(string Title, string Text);
 
+/// <summary>The dialog answers a macro used, and those left when it ended.</summary>
+public sealed record DialogUse(int Answered, int Unused);
+
 /// <summary>What one macro_run call came to.</summary>
 public abstract record MacroResult
 {
     private MacroResult()
     {
     }
+
+    /// <summary>How many of the dialog answers the macro used and left (docs/api.md "ダイアログへの事前の応答").</summary>
+    public DialogUse Dialogs { get; init; } = new(0, 0);
 
     /// <summary>No public Sub or Function of a standard module has that name.</summary>
     public sealed record NotFound(string Reason) : MacroResult;

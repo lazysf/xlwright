@@ -926,7 +926,7 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
         return null;
     }
 
-    public MacroResult RunMacro(MacroName macro, IReadOnlyList<object> args)
+    public MacroResult RunMacro(MacroName macro, IReadOnlyList<object> args, IReadOnlyList<DialogAnswer> answers)
     {
         dynamic project = Main.VBProject;
         try
@@ -956,15 +956,22 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
 
                     // The workbook qualifier keeps Application.Run in the main workbook (docs/notes/vba-run.md).
                     var qualifier = $"'{((string)Main.Name).Replace("'", "''")}'!";
-                    Array returned = App.Run(qualifier + MacroCall.ModuleName + ".Run", args.ToArray());
+                    // A cancel is False, as the dialog functions return it.
+                    var queued = answers.Select(a => (object)new object[] { a.Kind, a.Text ?? (object)false }).ToArray();
+                    Array both = App.Run(qualifier + MacroCall.ModuleName + ".Run", args.ToArray(), queued);
+                    var outer = both.GetLowerBound(0);
+                    var returned = (Array)both.GetValue(outer)!;
+                    var counts = (Array)both.GetValue(outer + 1)!;
+                    var dialogs = new DialogUse(Convert.ToInt32(counts.GetValue(counts.GetLowerBound(0))), Convert.ToInt32(counts.GetValue(counts.GetLowerBound(0) + 1)));
                     var first = returned.GetLowerBound(0);
-                    return Convert.ToInt32(returned.GetValue(first)) switch
+                    MacroResult result = Convert.ToInt32(returned.GetValue(first)) switch
                     {
                         0 => new MacroResult.Returned(returned.GetValue(first + 1)),
                         1 => new MacroResult.Failed(Convert.ToInt32(returned.GetValue(first + 1)),
                             (string)returned.GetValue(first + 2)!, (string)returned.GetValue(first + 3)!),
                         _ => new MacroResult.OfType((string)returned.GetValue(first + 1)!),
                     };
+                    return result with { Dialogs = dialogs };
                 }
                 finally
                 {

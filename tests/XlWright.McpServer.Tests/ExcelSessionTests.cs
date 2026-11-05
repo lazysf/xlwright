@@ -927,6 +927,52 @@ public sealed class ExcelSessionTests : IDisposable
         Assert.Equal("""{"modules":[{"name":"XlWright","type":"standard"}],"removed":[]}""", result["sync"]!.ToJsonString());
     }
 
+    [Fact]
+    public async Task RunReportsNoDialogAnswersWhenNoneArePassed()
+    {
+        await _session.StartAsync(_app);
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "Twice"), [21.0], TimeSpan.FromSeconds(5));
+
+        Assert.Equal("""{"answered":0,"unused":0}""", outcome.Result!["dialogs"]!.ToJsonString());
+        Assert.Empty(_launcher.Excel.LastAnswers);
+    }
+
+    [Fact]
+    public async Task RunPassesTheDialogAnswersWithFullPathsAndReportsTheirUse()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.MacroResult = new MacroResult.Returned(1.0) { Dialogs = new DialogUse(4, 1) };
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "Ask"), [], TimeSpan.FromSeconds(5),
+        [
+            new DialogAnswer("message", "yes"), new DialogAnswer("input", "東京"), new DialogAnswer("open_file", "data/in.csv"),
+            new DialogAnswer("save_file", null), new DialogAnswer("folder", "."),
+        ]);
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal(
+            [new DialogAnswer("message", "yes"), new DialogAnswer("input", "東京"), new DialogAnswer("open_file", Path.Combine(_app.FullPath, "data", "in.csv")),
+             new DialogAnswer("save_file", null), new DialogAnswer("folder", _app.FullPath)],
+            _launcher.Excel.LastAnswers);
+        Assert.Equal("""{"answered":4,"unused":1}""", outcome.Result!["dialogs"]!.ToJsonString());
+    }
+
+    [Theory]
+    [InlineData("open_file", "../other/in.csv")]
+    [InlineData("save_file", "C:/elsewhere/out.csv")]
+    [InlineData("folder", "..")]
+    public async Task RunRejectsADialogPathOutsideTheAppFolderBeforeExcel(string kind, string path)
+    {
+        await _session.StartAsync(_app);
+        var before = _launcher.Excel.Calls.Count;
+
+        var outcome = await _session.RunAsync(new MacroName("Calc", "Ask"), [], TimeSpan.FromSeconds(5), [new DialogAnswer(kind, path)]);
+
+        AssertFailure(outcome, "INVALID_REQUEST", "PATH_NOT_ALLOWED", "ready");
+        Assert.Equal(before, _launcher.Excel.Calls.Count);
+    }
+
     [Theory]
     [InlineData("Collection")]
     [InlineData("Date")]

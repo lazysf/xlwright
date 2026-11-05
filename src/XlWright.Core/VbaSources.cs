@@ -54,6 +54,7 @@ public static partial class VbaSources
         "' Whether xlwright runs the code, and the answers for the dialog functions.\r\n" +
         "Private mRunning As Boolean\r\n" +
         "Private mAnswers As Collection\r\n" +
+        "Private mUsed As Long\r\n" +
         "\r\n" +
         "' macro_run passes a macro's return value here: Array(0, value), or Array(2, type name) for a value it does not return.\r\n" +
         "Public Function Result(ByVal value As Variant) As Variant\r\n" +
@@ -71,15 +72,28 @@ public static partial class VbaSources
     private static readonly string DialogFunctions = """
 
         ' xlwright calls BeginRun before each macro_run call and each test, and EndRun after it. The app's code does not call them.
-        Public Sub BeginRun()
+        ' answers is macro_run's dialogs as an array of Array(kind, value); EndRun returns Array(answered, unused).
+        Public Sub BeginRun(Optional ByVal answers As Variant)
             mRunning = True
+            mUsed = 0
             Set mAnswers = New Collection
+            If IsMissing(answers) Then Exit Sub
+            If Not IsArray(answers) Then Exit Sub
+            Dim i As Long
+            For i = LBound(answers) To UBound(answers)
+                mAnswers.Add answers(i)
+            Next
         End Sub
 
-        Public Sub EndRun()
+        Public Function EndRun() As Variant
+            If mAnswers Is Nothing Then
+                EndRun = Array(mUsed, 0)
+            Else
+                EndRun = Array(mUsed, mAnswers.Count)
+            End If
             mRunning = False
             Set mAnswers = Nothing
-        End Sub
+        End Function
 
         ' A test queues the answer for the next dialog function. kind is message, input, open_file, save_file, or folder.
         ' value is a button name such as "yes", the text, or a path; False cancels. A relative path is from ThisWorkbook.Path.
@@ -180,6 +194,7 @@ public static partial class VbaSources
             Dim item As Variant
             item = mAnswers(1)
             mAnswers.Remove 1
+            mUsed = mUsed + 1
             If item(0) <> kind Then Fail name, "the next answer is for " & item(0) & ", not " & kind & "."
             NextAnswer = item(1)
         End Function

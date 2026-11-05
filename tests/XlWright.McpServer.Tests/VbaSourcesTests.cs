@@ -149,8 +149,8 @@ public sealed class VbaSourcesTests : IDisposable
     }
 
     [Theory]
-    [InlineData("Public Sub BeginRun()")]
-    [InlineData("Public Sub EndRun()")]
+    [InlineData("Public Sub BeginRun(Optional ByVal answers As Variant)")]
+    [InlineData("Public Function EndRun() As Variant")]
     [InlineData("Public Sub Answer(ByVal kind As String, ByVal value As Variant)")]
     [InlineData("Public Function Message(ByVal prompt As Variant, Optional ByVal buttons As VbMsgBoxStyle = vbOKOnly, Optional ByVal title As Variant) As VbMsgBoxResult")]
     [InlineData("Public Function InputText(ByVal prompt As Variant, Optional ByVal title As Variant, Optional ByVal default As Variant) As Variant")]

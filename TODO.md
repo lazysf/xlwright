@@ -656,6 +656,26 @@
 - [x] 新しいセッションで1〜6を通す。6つとも支持。前後の`EXCEL.EXE`は0。1の`Workbook_Open`が動かないことは、開始で開く時にもイベントを止めるため、取り出しと切り分けていない。`ForceDisable`だけで動かないことは周期38の実験が確かめている。
 - [x] 記録し、ROADMAPを直す（[記録](docs/notes/stage4-scenarios.md)）。
 
+## 周期49（段階4）: 書き留めの小さな直し
+
+作るもの: 書き留めたことのうち、振る舞いの契約を変えない3つの直し。
+
+1. 生成する`XlWrightCall.Run`のローカル変数`result`を、`XlWright.Result`と大文字小文字だけ違う名前でない`xlwrightResult`にする（周期46の独立レビュー）。
+2. `XlWright.bas`の`AnsweredPath`で、判定の前に`/`を`\`へ変え、スラッシュで書いた絶対パスもそのまま渡す（APIの「絶対パスはそのまま渡します」、周期45の独立レビュー）。
+3. 反映・取り出し・テストの写しのフォルダ（`.xlwright/sync/<id>`・`.xlwright/extract/<id>`・`.xlwright/test/<run-id>`）を消した後、空になった親のフォルダも消す（周期48など）。消せない時は今のとおり残す。
+
+完了の条件:
+
+- テストで、1の生成するコード、3の`vba_sync`・`macro_run`・`vba_extract`・`test_run`の後に親のフォルダが残らないことを返す。2は実Excelの結合テストで、`C:/…`の応答が`C:\…`で返ることを確かめる。どれも、テストを先に書いて失敗を確かめてから作る。
+- 実Excelの結合テストと確認の入口が通る。
+
+作業:
+
+- [x] 失敗するテストを書く。Excelに触れないテストで15件が、直す前に失敗した。実Excelの結合テストは、直す前に`TheDialogFunctionsUseTheQueuedAnswers`（スラッシュのパス）と`ExtractsAnExistingWorkbookWithoutRunningItsCode`（`.xlwright/extract`が残る）の2件を走らせ、どちらも失敗した。`.xlwright/sync`が残らないことを確かめる形に変えた実Excelのテストは、直す前には走らせていない。
+- [x] 3つを直す。親のフォルダを消せない時は、残して失敗にしない。
+- [x] 実Excelの結合テストと確認の入口を通す。テストは553件と実Excelの20件。直した後に、`.xlwright/test`の中を数えていた実Excelの2件が、フォルダが無いため失敗した。フォルダが無いことを確かめる形に直して通した。独立レビューで、直し2の新しい変数`path`が`ThisWorkbook.Path`と大文字小文字だけ違うと分かり、直し1と同じ理由で`chosen`に変えた。ダイアログの実Excelの2件を走らせ直して通した。
+- [x] 文書を直す。APIと設計は変えていない。
+
 ## 書き留めたこと
 
 周期の中で後へ回した事項を書きます。
@@ -671,7 +691,7 @@
 - コマンドラインを読む`NtQueryInformationProcess`の`ProcessCommandLineInformation`は、Microsoftが変わりうるとしているntdllの関数。製品で使うか、WMIのような代わりを使うか（新しい依存になりうる）を、所有の確定を作る周期で決める。
 - 実行の間の`session_status`は、製品のサーバーにMCPのクライアントから送って確かめた。Claude Codeの会話から`macro_run`と並べて送ると、`macro_run`の後に実行された（[記録](docs/notes/stage1-flow.md#実行の間のsession_status)）。会話から照会する方法は未確認。
 - `.claude/settings.local.json`の許可だけで、開発版のツールの確認の画面が出ないかは、auto modeでない会話で確かめていない。
-- `macro_run`の後、`<アプリ>/.xlwright/sync/`が空のフォルダとして残る。段階2の片付けと合わせて扱いを決める。
+- `macro_run`の後、`<アプリ>/.xlwright/sync/`が空のフォルダとして残る。段階2の片付けと合わせて扱いを決める。周期49で、空になった親のフォルダを消すように直した。
 - アプリのフォルダのパスの制限は、パスの文字列で比べる。リポジトリの中のジャンクションやシンボリックリンクが外を指す時は、外のフォルダを受け入れうる。
 - 主ブックを開けなかった時と`ReadOnly`の時の終了は、ほかのブックの照合（設計の「終了」の2）を省いている。開始の直後で、マクロを実行していないため。
 - 所有を確定できなかった時と、所有の前に開始の期限が切れた時は、起動したExcelのRCWを持ったまま止まる。`UserControl`は偽のままなので、GCやサーバーの終了で参照が解放されると、そのExcelは自ら終わりうる（[記録](docs/notes/sta-com.md)）。応答の「触らずに残した」と食い違いうる。段階2の片付けと合わせて扱いを決める。
@@ -709,11 +729,15 @@
 - コンパイルを確かめられなかった時は、見張りの5秒を使い切ってからテストへ進み、その時間も`timeout_seconds`に入る。実機で起きる頻度は確かめていない（周期44の独立レビュー、低）。
 - `XlWright.bas`のダイアログの関数が、xlwrightの外で標準のダイアログを出す経路（`MsgBox`・`Application.InputBox`・`GetOpenFilename`・`GetSaveAsFilename`・`FileDialog`、省いた引数をそのまま渡す形）は、実機で確かめていない。止まるため自動のテストに入れていない。人の操作が要る確認をまとめる時に扱う（周期45）。
 - `XlWright`のモジュールの`Public`の手続き（`Result`・`BeginRun`・`EndRun`・`Answer`・`Message`・`Folder`など）と同じ名前の`Public`の手続きが、アプリのほかの標準モジュールにあると、修飾の無い呼出しが「名前があいまい」のコンパイルエラーになりうる。確かめていない。既存のブックから取り出したソースで起きうる。参照設定のライブラリの型（Scripting Runtimeの`Folder`、CDOの`Message`など）との衝突も確かめていない。衝突した時は、`XlWright.bas`を編集できないため、アプリの側の名前を変えることになる（周期45、独立レビューで追記）。
-- `XlWright.bas`の`AnsweredPath`は、`C:/out/x.csv`や`//server/share`のようにスラッシュで書いた絶対パスを相対パスとみなし、`ThisWorkbook.Path`の後ろへつなぐ。APIの「絶対パスはそのまま渡します」と食い違う。判定の前に`/`を`\`へ変えれば直る（周期45の独立レビュー、低）。
+- `XlWright.bas`の`AnsweredPath`は、`C:/out/x.csv`や`//server/share`のようにスラッシュで書いた絶対パスを相対パスとみなし、`ThisWorkbook.Path`の後ろへつなぐ。APIの「絶対パスはそのまま渡します」と食い違う。判定の前に`/`を`\`へ変えれば直る（周期45の独立レビュー、低）。周期49で直した。
 - 実Excelの結合テストは、`Answer`に`True`を渡した時のエラー、UNCのパス、`abort`・`retry`・`ignore`と`yes no cancel`・`retry cancel`のボタンの組、文字列の`"cancel"`を通っていない。`XlWrightText`がASCIIだけであることを固定するテストも無い。`Message`に`False`を渡してボタンに`cancel`が無い時、エラーの説明は`the answer cancel ...`になる（周期45の独立レビュー、低）。
 - アプリのコードが1つの式で複数のダイアログの関数を呼ぶと、応答の使われる順が書いた順とずれうる（周期45の観察）。APIの「順に使います」に注意を書き足すか、開発版のスキルに書くかは、人の判断で決める。スキルには`XlWright.Message`などと`XlWright.Answer`の使い方もまだ無い（段階4の残りの4で扱う）（周期45の独立レビュー、低）。
-- 生成する`XlWrightCall.Run`のローカル変数`result`は、`XlWright.Result`と大文字小文字だけが違う。VBEはプロジェクト全体で識別子の大文字小文字を揃えることがあるため、主ブックの`XlWright`や利用者のモジュールの`Result`が`result`に書き換わり、そのブックから`vba_extract`すると大文字小文字だけの差分が出うる。実機で確かめていない。衝突しにくい名前にすれば避けられる（周期46の独立レビュー、低）。
+- 生成する`XlWrightCall.Run`のローカル変数`result`は、`XlWright.Result`と大文字小文字だけが違う。VBEはプロジェクト全体で識別子の大文字小文字を揃えることがあるため、主ブックの`XlWright`や利用者のモジュールの`Result`が`result`に書き換わり、そのブックから`vba_extract`すると大文字小文字だけの差分が出うる。実機で確かめていない。衝突しにくい名前にすれば避けられる（周期46の独立レビュー、低）。周期49で`xlwrightResult`にした。VBEが書き換えるかは、確かめていないまま。
 - パスがアプリのフォルダの中かの判定が、`DialogAnswer.Resolve`・`AppFolder.IsSameOrInside`・`VbaExtraction.Check`・`ExcelSession`の4か所にある。`dialogs`の`path`は、中を指す絶対パスも受け付ける（APIは相対パスと書く）。`path`にNUL文字があると、`Path.GetFullPath`の例外で`INVALID_REQUEST`でない失敗になりうる（`session_start`と`vba_extract`にも以前からある）（周期46の独立レビュー、低）。
 - テストに、同じ接頭辞の隣のフォルダ（`../sales2/x`）を拒否する場合、実Excelで`folder`の応答を使う経路と`kind`が合わない`MACRO_ERROR`が無い。偽物は`Dialogs`を設定した値で返すだけで、数え方は実Excelのテストだけが確かめる。`NextAnswer`は、`kind`の照合で失敗する前に使った数を増やす（失敗の結果に`dialogs`が無いため、今は外から見えない）（周期46の独立レビュー、低）。
 - 利用する版の配り方は保留した（人、2026-11-05）。バイナリをプラグインに同梱せず、.NET 10 SDKを利用者がそれぞれ入れることは決めた。サーバーの取得元は未定で、第1候補はnuget.orgと`dnx`（[記録](docs/notes/distribution.md)）。決めるまで、段階4の残りの5（利用する版の発行）と6（会社のPCでの確認）、要件と設計の書き直し、TFMの`net10.0`への変更は行わない。GitHubの`lazysf/xlwright`は公開の設定で空のため、最初のpushの前に公開のままにするかを決める。
-- `vba_extract`の後に`.xlwright/extract/`が、`test_run`の後に`.xlwright/test/`が、空のフォルダとして残る（周期48）。`.xlwright/sync/`の残りと合わせて扱いを決める。
+- `vba_extract`の後に`.xlwright/extract/`が、`test_run`の後に`.xlwright/test/`が、空のフォルダとして残る（周期48）。`.xlwright/sync/`の残りと合わせて扱いを決める。周期49で、空になった親のフォルダを消すように直した。
+- `dialogs`と`XlWright.Answer`のスラッシュで書いた絶対パスは、`\`に変えて渡す（周期49）。APIの「絶対パスはそのまま渡します」に、`/`を`\`に変えることを書き足すかは人の判断で決める。実Excelのテストは、`\`で書いた絶対パスの場合を通らなくなった（周期49の独立レビュー、低）。
+- 親のフォルダが空でない時（`test_run`の途中の`sync/<A>`、前の時間切れで残ったフォルダ）に親を残すことを、Excelに触れないテストは固定していない。偽物の`ImportModules`がファイルを読まないため。実Excelの`RunsTheTestsInACopyAndLeavesTheAppAsItWas`だけが捕まえる（周期49の独立レビュー、低）。
+- `XlWright.bas`の引数`title`と`picker.Title`も、大文字小文字だけが違う（周期45から）。VBEが書き換えるかは、確かめていない（周期49の独立レビュー、別スコープ）。
+- 設計の「テスト」は、開始の時に`.xlwright/test/`の残りを消すと書くが、そのコードは無い（周期49の独立レビュー、別スコープ）。書き留めの「`.xlwright/test/<run-id>/`は、だれも片付けない」と同じ事項。

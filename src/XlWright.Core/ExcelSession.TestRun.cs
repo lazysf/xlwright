@@ -114,6 +114,21 @@ public sealed partial class ExcelSession
                 $"Importing the tests into the copy failed: {error.Message} No test ran.", (error as VbaSyncException)?.Done ?? []));
         }
 
+        // A test that calls what is not written yet stops here, without ending the Excel (docs/api.md "test_runの前のコンパイル").
+        // A compile that is not confirmed runs the tests, whose dialog watch still catches an error.
+        switch (await CompileCore(active, Saved, TestData(results, null)))
+        {
+            case Compiled.Error compileError:
+                return await StopAndReopen(active, copy, results, Fail(ToolFailure.ExcelError, "COMPILE_ERROR",
+                    $"The tests did not compile: {compileError.Value["message"]} No test ran. Fix the code, then call test_run again.",
+                    new JsonObject { ["error"] = compileError.Value }));
+            case Compiled.Stopped { Failure: (_, { Code: ToolFailure.StateUnknown }) } ended:
+                RemoveCopy(active.App, copy);
+                return ended.Failure;
+            case Compiled.Stopped failed:
+                return await StopAndReopen(active, copy, results, failed.Failure);
+        }
+
         for (var i = 0; i < plan.Tests.Count; i++)
         {
             var test = plan.Tests[i];

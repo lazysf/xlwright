@@ -14,7 +14,10 @@ public sealed class TestRunTests : IDisposable
         QuitExit: TimeSpan.FromMilliseconds(300),
         CleanupQuitExit: TimeSpan.FromMilliseconds(300),
         TerminateExit: TimeSpan.FromMilliseconds(200),
-        PendingReturn: TimeSpan.FromMilliseconds(300));
+        PendingReturn: TimeSpan.FromMilliseconds(300))
+    {
+        CompileWatch = TimeSpan.FromMilliseconds(600),
+    };
 
     private static readonly TimeSpan Limit = TimeSpan.FromSeconds(5);
 
@@ -69,7 +72,7 @@ public sealed class TestRunTests : IDisposable
         var copy = calls[2]["Open ".Length..];
         Assert.Equal(Path.Combine(TestFolder, Path.GetFileName(Path.GetDirectoryName(copy)!), "Sales.xlsm"), copy);
         Assert.Equal(
-            ["Save", "CloseMain", "Open " + copy, $"ImportModules CalcTests,{VbaSources.AssertName}",
+            ["Save", "CloseMain", "Open " + copy, $"ImportModules CalcTests,{VbaSources.AssertName}", "StartCompile", "IsCompiled",
              "RunMacro CalcTests.TestAdd", "RunMacro CalcTests.TestSplit", "RunMacro CalcTests.TestLoad",
              "CloseUnder " + Path.GetDirectoryName(copy), "Open " + _app.WorkbookPath],
             calls);
@@ -169,6 +172,70 @@ public sealed class TestRunTests : IDisposable
 
         AssertFailure(outcome, "EXCEL_ERROR", "SYNC_FAILED", "ready");
         Assert.Equal("Open " + _app.WorkbookPath, Excel.Calls[^1]);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ACompileErrorRunsNoTestAndReopensTheMainWorkbook(bool placeKnown)
+    {
+        await _session.StartAsync(_app);
+        _launcher.Process.Dialog = new DialogText("Microsoft Visual Basic for Applications", "コンパイル エラー:\nSub または Function が定義されていません。");
+        Excel.ErrorPlace = placeKnown ? new CompileErrorPlace("CalcTests", 2) : null;
+
+        var outcome = await _session.TestRunAsync(null, Limit);
+
+        AssertFailure(outcome, "EXCEL_ERROR", "COMPILE_ERROR", "ready");
+        var error = outcome.Failure!.Data!["error"]!;
+        Assert.Equal("コンパイル エラー: Sub または Function が定義されていません。", error["message"]!.GetValue<string>());
+        Assert.Equal(placeKnown ? "CalcTests" : null, error["module"]?.GetValue<string>());
+        Assert.Equal(placeKnown ? 2 : null, error["line"]?.GetValue<int>());
+        Assert.Equal(1, _launcher.Process.DialogCloses);
+        Assert.Contains("HideEditor", Excel.Calls);
+        Assert.DoesNotContain(Excel.Calls, c => c.StartsWith("RunMacro", StringComparison.Ordinal));
+        Assert.Equal("Open " + _app.WorkbookPath, Excel.Calls[^1]);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(TestFolder));
+        Assert.Null((await _session.TestRunAsync(null, Limit)).Failure);
+    }
+
+    [Fact]
+    public async Task AnAlreadyCompiledCopyRunsTheTests()
+    {
+        await _session.StartAsync(_app);
+        Excel.CompileStart = CompileStart.AlreadyCompiled;
+
+        var outcome = await _session.TestRunAsync(null, Limit);
+
+        Assert.Null(outcome.Failure);
+        Assert.DoesNotContain("IsCompiled", Excel.Calls);
+        Assert.Equal(3, outcome.Result!["tests"]!.AsArray().Count);
+    }
+
+    [Fact]
+    public async Task ACompileNotConfirmedStillRunsTheTests()
+    {
+        await _session.StartAsync(_app);
+        Excel.CompilesAfter = int.MaxValue;
+
+        var outcome = await _session.TestRunAsync(null, Limit);
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal(3, outcome.Result!["tests"]!.AsArray().Count);
+    }
+
+    [Fact]
+    public async Task ACompileDialogThatStaysEndsTheExcelAndRemovesTheCopy()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Process.Dialog = new DialogText("Microsoft Visual Basic for Applications", "コンパイル エラー:");
+        _launcher.Process.CloseLeavesDialog = true;
+
+        var outcome = await _session.TestRunAsync(null, Limit);
+
+        AssertFailure(outcome, "STATE_UNKNOWN", "DIALOG", "closed");
+        Assert.Equal(1, _launcher.Process.Terminations);
+        Assert.DoesNotContain(Excel.Calls, c => c.StartsWith("RunMacro", StringComparison.Ordinal));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(TestFolder));
     }
 
     [Fact]

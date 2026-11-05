@@ -38,6 +38,8 @@ public sealed class TestToolsTests : IAsyncLifetime
         Assert.True(tool.Annotations.DestructiveHint);
         Assert.False(tool.Annotations.IdempotentHint);
         Assert.True(tool.Annotations.OpenWorldHint);
+        Assert.Contains("COMPILE_ERROR", tool.Description);
+        Assert.Contains("person's screen", tool.Description);
         Assert.NotNull(tool.OutputSchema);
         Assert.False(tool.InputSchema.GetProperty("additionalProperties").GetBoolean());
         Assert.Equal(["tests", "timeout_seconds"], tool.InputSchema.GetProperty("properties").EnumerateObject().Select(p => p.Name));

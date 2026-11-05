@@ -236,20 +236,54 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
             return (null, syncFailure);
         }
 
+        return await CompileCore(active, "", null) switch
+        {
+            Compiled.Passed => (Checked(true, null, sync!), null),
+            Compiled.Error error => (Checked(false, error.Value, sync!), null),
+            Compiled.Stopped stopped => stopped.Failure,
+            _ => Fail(ToolFailure.ExcelError, "COMPILE_NOT_CONFIRMED",
+                $"The compile showed no error and was not confirmed within {timeouts.CompileWatch.TotalSeconds:0.###} seconds. The session is still open; call vba_check again."),
+        };
+    });
+
+    /// <summary>What <see cref="CompileCore"/> came to.</summary>
+    private abstract record Compiled
+    {
+        private Compiled()
+        {
+        }
+
+        /// <summary>The project is compiled.</summary>
+        public sealed record Passed : Compiled;
+
+        /// <summary>A compile error: the dialog was read and closed, and the VBE hidden.</summary>
+        public sealed record Error(JsonObject Value) : Compiled;
+
+        /// <summary>No dialog showed and the compile was not confirmed within the watch.</summary>
+        public sealed record NotConfirmed : Compiled;
+
+        /// <summary>A failure that stops the call; STATE_UNKNOWN when the dedicated Excel was ended.</summary>
+        public sealed record Stopped((JsonObject?, ToolFailure?) Failure) : Compiled;
+    }
+
+    // Compiles the project of the open main workbook (the test copy during test_run) and watches for the compile error
+    // dialog (docs/api.md "vba_check", "test_runの前のコンパイル"). note and extra go into the failures that end the Excel.
+    private async Task<Compiled> CompileCore(Active active, string note, JsonObject? extra)
+    {
         var starting = active.Worker.Run(active.Excel.StartCompile);
         if (!await Completes(starting, timeouts.Sync))
         {
-            return await AfterTimeout(active, starting, "Compiling the VBA project did not finish within the time limit.");
+            return new Compiled.Stopped(await AfterTimeout(active, starting, "Compiling the VBA project did not finish within the time limit." + note, extra: extra));
         }
 
         if (starting.IsFaulted)
         {
-            return Fail(ToolFailure.ExcelError, null, $"Excel could not compile the VBA project: {starting.Exception!.InnerException!.Message}");
+            return new Compiled.Stopped(Fail(ToolFailure.ExcelError, null, $"Excel could not compile the VBA project: {starting.Exception!.InnerException!.Message}"));
         }
 
         if (starting.Result == CompileStart.AlreadyCompiled)
         {
-            return (Checked(true, null, sync!), null);
+            return new Compiled.Passed();
         }
 
         // The control returns at once and a compile error shows its dialog later; the control stays enabled then.
@@ -258,39 +292,39 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
         {
             if (active.Process.FindDialog() is { } dialog)
             {
-                return await CompileError(active, dialog, sync!);
+                return await CompileError(active, dialog, note, extra);
             }
 
             var checking = active.Worker.Run(active.Excel.IsCompiled);
             if (!await Completes(checking, timeouts.Sync))
             {
-                return await AfterTimeout(active, checking, "Checking the compile did not finish within the time limit.");
+                return new Compiled.Stopped(await AfterTimeout(active, checking, "Checking the compile did not finish within the time limit." + note, extra: extra));
             }
 
             if (checking.IsFaulted)
             {
-                return Fail(ToolFailure.ExcelError, null, $"Excel could not report the compile: {checking.Exception!.InnerException!.Message}");
+                return new Compiled.Stopped(Fail(ToolFailure.ExcelError, null, $"Excel could not report the compile: {checking.Exception!.InnerException!.Message}"));
             }
 
             if (checking.Result)
             {
-                return (Checked(true, null, sync!), null);
+                return new Compiled.Passed();
             }
 
             await Task.Delay(DialogInterval);
         }
 
-        return Fail(ToolFailure.ExcelError, "COMPILE_NOT_CONFIRMED",
-            $"The compile showed no error and was not confirmed within {timeouts.CompileWatch.TotalSeconds:0.###} seconds. The session is still open; call vba_check again.");
-    });
+        return new Compiled.NotConfirmed();
+    }
 
-    private async Task<(JsonObject?, ToolFailure?)> CompileError(Active active, DialogText dialog, JsonObject sync)
+    private async Task<Compiled> CompileError(Active active, DialogText dialog, string note, JsonObject? extra)
     {
-        var shown = new JsonObject { ["dialog"] = new JsonObject { ["title"] = dialog.Title, ["text"] = dialog.Text } };
+        var shown = extra?.DeepClone().AsObject() ?? [];
+        shown["dialog"] = new JsonObject { ["title"] = dialog.Title, ["text"] = dialog.Text };
         var reading = active.Worker.Run(active.Excel.ReadErrorPlace);
         if (!await Completes(reading, timeouts.Sync))
         {
-            return await AfterTimeout(active, reading, "Reading the place of the compile error did not finish within the time limit.", "DIALOG", shown);
+            return new Compiled.Stopped(await AfterTimeout(active, reading, "Reading the place of the compile error did not finish within the time limit." + note, "DIALOG", shown));
         }
 
         // The place is optional in the result; the VBE does not always have a code pane (docs/notes/test-copy.md).
@@ -302,7 +336,7 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
             if (closing.Elapsed >= timeouts.DialogClose)
             {
                 // Excel did not quit with the dialog left open (docs/notes/test-copy.md), so it is ended now.
-                return await AfterTimeout(active, Task.CompletedTask, "The compile error dialog stayed open after it was closed.", "DIALOG", shown);
+                return new Compiled.Stopped(await AfterTimeout(active, Task.CompletedTask, "The compile error dialog stayed open after it was closed." + note, "DIALOG", shown));
             }
 
             await Task.Delay(DialogInterval / 5);
@@ -311,7 +345,7 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
         var hiding = active.Worker.Run(active.Excel.HideEditor);
         if (!await Completes(hiding, timeouts.Sync))
         {
-            return await AfterTimeout(active, hiding, "Hiding the VBA editor did not finish within the time limit.");
+            return new Compiled.Stopped(await AfterTimeout(active, hiding, "Hiding the VBA editor did not finish within the time limit." + note, extra: extra));
         }
 
         var error = new JsonObject { ["message"] = string.Join(" ", dialog.Text.Split('\n').Select(line => line.Trim()).Where(line => line.Length > 0)) };
@@ -321,7 +355,7 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
             error["line"] = place.Line;
         }
 
-        return (Checked(false, error, sync), null);
+        return new Compiled.Error(error);
     }
 
     private static JsonObject Checked(bool compiled, JsonObject? error, JsonObject sync)

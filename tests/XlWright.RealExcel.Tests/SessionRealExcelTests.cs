@@ -440,6 +440,38 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         AssertNothingLeft(pid);
     }
 
+    // Needs AccessVBOM 1. A test written before the function it calls stops at the compile, not at a dialog that ends
+    // the Excel (docs/notes/stage3-scenarios.md). The dialog and the VBA editor show on the person's screen for a moment.
+    [Fact]
+    public async Task ATestThatDoesNotCompileRunsNoTestAndKeepsTheSession()
+    {
+        _repo.AddApp("apps/first");
+        var app = Path.Combine(_repo.Root, "apps", "first");
+        MinimalWorkbook.Write(Path.Combine(app, "First.xlsm"));
+        Source(app, "src/modules/Text.bas", "Option Explicit\n");
+        Source(app, "tests/TextTests.bas",
+            "Option Explicit\n\nPublic Sub TestJoin()\n    XlWrightAssert.AreEqual \"a,b\", Text.JoinFields(\"a\", \"b\")\nEnd Sub\n");
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/first" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+
+        var failed = Body(await Call("test_run", new()));
+
+        var error = failed.GetProperty("error");
+        Assert.Equal("EXCEL_ERROR", error.GetProperty("code").GetString());
+        Assert.Equal("COMPILE_ERROR", error.GetProperty("detail").GetString());
+        Assert.False(string.IsNullOrEmpty(error.GetProperty("data").GetProperty("error").GetProperty("message").GetString()));
+        Assert.Equal("ready", failed.GetProperty("session").GetProperty("state").GetString());
+        Assert.Empty(Directory.EnumerateFileSystemEntries(Path.Combine(app, ".xlwright", "test")));
+
+        Source(app, "src/modules/Text.bas",
+            "Option Explicit\nPublic Function JoinFields(ByVal a As String, ByVal b As String) As String\n    JoinFields = a & \",\" & b\nEnd Function\n");
+        var run = Success(await Call("test_run", new()));
+        Assert.Equal("""{"passed":1,"failed":0,"errors":0}""", run.GetProperty("summary").GetRawText());
+
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(pid);
+    }
+
     // Needs AccessVBOM 1. The compile error shows its dialog and the VBA editor on the person's screen for a moment.
     [Fact]
     public async Task ChecksTheCompileAndReportsACompileErrorWithItsLine()

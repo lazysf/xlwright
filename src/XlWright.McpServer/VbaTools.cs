@@ -75,12 +75,14 @@ internal sealed class VbaTools(ExcelSession? session)
             Name = "test_run",
             Description = "Syncs src/ as vba_sync does and saves the main workbook, including the changes made before this call. " +
                 "Then it copies the app folder (without src/, tests/, and folders that start with a dot) to .xlwright/test/, " +
-                "imports tests/ and the assertion module XlWrightAssert into the copy, runs each test, and opens the main workbook " +
+                "imports tests/ and the assertion module XlWrightAssert into the copy, compiles it, runs each test, and opens the main workbook " +
                 "again; the tests' changes stay in the copy, which is removed. A test is a Sub without arguments, not Private, " +
                 "whose name starts with Test, in tests/*.bas. Assert with XlWrightAssert.AreEqual expected, actual[, message], " +
                 "XlWrightAssert.IsTrue condition[, message], and XlWrightAssert.Fail message. A failing test is a result, not a " +
                 "failure. xlwright does not stop a test from changing files outside the app folder, or the main workbook's folder " +
-                "through a full path. If a test stops at a dialog or runs past timeout_seconds (the whole call), xlwright ends " +
+                "through a full path. If the copy does not compile, such as a test that calls a function not written yet, no test " +
+                "runs and it fails with COMPILE_ERROR and the session stays open; the dialog and the VBA editor show on the person's " +
+                "screen for a moment, and xlwright closes the dialog and hides the editor. If a test stops at a dialog or runs past timeout_seconds (the whole call), xlwright ends " +
                 "the dedicated Excel; the main workbook was saved before the tests.",
             ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true,
         }, TestRunInput, TestRunOutput),

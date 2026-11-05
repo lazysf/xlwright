@@ -494,6 +494,24 @@
 - [x] 契約の案をAPIに書く。
 - [x] 人の承認を得て、APIと設計を確定する（2026-11-05、案のとおり）。`test_run`の応答はテストの中のVBAで決め、テストの前に写しをコンパイルする。低の3件（`LEFTOVER_EXCEL`の`message`、`/automation`の部分一致、`show-excel.ps1`）は、利用する版の入口を決める周期で扱う。
 
+## 周期40（段階4）: 参照設定
+
+作るもの: APIの[`vba_get`の参照設定](docs/api.md#vba_getの参照設定)と[`vba_edit`](docs/api.md#vba_edit)。
+
+完了の条件:
+
+- テストで、`vba_get`の`references`（`broken`で`name`を読めない時に`name`を省く）、`vba_edit`の引数の検査（`action`、`guid`の形、`add_reference`だけの`major`と`minor`）、追加・既にある時の`changed`の偽・解除、`NOT_MACRO_ENABLED`・`REFERENCE_NOT_FOUND`・`BUILTIN_REFERENCE`・`VBA_ACCESS_NOT_TRUSTED`・`VBA_PROJECT_LOCKED`・`REFERENCE_FAILED`・`TIMEOUT`を返す。どれも、テストを先に書いて失敗を確かめてから作る。
+- 実Excelの結合テストで、Scripting Runtimeの参照設定を追加して`vba_get`に出し、解除して消え、`VBA`の解除が`BUILTIN_REFERENCE`になり、終了の後に専用のExcelが残らない。
+- 確認の入口が通る。
+
+作業:
+
+- [x] セッションの規則を偽物でTDDする。
+- [x] ツールの引数の検査をTDDする。
+- [x] COMの部品を作る。
+- [x] 実Excelの結合テストと確認の入口を通す。テストは445件と実Excelの13件。登録の無いGUIDの追加は`REFERENCE_FAILED`になり、セッションが続いた。
+- [x] 文書を直す。開発版のスキルへの`vba_edit`の追加は、段階4のツールが揃ってからまとめて人の承認を得る。
+
 ## 書き留めたこと
 
 周期の中で後へ回した事項を書きます。

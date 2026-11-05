@@ -6,6 +6,7 @@ using Xunit;
 namespace XlWright.McpServer.Tests;
 
 // test_run on a --no-excel server (docs/api.md, stage 3). The argument checks run before the session check.
+[Collection(ServerProcess.Collection)]
 public sealed class TestToolsTests : IAsyncLifetime
 {
     private readonly TempRepository _repo = new();

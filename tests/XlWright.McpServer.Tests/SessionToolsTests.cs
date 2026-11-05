@@ -6,6 +6,7 @@ using Xunit;
 namespace XlWright.McpServer.Tests;
 
 // session_start, session_status, session_end, workbook_save, and vba_sync on a --no-excel server (docs/api.md, stage 1).
+[Collection(ServerProcess.Collection)]
 public sealed class SessionToolsTests : IAsyncLifetime
 {
     private readonly TempRepository _repo = new();

@@ -6,6 +6,7 @@ using Xunit;
 namespace XlWright.McpServer.Tests;
 
 // vba_extract on a --no-excel server (docs/api.md, stage 4). The argument checks run before the session check.
+[Collection(ServerProcess.Collection)]
 public sealed class ExtractToolsTests : IAsyncLifetime
 {
     private readonly TempRepository _repo = new();

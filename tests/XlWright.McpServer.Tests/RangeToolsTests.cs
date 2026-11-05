@@ -7,6 +7,7 @@ namespace XlWright.McpServer.Tests;
 
 // range_read and range_write on a --no-excel server (docs/api.md, stage 1). The argument checks run before the
 // session check, so every failure but NO_SESSION is reachable without Excel.
+[Collection(ServerProcess.Collection)]
 public sealed class RangeToolsTests : IAsyncLifetime
 {
     private readonly TempRepository _repo = new();

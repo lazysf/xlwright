@@ -7,6 +7,7 @@ namespace XlWright.McpServer.Tests;
 
 // vba_edit and the references of vba_get on a --no-excel server (docs/api.md, stage 4). The argument checks run before
 // the session check.
+[Collection(ServerProcess.Collection)]
 public sealed class ReferenceToolsTests : IAsyncLifetime
 {
     private const string ScriptingGuid = "{420B2830-E718-11CF-893D-00A0C9054228}";

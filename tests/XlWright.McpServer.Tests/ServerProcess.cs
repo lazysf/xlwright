@@ -1,11 +1,15 @@
 using System.Diagnostics;
 using ModelContextProtocol.Client;
+using Xunit;
 
 namespace XlWright.McpServer.Tests;
 
 // Launches XlWright.McpServer.dll from the test output folder with `dotnet`.
 internal static class ServerProcess
 {
+    /// <summary>The collection of the test classes that start a server process; see <see cref="ServerProcessCollection"/>.</summary>
+    public const string Collection = "Server process";
+
     public static string DllPath { get; } = Path.Combine(AppContext.BaseDirectory, "XlWright.McpServer.dll");
 
     public static Task<McpClient> ConnectAsync(CancellationToken cancellationToken) =>
@@ -47,3 +51,8 @@ internal static class ServerProcess
         return (process.ExitCode, await standardError);
     }
 }
+
+// The test classes that start a server process run one at a time. With eight of them at once, the fake-Excel session
+// tests, whose limits are a few hundred milliseconds, ran past their limits.
+[CollectionDefinition(ServerProcess.Collection)]
+public sealed class ServerProcessCollection;

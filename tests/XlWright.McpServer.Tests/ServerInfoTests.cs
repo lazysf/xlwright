@@ -8,6 +8,7 @@ using Xunit;
 namespace XlWright.McpServer.Tests;
 
 // Starts the built server as a real process over stdio, the same way Claude Code does.
+[Collection(ServerProcess.Collection)]
 public sealed class ServerInfoTests : IAsyncLifetime
 {
     private McpClient? _client;

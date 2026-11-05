@@ -549,6 +549,24 @@
 - [x] 文書を直す。
 - [x] サーバーのプロセスを起動するツールのテストが8つになり、同時に走る負荷で、偽物のセッションのテスト（期限が数百ミリ秒）が期限を越えた。Releaseで毎回`EndsALeftoverWhoseQuitDoesNotReturn`が落ちた。8つのクラスを1つのコレクションにして互いに順に走らせ、3回続けて通った。テストの時間は約17秒から約43秒に延びた。
 
+## 周期43（段階4）: `workbook_get`と`workbook_edit`の`convert_to_xlsm`
+
+作るもの: APIの[`workbook_get`と`workbook_edit`](docs/api.md#workbook_getとworkbook_edit)。
+
+完了の条件:
+
+- テストで、`workbook_get`の`workbook`・`format`・`saved`と`TIMEOUT`、`workbook_edit`の引数の検査（`action`は`convert_to_xlsm`だけ）、変換の後の主ブックが`.xlsm`になり`vba_sync`などを使えること、`ALREADY_MACRO_ENABLED`・`FILE_EXISTS`・`SAVE_FAILED`（`.xlsx`のまま）・`TIMEOUT`と、主ブックの無いセッションの`NO_WORKBOOK`を返す。どれも、テストを先に書いて失敗を確かめてから作る。
+- 実Excelの結合テストで、`.xlsx`の主ブックを`.xlsm`へ変え、反映・実行・保存ができ、元の`.xlsx`が残り、終了の後に専用のExcelが残らない。
+- 確認の入口が通る。
+
+作業:
+
+- [x] セッションの規則を偽物でTDDする。
+- [x] ツールの引数の検査をTDDする。
+- [x] COMの部品とツールを作る。
+- [x] 実Excelの結合テストと確認の入口を通す。テストは521件と実Excelの16件。日本語の値を書いた`.xlsx`を`.xlsm`へ変え、元の`.xlsx`を消した次の開始で、値と反映したモジュールが残っていた。`SaveAs`が失敗した時に主ブックが`.xlsx`のままであることは、偽物のテストだけが確かめている。
+- [x] 文書を直す。APIの契約は変えていない。
+
 ## 書き留めたこと
 
 周期の中で後へ回した事項を書きます。
@@ -593,3 +611,7 @@
 - `session_start`の`LEFTOVER_EXCEL`の`message`は、タスク マネージャーで確かめるよう書き、表示要求のコマンドを挙げていない。利用する版の入口を決める段階4で、`message`に入口を書くかを決める。
 - 設計の段階4の未確認の2つ目（プラグインの入手元の制限、GitHubからの取得）は、開発に使うこのPCでなく、会社のPCで確かめる（人、2026-11-05）。このPCの照会（Claude Codeの管理設定が無い、GitHubに届く）は根拠にしない。利用する版を発行した後に、会社のPCでの人の操作を1回にまとめる。
 - 周期32の始めに、古いビルドの開発版のサーバーが5つ動いていた。開いたままの別の会話のものと推測し、確かめていない。古いビルドを消す工程（上の1つ目）と合わせて扱う。
+- 所有記録の`completed`の`workbook`は、終了の時の主ブックの名前になる。APIは「開始の時の主ブックの名前」と書く。`workbook_create`（開始は空）と`convert_to_xlsm`（開始は`.xlsx`）の後に食い違う。記録の`workbook`を読む処理は無い（周期43の独立レビュー、低）。
+- `convert_to_xlsm`の`SaveAs`が、ファイルを書いた後に例外になる経路が実機にあると、Excelの主ブックは`.xlsm`、セッションは`.xlsx`になる。失敗の後に`FullName`を読んでセッションの名前を決める形もある。名前を確かめてから`SaveAs`までの間に同じ名前のファイルが置かれると、`DisplayAlerts`が偽のため上書きする（`workbook_create`と同じ）（周期43の独立レビュー、低）。
+- 偽物の`SaveAs`はファイルを作らず、`Saved`を真に戻さない。実機と違う。今のテストはこの差に依存しない（周期43の独立レビュー、低）。
+- `workbook_get`と`workbook_edit`の`BUSY`、変換の直後の`saved`、元の`.xlsx`が前の保存のままであることは、テストしていない。`workbook_get`は、Excelの例外で`EXCEL_ERROR`（`detail`無し）を返す。契約の失敗は`TIMEOUT`だけ（周期43の独立レビュー、低）。

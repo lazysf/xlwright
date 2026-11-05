@@ -81,9 +81,66 @@ public sealed class WorkbookToolsTests : IAsyncLifetime
         Assert.Equal("NO_SESSION", error.GetProperty("detail").GetString());
     }
 
-    private async Task<JsonElement> Failure(Dictionary<string, object?> arguments)
+    [Fact]
+    public async Task ListsWorkbookGetAndEditWithTheirAnnotationsAndSchemas()
     {
-        var result = await Client.CallToolAsync("workbook_create", arguments, cancellationToken: TestContext.Current.CancellationToken);
+        var tools = await Client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        var get = Assert.Single(tools, t => t.Name == "workbook_get").ProtocolTool;
+        Assert.NotNull(get.Annotations);
+        Assert.True(get.Annotations.ReadOnlyHint);
+        Assert.False(get.Annotations.DestructiveHint);
+        Assert.True(get.Annotations.IdempotentHint);
+        Assert.False(get.Annotations.OpenWorldHint);
+        Assert.Empty(get.InputSchema.GetProperty("properties").EnumerateObject());
+        Assert.Equal(["session", "workbook", "format", "saved"], get.OutputSchema!.Value.GetProperty("required").EnumerateArray().Select(e => e.GetString()));
+
+        var edit = Assert.Single(tools, t => t.Name == "workbook_edit").ProtocolTool;
+        Assert.NotNull(edit.Annotations);
+        Assert.False(edit.Annotations.ReadOnlyHint);
+        Assert.False(edit.Annotations.DestructiveHint);
+        Assert.False(edit.Annotations.IdempotentHint);
+        Assert.False(edit.Annotations.OpenWorldHint);
+        Assert.Contains("MULTIPLE_WORKBOOKS", edit.Description);
+        Assert.False(edit.InputSchema.GetProperty("additionalProperties").GetBoolean());
+        Assert.Equal(["convert_to_xlsm"], edit.InputSchema.GetProperty("properties").GetProperty("action").GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal(["action"], edit.InputSchema.GetProperty("required").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal(["session", "workbook", "previous"], edit.OutputSchema!.Value.GetProperty("required").EnumerateArray().Select(e => e.GetString()));
+    }
+
+    public static TheoryData<string, Dictionary<string, object?>> InvalidGetAndEditArguments => new()
+    {
+        { "workbook_get", new Dictionary<string, object?> { ["name"] = "Sales.xlsx" } },
+        { "workbook_edit", new Dictionary<string, object?>() },
+        { "workbook_edit", new Dictionary<string, object?> { ["action"] = 1 } },
+        { "workbook_edit", new Dictionary<string, object?> { ["action"] = "protect" } },
+        { "workbook_edit", new Dictionary<string, object?> { ["action"] = "convert_to_xlsm", ["name"] = "Sales.xlsm" } },
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidGetAndEditArguments))]
+    public async Task GetAndEditRejectInvalidArgumentsWithoutDetail(string tool, Dictionary<string, object?> arguments)
+    {
+        var error = await Failure(arguments, tool);
+
+        Assert.Equal("INVALID_REQUEST", error.GetProperty("code").GetString());
+        Assert.False(error.TryGetProperty("detail", out _));
+    }
+
+    [Theory]
+    [InlineData("workbook_get", null)]
+    [InlineData("workbook_edit", "convert_to_xlsm")]
+    public async Task GetAndEditReportThatThereIsNoSession(string tool, string? action)
+    {
+        var error = await Failure(action is null ? new() : new() { ["action"] = action }, tool);
+
+        Assert.Equal("CONFLICT", error.GetProperty("code").GetString());
+        Assert.Equal("NO_SESSION", error.GetProperty("detail").GetString());
+    }
+
+    private async Task<JsonElement> Failure(Dictionary<string, object?> arguments, string tool = "workbook_create")
+    {
+        var result = await Client.CallToolAsync(tool, arguments, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(result.IsError);
         Assert.Null(result.StructuredContent);

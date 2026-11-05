@@ -84,6 +84,15 @@ public interface IExcel
     /// </summary>
     void Create(string path, int format);
 
+    /// <summary>Workbook.Saved of the main workbook: false when it has changes that are not saved (docs/api.md "workbook_get").</summary>
+    bool IsSaved();
+
+    /// <summary>
+    /// Saves the main workbook as <paramref name="path"/> in <paramref name="format"/>; the main workbook is that file
+    /// from then on (docs/api.md "workbook_edit"). When the save fails, the main workbook stays the file it was, and it throws.
+    /// </summary>
+    void SaveAs(string path, int format);
+
     /// <summary>Closes the main workbook without saving, with events off; test_run saves it first.</summary>
     void CloseMain();
 

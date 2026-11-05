@@ -111,6 +111,29 @@ internal sealed class FakeExcel : IExcel
         if (SaveThrows is not null) throw SaveThrows;
     }
 
+    public bool Saved { get; set; } = true;
+
+    public Block SavedBlock { get; set; } = Block.None;
+
+    public bool IsSaved()
+    {
+        Record("IsSaved");
+        Process.WaitIf(SavedBlock);
+        return Saved;
+    }
+
+    public Exception? SaveAsThrows { get; set; }
+
+    public Block SaveAsBlock { get; set; } = Block.None;
+
+    public void SaveAs(string path, int format)
+    {
+        Record($"SaveAs {path} {format}");
+        Process.WaitIf(SaveAsBlock);
+        if (SaveAsThrows is not null) throw SaveAsThrows;
+        _main = path;
+    }
+
     public IReadOnlyList<string?> OpenWorkbookPaths()
     {
         Record("OpenWorkbookPaths");

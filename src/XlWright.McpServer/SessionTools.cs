@@ -6,7 +6,7 @@ using XlWright.Core;
 namespace XlWright.McpServer;
 
 /// <summary>
-/// session_start, session_status, session_end, and workbook_save (docs/api.md, stage 1), and workbook_create (stage 4). With --no-excel there is no
+/// session_start, session_status, session_end, and workbook_save (docs/api.md, stage 1), and workbook_create, workbook_get, and workbook_edit (stage 4). With --no-excel there is no
 /// ExcelSession: session_start stops after the app folder checks, and there is never a session.
 /// </summary>
 internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
@@ -50,6 +50,20 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
                 "(a file name ending in .xlsm or .xlsx, such as Sales.xlsm). It becomes the main workbook, and the other tools work on it.",
             ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false,
         }, CreateInput, SaveOutput),
+        ToolDefinition.Create(GetWorkbook, new()
+        {
+            Name = "workbook_get",
+            Description = "Returns the main workbook's file name, its format (xlsm or xlsx), and saved: false when it has changes that are not saved. Takes no arguments.",
+            ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false,
+        }, ToolDefinition.NoInput, GetOutput),
+        ToolDefinition.Create(EditWorkbook, new()
+        {
+            Name = "workbook_edit",
+            Description = "Changes the main workbook. action convert_to_xlsm saves the .xlsx main workbook as the .xlsm of the same name directly in the app folder, " +
+                "and the session works on the .xlsm from then on. The .xlsx stays as it was last saved; until you remove it with Git, " +
+                "the next session_start stops with MULTIPLE_WORKBOOKS.",
+            ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false,
+        }, EditInput, EditOutput),
     ];
 
     private async Task<CallToolResult> Start(RequestContext<CallToolRequestParams> context)
@@ -169,6 +183,36 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
         return ToolResults.From(await session.CreateWorkbookAsync(name));
     }
 
+    private async Task<CallToolResult> GetWorkbook(RequestContext<CallToolRequestParams> context)
+    {
+        var invalid = ToolArguments.From("workbook_get", context).RejectUnknown();
+        if (invalid is not null)
+        {
+            return ToolResults.InvalidRequest(invalid, Current());
+        }
+
+        return session is null ? NoSession() : ToolResults.From(await session.GetWorkbookAsync());
+    }
+
+    private async Task<CallToolResult> EditWorkbook(RequestContext<CallToolRequestParams> context)
+    {
+        var arguments = ToolArguments.From("workbook_edit", context);
+        var action = "";
+        var invalid = arguments.RejectUnknown("action")
+            ?? arguments.RequireString("action", out action)
+            ?? (action == "convert_to_xlsm" ? null : "workbook_edit: action must be convert_to_xlsm.");
+        if (invalid is not null)
+        {
+            return ToolResults.InvalidRequest(invalid, Current());
+        }
+
+        return session is null ? NoSession() : ToolResults.From(await session.ConvertToXlsmAsync());
+    }
+
+    private static CallToolResult NoSession() => ToolResults.Failure(
+        new ToolFailure(ToolFailure.Conflict, "NO_SESSION", "There is no session. Start one with session_start."),
+        SessionState.Closed);
+
     private SessionState Current() => session is null ? SessionState.Closed : SessionState.From(session.Status());
 
     private const string StartInput = """
@@ -203,5 +247,18 @@ internal sealed class SessionTools(ServerOptions options, ExcelSession? session)
 
     private static readonly string SaveOutput = $$$"""
         {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"workbook":{"type":"string"}},"required":["session","workbook"]}
+        """;
+
+    private const string EditInput = """
+        {"type":"object","properties":{"action":{"enum":["convert_to_xlsm"],"description":"What to change. convert_to_xlsm saves the .xlsx main workbook as .xlsm."}},"required":["action"],"additionalProperties":false}
+        """;
+
+    private static readonly string GetOutput = $$$"""
+        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"workbook":{"type":"string"},"format":{"enum":["xlsm","xlsx"]},"saved":{"type":"boolean"}},
+         "required":["session","workbook","format","saved"]}
+        """;
+
+    private static readonly string EditOutput = $$$"""
+        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"workbook":{"type":"string"},"previous":{"type":"string"}},"required":["session","workbook","previous"]}
         """;
 }

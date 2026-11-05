@@ -41,7 +41,12 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
             await _client.DisposeAsync();
         }
 
-        File.SetAttributes(Workbook, FileAttributes.Normal);
+        // ConvertsTheXlsxMainWorkbookToXlsm removes it.
+        if (File.Exists(Workbook))
+        {
+            File.SetAttributes(Workbook, FileAttributes.Normal);
+        }
+
         _repo.Dispose();
     }
 
@@ -262,6 +267,47 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         Assert.Equal("作った", a1.GetProperty("values")[0][0].GetString());
         Success(await Call("session_end", new() { ["save"] = false }));
         AssertNothingLeft(next.GetProperty("excel").GetProperty("pid").GetInt32());
+    }
+
+    // Needs AccessVBOM 1. The .xlsx stays next to the .xlsm, so the next start stops with MULTIPLE_WORKBOOKS.
+    [Fact]
+    public async Task ConvertsTheXlsxMainWorkbookToXlsm()
+    {
+        var app = Path.Combine(_repo.Root, "apps", "sales");
+        var started = Success(await Call("session_start", new() { ["app"] = "apps/sales" }));
+        var pid = started.GetProperty("excel").GetProperty("pid").GetInt32();
+        var before = Success(await Call("workbook_get", new()));
+        Assert.Equal("xlsx", before.GetProperty("format").GetString());
+        Assert.True(before.GetProperty("saved").GetBoolean());
+        Success(await Call("range_write", new() { ["sheet"] = "Sheet1", ["range"] = "B1", ["values"] = new[] { new object[] { "変える前" } } }));
+        Assert.False(Success(await Call("workbook_get", new())).GetProperty("saved").GetBoolean());
+
+        var converted = Success(await Call("workbook_edit", new() { ["action"] = "convert_to_xlsm" }));
+        Assert.Equal("Sales.xlsm", converted.GetProperty("workbook").GetString());
+        Assert.Equal("Sales.xlsx", converted.GetProperty("previous").GetString());
+        Assert.True(File.Exists(Path.Combine(app, "Sales.xlsm")));
+        var after = Success(await Call("workbook_get", new()));
+        Assert.Equal("Sales.xlsm", after.GetProperty("workbook").GetString());
+        Assert.Equal("xlsm", after.GetProperty("format").GetString());
+        var again = Body(await Call("workbook_edit", new() { ["action"] = "convert_to_xlsm" }));
+        Assert.Equal("ALREADY_MACRO_ENABLED", again.GetProperty("error").GetProperty("detail").GetString());
+
+        Source(app, "src/modules/Calc.bas", "Option Explicit\nPublic Function Twice(ByVal x As Long) As Long\n    Twice = x * 2\nEnd Function\n");
+        var twice = Success(await Call("macro_run", new() { ["macro"] = "Calc.Twice", ["args"] = new object[] { 21 } }));
+        Assert.Equal(42, twice.GetProperty("return").GetInt32());
+        Success(await Call("session_end", new() { ["save"] = true }));
+        AssertNothingLeft(pid);
+
+        var next = Body(await Call("session_start", new() { ["app"] = "apps/sales" }));
+        Assert.Equal("MULTIPLE_WORKBOOKS", next.GetProperty("error").GetProperty("detail").GetString());
+        File.Delete(Workbook);
+        var reopened = Success(await Call("session_start", new() { ["app"] = "apps/sales" }));
+        Assert.Equal("Sales.xlsm", reopened.GetProperty("workbook").GetString());
+        var b1 = Success(await Call("range_read", new() { ["sheet"] = "Sheet1", ["range"] = "B1" }));
+        Assert.Equal("変える前", b1.GetProperty("values")[0][0].GetString());
+        Assert.Contains(Success(await Call("vba_get", new())).GetProperty("modules").EnumerateArray(), m => m.GetProperty("name").GetString() == "Calc");
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(reopened.GetProperty("excel").GetProperty("pid").GetInt32());
     }
 
     // Needs AccessVBOM 1. The existing workbook is made with vba_sync, then src/ is removed, so its VBA is only in the

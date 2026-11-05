@@ -103,6 +103,70 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
             return (new JsonObject { ["workbook"] = name }, null);
         });
 
+    /// <summary>The main workbook's name, its format, and whether it has changes not saved (docs/api.md "workbook_get").</summary>
+    public Task<SessionOutcome> GetWorkbookAsync() => Run("workbook_get", NoSession, async () =>
+    {
+        var active = _active!;
+        var reading = active.Worker.Run(active.Excel.IsSaved);
+        if (!await Completes(reading, timeouts.Sync))
+        {
+            return await AfterTimeout(active, reading, "Reading the main workbook did not finish within the time limit.");
+        }
+
+        if (reading.IsFaulted)
+        {
+            return Fail(ToolFailure.ExcelError, null, $"Excel could not read the main workbook: {reading.Exception!.InnerException!.Message}");
+        }
+
+        var name = active.App.WorkbookName!;
+        return (new JsonObject
+        {
+            ["workbook"] = name,
+            ["format"] = Path.GetExtension(name).TrimStart('.').ToLowerInvariant(),
+            ["saved"] = reading.Result,
+        }, null);
+    });
+
+    /// <summary>
+    /// Saves the .xlsx main workbook as the .xlsm of the same name directly under the app folder, and makes it the main
+    /// workbook (docs/api.md "workbook_edit"). The .xlsx stays as it was last saved.
+    /// </summary>
+    public Task<SessionOutcome> ConvertToXlsmAsync() => Run("workbook_edit", NoSession, async () =>
+    {
+        var active = _active!;
+        var previous = active.App.WorkbookName!;
+        if (Path.GetExtension(previous).Equals(".xlsm", StringComparison.OrdinalIgnoreCase))
+        {
+            return Fail(ToolFailure.InvalidRequest, "ALREADY_MACRO_ENABLED", $"{previous} is already a macro-enabled workbook (.xlsm). Nothing was changed.");
+        }
+
+        var name = Path.GetFileNameWithoutExtension(previous) + ".xlsm";
+        var path = Path.Combine(active.App.FullPath, name);
+        if (File.Exists(path) || Directory.Exists(path))
+        {
+            return Fail(ToolFailure.Conflict, "FILE_EXISTS", $"The app folder already has {name}. Move that file away, then call again.");
+        }
+
+        var saving = active.Worker.Run(() => active.Excel.SaveAs(path, FormatXlsm));
+        if (!await Completes(saving, timeouts.Save))
+        {
+            return await AfterTimeout(active, saving, $"Saving {previous} as {name} did not finish within the time limit.");
+        }
+
+        if (saving.IsFaulted)
+        {
+            return Fail(ToolFailure.ExcelError, "SAVE_FAILED",
+                $"Saving {previous} as {name} failed: {saving.Exception!.InnerException!.Message} The main workbook is still {previous}; fix the cause and call again.");
+        }
+
+        lock (_gate)
+        {
+            _active = active with { App = active.App.WithWorkbook(name) };
+        }
+
+        return (new JsonObject { ["workbook"] = name, ["previous"] = previous }, null);
+    });
+
     private const int FormatXlsm = 52; // xlOpenXMLWorkbookMacroEnabled
     private const int FormatXlsx = 51; // xlOpenXMLWorkbook
 

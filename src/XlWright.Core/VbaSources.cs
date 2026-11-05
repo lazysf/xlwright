@@ -204,10 +204,16 @@ public static partial class VbaSources
             value = NextAnswer(name, kind)
             If Cancels(name, value) Then
                 AnsweredPath = False
-            ElseIf CStr(value) Like "?:\*" Or Left$(CStr(value), 2) = "\\" Then
-                AnsweredPath = CStr(value)
+                Exit Function
+            End If
+
+            ' A path written with / is the same path, so it is turned before it is told absolute or relative.
+            Dim chosen As String
+            chosen = Replace(CStr(value), "/", "\")
+            If chosen Like "?:\*" Or Left$(chosen, 2) = "\\" Then
+                AnsweredPath = chosen
             Else
-                AnsweredPath = ThisWorkbook.Path & "\" & Replace(CStr(value), "/", "\")
+                AnsweredPath = ThisWorkbook.Path & "\" & chosen
             End If
         End Function
 

@@ -485,7 +485,7 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
             "Option Explicit\n\n" +
             "Public Function All() As String\n" +
             "    XlWright.Answer \"message\", \"yes\"\n    XlWright.Answer \"input\", \"東京\"\n" +
-            "    XlWright.Answer \"open_file\", \"data/in.csv\"\n    XlWright.Answer \"save_file\", \"C:\\out\\売上.csv\"\n" +
+            "    XlWright.Answer \"open_file\", \"data/in.csv\"\n    XlWright.Answer \"save_file\", \"C:/out/売上.csv\"\n" +
             "    XlWright.Answer \"folder\", False\n    XlWright.Answer \"message\", False\n    XlWright.Answer \"input\", False\n" +
             // In one expression joined with &, the calls did not take the answers from left to right, so each call is its own statement.
             "    Dim parts(6) As String\n" +

@@ -86,29 +86,30 @@ public static class MacroCall
     /// <summary>
     /// A Run function that calls the macro by name, so its run-time error reaches this On Error; Application.Run
     /// does not pass it on (docs/notes/macro-run.md). Each argument is in parentheses, so a typed ByRef parameter
-    /// takes a copy. Run returns Array(result, XlWright.EndRun()): result is Array(0, value), Array(1, number,
+    /// takes a copy. Run returns Array(xlwrightResult, XlWright.EndRun()): xlwrightResult is Array(0, value), Array(1, number,
     /// description, source), or XlWright.Result's array, and EndRun gives Array(answered, unused). XlWright.BeginRun
     /// takes the dialog answers and marks the call as inside xlwright (docs/architecture.md "xlwrightのVBAのモジュール").
-    /// Err is read into result before EndRun.
+    /// Err is read into xlwrightResult before EndRun. The name is not "result", which differs from XlWright.Result
+    /// only in case and which the VBE may recase across the project (not checked on a real Excel).
     /// </summary>
     public static string Generate(MacroName macro, int argumentCount, bool isFunction)
     {
         var arguments = string.Join(", ", Enumerable.Range(0, argumentCount).Select(i => $"(args({i}))"));
         var call = isFunction
-            ? $"    result = XlWright.Result({macro}({arguments}))\r\n"
-            : $"    Call {macro}{(argumentCount == 0 ? "" : $"({arguments})")}\r\n    result = Array(0, Empty)\r\n";
+            ? $"    xlwrightResult = XlWright.Result({macro}({arguments}))\r\n"
+            : $"    Call {macro}{(argumentCount == 0 ? "" : $"({arguments})")}\r\n    xlwrightResult = Array(0, Empty)\r\n";
         return new StringBuilder()
             .Append("Option Explicit\r\n\r\n")
             .Append("Public Function Run(ByVal args As Variant, ByVal answers As Variant) As Variant\r\n")
-            .Append("    Dim result As Variant\r\n")
+            .Append("    Dim xlwrightResult As Variant\r\n")
             .Append("    On Error GoTo Failed\r\n")
             .Append("    XlWright.BeginRun answers\r\n")
             .Append(call)
-            .Append("    Run = Array(result, XlWright.EndRun())\r\n")
+            .Append("    Run = Array(xlwrightResult, XlWright.EndRun())\r\n")
             .Append("    Exit Function\r\n")
             .Append("Failed:\r\n")
-            .Append("    result = Array(1, Err.Number, Err.Description, Err.Source)\r\n")
-            .Append("    Run = Array(result, XlWright.EndRun())\r\n")
+            .Append("    xlwrightResult = Array(1, Err.Number, Err.Description, Err.Source)\r\n")
+            .Append("    Run = Array(xlwrightResult, XlWright.EndRun())\r\n")
             .Append("End Function\r\n")
             .ToString();
     }

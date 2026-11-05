@@ -50,15 +50,15 @@ public sealed class MacroCallTests
         Assert.Equal(
             "Option Explicit\r\n\r\n" +
             "Public Function Run(ByVal args As Variant, ByVal answers As Variant) As Variant\r\n" +
-            "    Dim result As Variant\r\n" +
+            "    Dim xlwrightResult As Variant\r\n" +
             "    On Error GoTo Failed\r\n" +
             "    XlWright.BeginRun answers\r\n" +
-            "    result = XlWright.Result(Calc.Twice((args(0)), (args(1))))\r\n" +
-            "    Run = Array(result, XlWright.EndRun())\r\n" +
+            "    xlwrightResult = XlWright.Result(Calc.Twice((args(0)), (args(1))))\r\n" +
+            "    Run = Array(xlwrightResult, XlWright.EndRun())\r\n" +
             "    Exit Function\r\n" +
             "Failed:\r\n" +
-            "    result = Array(1, Err.Number, Err.Description, Err.Source)\r\n" +
-            "    Run = Array(result, XlWright.EndRun())\r\n" +
+            "    xlwrightResult = Array(1, Err.Number, Err.Description, Err.Source)\r\n" +
+            "    Run = Array(xlwrightResult, XlWright.EndRun())\r\n" +
             "End Function\r\n",
             code);
     }
@@ -70,7 +70,7 @@ public sealed class MacroCallTests
     {
         var code = MacroCall.Generate(new MacroName("Calc", "Write"), argumentCount, isFunction: false);
 
-        Assert.Contains(call + "    result = Array(0, Empty)\r\n", code);
+        Assert.Contains(call + "    xlwrightResult = Array(0, Empty)\r\n", code);
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class MacroCallTests
     {
         var code = MacroCall.Generate(new MacroName("Calc", "Now"), argumentCount: 0, isFunction: true);
 
-        Assert.Contains("    result = XlWright.Result(Calc.Now())\r\n", code);
+        Assert.Contains("    xlwrightResult = XlWright.Result(Calc.Now())\r\n", code);
     }
 
     public static TheoryData<object?, string?> Returns => new()

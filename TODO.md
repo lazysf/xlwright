@@ -530,6 +530,25 @@
 - [x] 実Excelの結合テストと確認の入口を通す。テストは473件と実Excelの14件。結合テストで、専用のExcelが開いている主ブックを`FileShare.Read`で読めないと分かり、`FileShare.ReadWrite`で読む形に直した。その偽物のテスト（書込みで開いたままのファイル）は直した後に加えたため、失敗を確かめていない。
 - [x] 文書を直す。
 
+## 周期42（段階4）: 主ブックの無いセッションと`workbook_create`
+
+作るもの: APIの[主ブックの無いセッション](docs/api.md#主ブックの無いセッション)と[`workbook_create`](docs/api.md#workbook_create)。
+
+完了の条件:
+
+- テストで、直下にブックが無い時の開始（`workbook`が`null`、主ブックを開かない、所有記録の`workbook`が空の文字列）、ほかのツールの`NO_WORKBOOK`、`session_end`の`saved`の偽、`workbook_create`の`INVALID_WORKBOOK_NAME`・`WORKBOOK_EXISTS`・`FILE_EXISTS`・`SAVE_FAILED`（主ブックの無いまま）・`TIMEOUT`と、作った後にほかのツールを使えることを返す。どれも、テストを先に書いて失敗を確かめてから作る。
+- 実Excelの結合テストで、空のアプリのフォルダで開始し、`.xlsm`を作って反映・実行・保存し、次の開始でそのブックが主ブックになり、終了の後に専用のExcelが残らない。
+- 確認の入口が通る。
+
+作業:
+
+- [x] アプリのフォルダと開始・終了の規則をTDDする。`AppFolder`のテストは、骨組みの失敗を流さずに作ったため、失敗を確かめていない。
+- [x] `workbook_create`をTDDする。
+- [x] COMの部品とツールを作る。
+- [x] 実Excelの結合テストと確認の入口を通す。テストは503件と実Excelの15件。日本語の名前の`.xlsm`を作り、次の開始で主ブックになった。
+- [x] 文書を直す。
+- [x] サーバーのプロセスを起動するツールのテストが8つになり、同時に走る負荷で、偽物のセッションのテスト（期限が数百ミリ秒）が期限を越えた。Releaseで毎回`EndsALeftoverWhoseQuitDoesNotReturn`が落ちた。8つのクラスを1つのコレクションにして互いに順に走らせ、3回続けて通った。テストの時間は約17秒から約43秒に延びた。
+
 ## 書き留めたこと
 
 周期の中で後へ回した事項を書きます。
@@ -567,7 +586,7 @@
 - `/automation`の判定は、コマンドラインの文字列の部分一致（所有の確定、片付け、表示要求のコマンド）。引数のURLのパスなどに`/automation`を含む日常のExcelも通りうる（未確認）。引数を区切りで分けて照合するかを、3か所で揃えて決める（周期28の独立レビュー、低）。
 - 開発版の入口`show-excel.ps1`は、`latest.json`の`server`が`.xlwright/builds/`の下を指すかを確かめずに、人のシェルで`dotnet`に渡す。`.mcp.json`と同じ前提。利用する版の入口を決める段階4で扱う（周期28の独立レビュー、低）。
 - `AddFromString`に、システムのANSIコードページに無い文字を渡した時の扱いは確かめていない。シートとブックのモジュールの反映も、ファイルと同じ検査を通すことにした（[API](docs/api.md#vba_syncをシートとブックのモジュールに広げる)、[記録](docs/notes/test-copy.md#未確認)）。
-- 確認の入口のInspectorの`tools/list`が、schemaの移植性の警告を3件出す。`range_write`の`values`の要素と、`macro_run`の`args`の要素と`return`の、配列の`type`。JSON Schemaとしては正しく、Claude Codeでは動いている。`anyOf`へ分けるかは、ほかのクライアントを考える時に決める。
+- 確認の入口のInspectorの`tools/list`が、schemaの移植性の警告を5件出す。`range_write`の`values`の要素と、`macro_run`の`args`の要素と`return`と、`session_start`と`session_status`の`workbook`（周期42で加えた）の、配列の`type`。JSON Schemaとしては正しく、Claude Codeでは動いている。`anyOf`へ分けるかは、ほかのクライアントを考える時に決める。
 - `vba_get`は、種類が3（UserForm）と11（ActiveXのデザイナー）のモジュールを、どちらも`form`で返す。APIの種類は4つのため。
 - `test_run`で専用のExcelを終えた後や、写しのフォルダを消せなかった時の`.xlwright/test/<run-id>/`は、だれも片付けない。次の`test_run`か`session_start`で消すかを決める。
 - `test_run`は、まだ無い関数を呼ぶテストでも、コンパイルエラーのダイアログで専用のExcelを終える（[記録](docs/notes/stage3-scenarios.md#分かったこと)）。写しでテストを実行する前に`vba_check`と同じコンパイルを行えば、Excelを終えずに返せる。人が、コンパイルすると決めた（2026-11-05、[API](docs/api.md#test_runの前のコンパイル)）。

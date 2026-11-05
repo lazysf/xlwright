@@ -149,7 +149,7 @@
 | --- | --- | --- |
 | `INVALID_REQUEST` | `PATH_NOT_ALLOWED` | リポジトリの外、UNC、デバイスパス、ネットワークドライブ（[パスの制限](architecture.md#パスの制限)） |
 | `NOT_FOUND` | `APP_NOT_FOUND` | フォルダが無い |
-| `INVALID_REQUEST` | `NO_WORKBOOK` | 直下に主ブックが無い（主ブックの無いセッションは段階4） |
+| `INVALID_REQUEST` | `NO_WORKBOOK` | 直下に主ブックが無い。段階3まで。段階4からは、主ブックの無いセッションを始める（[段階4の契約](#主ブックの無いセッション)） |
 | `INVALID_REQUEST` | `MULTIPLE_WORKBOOKS` | 直下にブックが2つ以上ある。`data.workbooks`に名前の一覧 |
 | `INVALID_REQUEST` | `NOT_IMPLEMENTED` | `--no-excel`で動いている。上の検査の後に返す |
 | `CONFLICT` | `SESSION_ACTIVE` | このサーバーで既にセッションを始めている |

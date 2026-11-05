@@ -512,6 +512,24 @@
 - [x] 実Excelの結合テストと確認の入口を通す。テストは445件と実Excelの13件。登録の無いGUIDの追加は`REFERENCE_FAILED`になり、セッションが続いた。
 - [x] 文書を直す。開発版のスキルへの`vba_edit`の追加は、段階4のツールが揃ってからまとめて人の承認を得る。
 
+## 周期41（段階4）: `vba_extract`
+
+作るもの: APIの[`vba_extract`](docs/api.md#vba_extract)。取り出すブックの検査（パス、`.xlsm`、`xl/macrosheets/`、`src/`の既存のファイル）と、取り出したファイルの書込みをCoreに作り、写しを`ForceDisable`で開いて書き出す部品をExcelの境界に加える。
+
+完了の条件:
+
+- テストで、`PATH_NOT_ALLOWED`・`WORKBOOK_NOT_FOUND`・`NOT_MACRO_ENABLED`・`EXCEL4_MACROS`・`SOURCE_EXISTS`（`.`で始まるものと`XlWright.bas`を除く）・`VBA_ACCESS_NOT_TRUSTED`・`VBA_PROJECT_LOCKED`・`OPEN_FAILED`・`EXTRACT_FAILED`（`data.done`）・`TIMEOUT`と、ANSIからUTF-8への変換、種類ごとの置き場、UserFormと`XlWright`を書かないこと、写しの名前とフォルダを消すことを返す。どれも、テストを先に書いて失敗を確かめてから作る。
+- 実Excelの結合テストで、`Workbook_Open`と日本語を含む既存のブックから取り出したファイルが、`vba_sync`で反映でき、取り出しの間に`Workbook_Open`が動かず、写しのフォルダが消え、終了の後に専用のExcelが残らない。
+- 確認の入口が通る。
+
+作業:
+
+- [x] 検査と書込みをCoreにTDDで作る。
+- [x] 流れを偽物でTDDする。
+- [x] COMの部品とツールを作る。
+- [x] 実Excelの結合テストと確認の入口を通す。テストは473件と実Excelの14件。結合テストで、専用のExcelが開いている主ブックを`FileShare.Read`で読めないと分かり、`FileShare.ReadWrite`で読む形に直した。その偽物のテスト（書込みで開いたままのファイル）は直した後に加えたため、失敗を確かめていない。
+- [x] 文書を直す。
+
 ## 書き留めたこと
 
 周期の中で後へ回した事項を書きます。

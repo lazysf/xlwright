@@ -286,6 +286,8 @@ apps/sales/                  アプリのフォルダ（リポジトリの中。
 - 既存のブックから取り出す時は、アプリのフォルダへ写したブック（`.xlwright/extract/<id>/<id>.xlsm`）を`AutomationSecurity=ForceDisable`で開きます。名前を変えて写すのは、主ブックと同じ名前のブックを同時に開けないためです。手順は[API](api.md#vba_extract)にあります。開く前に、ブックのパッケージに`xl/macrosheets/`があれば拒否します。`ForceDisable`がExcel 4.0のマクロを止めるかを、確かめていないためです。
 - 確認済み（段階4、[記録](notes/vba-extract.md)）: `ForceDisable`で開いたブックでは、`EnableEvents`が真でも、開く時・再計算・セルの書込みでイベントとUDFが動かず、`Application.Run`は失敗した。開いた後に`AutomationSecurity`を`Low`に戻しても、そのブックのマクロは無効のままだった。`VBProject`に触れられ、標準・クラス・シート・ブックのモジュールのコードを`CodeModule.Lines`で、参照設定を`References`で読めた。再計算でUDFのセルは`#NAME?`になるため、写しは保存せずに閉じます。
 - 確認済み（段階4、[記録](notes/vba-extract.md#excel-40のマクロシートの見分け方)）: Excel 4.0のマクロシートを持つ`.xlsm`のパッケージには`xl/macrosheets/`があり、VBAだけのブックには無かった。
+- 専用のExcelが編集で開いている主ブックは、`FileShare.Read`では読めず、共有違反になった（実Excelの結合テスト）。Excelが書込みのアクセスで持つためです。そのため、パッケージの検査と写しは、`FileShare.ReadWrite`で読みます。
+- 確認済み（段階4、実Excelの結合テスト`ExtractsAnExistingWorkbookWithoutRunningItsCode`）: `src/`の無い主ブックから取り出す間に`Workbook_Open`は動かず、取り出した標準・クラス・ブックのモジュールのファイルを`vba_sync`で反映して実行できた。写しのフォルダは消えた。
 - 確認済み（段階3、[記録](notes/test-copy.md#シートとブックのモジュールの書き換え)）: シートとブックのモジュールを`VBComponents.Item(<CodeName>)`で見つけ、`DeleteLines`と`AddFromString`でコードを書き換えられた。保存して開き直した後も残り、イベントが動いた。シート名を変えても`CodeName`は変わらなかった（[Microsoftの説明](https://learn.microsoft.com/en-us/office/vba/api/excel.worksheet.codename)）。無い名前の`Item`は例外になった。
 - `Workbooks.Add`で作ったばかりのブックでは、`VBProject`に触れる前の`Worksheet.CodeName`は空でした。そのため、CodeNameは`Worksheet.CodeName`でなく、`VBComponents`の名前で照合します。
 

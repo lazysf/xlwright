@@ -562,7 +562,7 @@ public sealed class ExcelSessionTests : IDisposable
 
         Assert.Null(outcome.Failure);
         Assert.Equal("ready", outcome.Session.State);
-        Assert.Equal("ListVba", _launcher.Excel.Calls[^1]);
+        Assert.Equal(["ListVba", "ListReferences"], _launcher.Excel.Calls.TakeLast(2));
         Assert.Equal(
             """[{"name":"Calc","type":"standard","lines":12},{"name":"Sheet1","type":"document","lines":5,"sheet":"Data"},{"name":"ThisWorkbook","type":"document","lines":0}]""",
             outcome.Result!["modules"]!.ToJsonString());
@@ -612,6 +612,115 @@ public sealed class ExcelSessionTests : IDisposable
 
         AssertFailure(outcome, "CONFLICT", "NO_SESSION", "closed");
     }
+
+    [Fact]
+    public async Task ListModulesAlsoListsTheReferencesAndLeavesOutAnUnreadableName()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.References = [new("Scripting", ScriptingGuid, 1, 0, false, false), new(null, MissingGuid, 2, 1, false, true)];
+
+        var outcome = await _session.ListModulesAsync();
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal(["ListVba", "ListReferences"], _launcher.Excel.Calls.TakeLast(2));
+        Assert.Equal(
+            $$"""[{"name":"Scripting","guid":"{{ScriptingGuid}}","major":1,"minor":0,"builtin":false,"broken":false},{"guid":"{{MissingGuid}}","major":2,"minor":1,"builtin":false,"broken":true}]""",
+            outcome.Result!["references"]!.ToJsonString());
+    }
+
+    [Theory]
+    [InlineData(true, ReferenceChange.Added, true)]
+    [InlineData(true, ReferenceChange.AlreadyPresent, false)]
+    [InlineData(false, ReferenceChange.Removed, true)]
+    public async Task EditReferenceChangesTheReferencesAndListsThem(bool add, ReferenceChange change, bool changed)
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.ReferenceChange = change;
+        _launcher.Excel.References = [new("Scripting", ScriptingGuid, 1, 0, false, false)];
+
+        var outcome = await _session.EditReferenceAsync(new ReferenceEdit(add, ScriptingGuid, add ? 1 : 0, 0));
+
+        Assert.Null(outcome.Failure);
+        Assert.Equal("ready", outcome.Session.State);
+        Assert.Equal([$"EditReference {(add ? "add" : "remove")} {ScriptingGuid} {(add ? 1 : 0)}.0", "ListReferences"], _launcher.Excel.Calls.TakeLast(2));
+        Assert.Equal(changed, outcome.Result!["changed"]!.GetValue<bool>());
+        Assert.Equal("Scripting", outcome.Result["references"]![0]!["name"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData(ReferenceChange.NotFound, "NOT_FOUND", "REFERENCE_NOT_FOUND")]
+    [InlineData(ReferenceChange.BuiltIn, "INVALID_REQUEST", "BUILTIN_REFERENCE")]
+    public async Task EditReferenceReportsWhatItCouldNotRemove(ReferenceChange change, string code, string detail)
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.ReferenceChange = change;
+
+        var outcome = await _session.EditReferenceAsync(new ReferenceEdit(false, ScriptingGuid, 0, 0));
+
+        AssertFailure(outcome, code, detail, "ready");
+    }
+
+    [Fact]
+    public async Task EditReferenceRejectsAMainWorkbookWithoutMacros()
+    {
+        _repo.AddApp("apps/plain", "Plain.xlsx");
+        await _session.StartAsync(AppFolder.Resolve(_repo.Root, "apps/plain").Folder!);
+
+        var outcome = await _session.EditReferenceAsync(new ReferenceEdit(true, ScriptingGuid, 1, 0));
+
+        AssertFailure(outcome, "INVALID_REQUEST", "NOT_MACRO_ENABLED", "ready");
+        Assert.DoesNotContain(_launcher.Excel.Calls, call => call.StartsWith("EditReference", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("VBA_ACCESS_NOT_TRUSTED")]
+    [InlineData("VBA_PROJECT_LOCKED")]
+    public async Task EditReferenceReportsWhatExcelRefusedForTheProject(string detail)
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.ReferenceThrows = new VbaSyncException(detail, [], "refused");
+
+        var outcome = await _session.EditReferenceAsync(new ReferenceEdit(true, ScriptingGuid, 1, 0));
+
+        AssertFailure(outcome, "CONFLICT", detail, "ready");
+    }
+
+    [Fact]
+    public async Task EditReferenceReportsAReferenceExcelRefused()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.ReferenceThrows = new System.Runtime.InteropServices.COMException("Error in loading DLL");
+
+        var outcome = await _session.EditReferenceAsync(new ReferenceEdit(true, MissingGuid, 9, 9));
+
+        AssertFailure(outcome, "EXCEL_ERROR", "REFERENCE_FAILED", "ready");
+        Assert.Contains("Error in loading DLL", outcome.Failure!.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("ListReferences", _launcher.Excel.Calls);
+    }
+
+    [Fact]
+    public async Task EditReferenceTimeoutTerminatesTheOwnedExcel()
+    {
+        await _session.StartAsync(_app);
+        _launcher.Excel.ReferenceBlock = Block.UntilTerminated;
+
+        var outcome = await _session.EditReferenceAsync(new ReferenceEdit(true, ScriptingGuid, 1, 0));
+
+        AssertFailure(outcome, "STATE_UNKNOWN", "TIMEOUT", "closed");
+        Assert.Equal(1, _launcher.Process.Terminations);
+    }
+
+    [Fact]
+    public async Task EditReferenceWithoutASessionIsAConflict()
+    {
+        var outcome = await _session.EditReferenceAsync(new ReferenceEdit(true, ScriptingGuid, 1, 0));
+
+        AssertFailure(outcome, "CONFLICT", "NO_SESSION", "closed");
+    }
+
+    private const string ScriptingGuid = "{420B2830-E718-11CF-893D-00A0C9054228}";
+
+    private const string MissingGuid = "{00000000-1111-2222-3333-444444444444}";
 
     [Fact]
     public async Task CheckSyncsCompilesAndReportsCompiledCode()

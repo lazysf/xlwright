@@ -5,7 +5,7 @@ using XlWright.Core;
 
 namespace XlWright.McpServer;
 
-/// <summary>vba_sync and macro_run (docs/api.md, stage 1), and vba_get, vba_check, and test_run (stage 3).</summary>
+/// <summary>vba_sync and macro_run (docs/api.md, stage 1), vba_get, vba_check, and test_run (stage 3), and vba_edit (stage 4).</summary>
 internal sealed class VbaTools(ExcelSession? session)
 {
     private const int DefaultTimeoutSeconds = 300;
@@ -27,9 +27,19 @@ internal sealed class VbaTools(ExcelSession? session)
             Name = "vba_get",
             Description = "Lists the VBA modules of the main workbook as they are now, without syncing: name, type " +
                 "(standard, class, document, form), and number of lines. A sheet module also has the sheet name; its module " +
-                "name is the CodeName to use for src/workbook/<CodeName>.cls. Takes no arguments.",
+                "name is the CodeName to use for src/workbook/<CodeName>.cls. It also lists the references of the VBA project: " +
+                "name, guid, major, minor, builtin, and broken. Takes no arguments.",
             ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false,
         }, ToolDefinition.NoInput, GetOutput),
+        ToolDefinition.Create(Edit, new()
+        {
+            Name = "vba_edit",
+            Description = "Adds or removes a reference of the main workbook's VBA project. action is add_reference or remove_reference. " +
+                "Pass guid as {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}; add_reference also takes major and minor. The values of " +
+                "references from vba_get can be used as they are. Adding a reference that is already there changes nothing " +
+                "(changed is false). The built-in references (VBA, Excel) cannot be removed. It does not save.",
+            ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false,
+        }, EditInput, EditOutput),
         ToolDefinition.Create(Check, new()
         {
             Name = "vba_check",
@@ -85,6 +95,45 @@ internal sealed class VbaTools(ExcelSession? session)
         }
 
         return session is null ? NoSession() : ToolResults.From(await session.ListModulesAsync());
+    }
+
+    private async Task<CallToolResult> Edit(RequestContext<CallToolRequestParams> context)
+    {
+        var arguments = ToolArguments.From("vba_edit", context);
+        var values = context.Params!.Arguments ?? new Dictionary<string, JsonElement>();
+        var (action, guid) = ("", "");
+        var invalid = arguments.RejectUnknown("action", "guid", "major", "minor")
+            ?? arguments.RequireString("action", out action)
+            ?? (action is "add_reference" or "remove_reference" ? null : "vba_edit: action must be add_reference or remove_reference.")
+            ?? arguments.RequireString("guid", out guid)
+            ?? (Guid.TryParseExact(guid, "B", out _) ? null : "vba_edit: guid must be {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}, as vba_get gives it.");
+        var (major, minor) = (0, 0);
+        if (invalid is null && action == "add_reference")
+        {
+            invalid = Version(values, "major", out major) ?? Version(values, "minor", out minor);
+        }
+        else if (invalid is null && (values.ContainsKey("major") || values.ContainsKey("minor")))
+        {
+            invalid = "vba_edit: major and minor are only for add_reference. Call it again without them.";
+        }
+
+        if (invalid is not null)
+        {
+            return ToolResults.InvalidRequest(invalid, Current());
+        }
+
+        return session is null
+            ? NoSession()
+            : ToolResults.From(await session.EditReferenceAsync(new ReferenceEdit(action == "add_reference", guid, major, minor)));
+    }
+
+    private static string? Version(IDictionary<string, JsonElement> arguments, string name, out int value)
+    {
+        value = 0;
+        return arguments.TryGetValue(name, out var element) && element.ValueKind == JsonValueKind.Number &&
+            element.TryGetInt32(out value) && value >= 0
+            ? null
+            : $"vba_edit: add_reference requires {name} (a whole number from 0), as vba_get gives it.";
     }
 
     private async Task<CallToolResult> Check(RequestContext<CallToolRequestParams> context)
@@ -227,8 +276,30 @@ internal sealed class VbaTools(ExcelSession? session)
         {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},
          "modules":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},
           "type":{"enum":["standard","class","document","form"]},"lines":{"type":"integer"},"sheet":{"type":"string"}},
-          "required":["name","type","lines"]}} },
-         "required":["session","modules"]}
+          "required":["name","type","lines"]}},
+         "references":{{{References}}} },
+         "required":["session","modules","references"]}
+        """;
+
+    private const string References = """
+        {"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"guid":{"type":"string"},
+         "major":{"type":"integer"},"minor":{"type":"integer"},"builtin":{"type":"boolean"},"broken":{"type":"boolean"}},
+         "required":["guid","major","minor","builtin","broken"]}}
+        """;
+
+    private const string EditInput = """
+        {"type":"object","properties":{
+         "action":{"enum":["add_reference","remove_reference"],"description":"What to do with the reference."},
+         "guid":{"type":"string","description":"The GUID of the type library, such as {420B2830-E718-11CF-893D-00A0C9054228}."},
+         "major":{"type":"integer","minimum":0,"description":"The major version, for add_reference only."},
+         "minor":{"type":"integer","minimum":0,"description":"The minor version, for add_reference only."}},
+         "required":["action","guid"],"additionalProperties":false}
+        """;
+
+    private static readonly string EditOutput = $$$"""
+        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"changed":{"type":"boolean"},
+         "references":{{{References}}} },
+         "required":["session","changed","references"]}
         """;
 
     private static readonly string CheckOutput = $$$"""

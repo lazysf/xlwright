@@ -393,6 +393,121 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
         }
     }
 
+    public IReadOnlyList<VbaReference> ListReferences()
+    {
+        dynamic project = TrustedProject();
+        try
+        {
+            ThrowIfLocked(project);
+            dynamic references = project.References;
+            try
+            {
+                var list = new List<VbaReference>();
+                for (var i = 1; i <= (int)references.Count; i++)
+                {
+                    dynamic reference = references.Item(i);
+                    try
+                    {
+                        list.Add(ReadReference(reference));
+                    }
+                    finally
+                    {
+                        Release(reference);
+                    }
+                }
+
+                return list;
+            }
+            finally
+            {
+                Release(references);
+            }
+        }
+        finally
+        {
+            Release(project);
+        }
+    }
+
+    public ReferenceChange EditReference(ReferenceEdit edit)
+    {
+        dynamic project = TrustedProject();
+        try
+        {
+            ThrowIfLocked(project);
+            dynamic references = project.References;
+            dynamic? found = null;
+            try
+            {
+                for (var i = 1; i <= (int)references.Count && found is null; i++)
+                {
+                    dynamic reference = references.Item(i);
+                    if (string.Equals((string)reference.Guid, edit.Guid, StringComparison.OrdinalIgnoreCase))
+                    {
+                        found = reference;
+                    }
+                    else
+                    {
+                        Release(reference);
+                    }
+                }
+
+                if (edit.Add)
+                {
+                    if (found is not null)
+                    {
+                        return ReferenceChange.AlreadyPresent;
+                    }
+
+                    Release(references.AddFromGuid(edit.Guid, edit.Major, edit.Minor));
+                    return ReferenceChange.Added;
+                }
+
+                if (found is null)
+                {
+                    return ReferenceChange.NotFound;
+                }
+
+                if ((bool)found.BuiltIn)
+                {
+                    return ReferenceChange.BuiltIn;
+                }
+
+                references.Remove(found);
+                return ReferenceChange.Removed;
+            }
+            finally
+            {
+                if (found is not null)
+                {
+                    Release(found);
+                }
+
+                Release(references);
+            }
+        }
+        finally
+        {
+            Release(project);
+        }
+    }
+
+    // A broken reference can throw when its name is read (ExcelMcp VbaCommands.Inspection.cs), so the name is left out.
+    private static VbaReference ReadReference(dynamic reference)
+    {
+        bool broken = reference.IsBroken;
+        string? name = null;
+        try
+        {
+            name = reference.Name;
+        }
+        catch (COMException) when (broken)
+        {
+        }
+
+        return new VbaReference(name, (string)reference.Guid, (int)reference.Major, (int)reference.Minor, (bool)reference.BuiltIn, broken);
+    }
+
     public IReadOnlyList<VbaComponent> ListVba()
     {
         dynamic project = TrustedProject();

@@ -185,6 +185,28 @@ internal sealed class FakeExcel : IExcel
         return Components;
     }
 
+    public List<VbaReference> References { get; set; } = [];
+
+    public Exception? ReferenceThrows { get; set; }
+
+    public Block ReferenceBlock { get; set; } = Block.None;
+
+    public ReferenceChange ReferenceChange { get; set; } = ReferenceChange.Added;
+
+    public IReadOnlyList<VbaReference> ListReferences()
+    {
+        Record("ListReferences");
+        return References;
+    }
+
+    public ReferenceChange EditReference(ReferenceEdit edit)
+    {
+        Record($"EditReference {(edit.Add ? "add" : "remove")} {edit.Guid} {edit.Major}.{edit.Minor}");
+        Process.WaitIf(ReferenceBlock);
+        if (ReferenceThrows is not null) throw ReferenceThrows;
+        return ReferenceChange;
+    }
+
     public CompileStart CompileStart { get; set; } = CompileStart.Started;
 
     public Block CompileBlock { get; set; } = Block.None;

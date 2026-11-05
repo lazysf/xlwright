@@ -229,6 +229,47 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         AssertNothingLeft(pid);
     }
 
+    // Needs AccessVBOM 1 and the Scripting Runtime, which Windows registers.
+    [Fact]
+    public async Task AddsListsAndRemovesAReference()
+    {
+        const string Scripting = "{420B2830-E718-11CF-893D-00A0C9054228}";
+        _repo.AddApp("apps/refs");
+        MinimalWorkbook.Write(Path.Combine(_repo.Root, "apps", "refs", "Refs.xlsm"));
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/refs" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+
+        var before = Success(await Call("vba_get", new())).GetProperty("references").EnumerateArray().ToList();
+        var vba = Assert.Single(before, r => r.GetProperty("name").GetString() == "VBA");
+        Assert.True(vba.GetProperty("builtin").GetBoolean());
+        Assert.DoesNotContain(before, r => r.GetProperty("guid").GetString() == Scripting);
+
+        var added = Success(await Call("vba_edit", new() { ["action"] = "add_reference", ["guid"] = Scripting, ["major"] = 1, ["minor"] = 0 }));
+        Assert.True(added.GetProperty("changed").GetBoolean());
+        var listed = Success(await Call("vba_get", new())).GetProperty("references").EnumerateArray();
+        var scripting = Assert.Single(listed, r => r.GetProperty("guid").GetString() == Scripting);
+        Assert.Equal("Scripting", scripting.GetProperty("name").GetString());
+        Assert.False(scripting.GetProperty("broken").GetBoolean());
+
+        var again = Success(await Call("vba_edit", new() { ["action"] = "add_reference", ["guid"] = Scripting, ["major"] = 1, ["minor"] = 0 }));
+        Assert.False(again.GetProperty("changed").GetBoolean());
+
+        var removed = Success(await Call("vba_edit", new() { ["action"] = "remove_reference", ["guid"] = Scripting }));
+        Assert.True(removed.GetProperty("changed").GetBoolean());
+        Assert.DoesNotContain(removed.GetProperty("references").EnumerateArray(), r => r.GetProperty("guid").GetString() == Scripting);
+
+        var builtIn = Body(await Call("vba_edit", new() { ["action"] = "remove_reference", ["guid"] = vba.GetProperty("guid").GetString() }));
+        Assert.Equal("BUILTIN_REFERENCE", builtIn.GetProperty("error").GetProperty("detail").GetString());
+        var missing = Body(await Call("vba_edit", new() { ["action"] = "remove_reference", ["guid"] = Scripting }));
+        Assert.Equal("REFERENCE_NOT_FOUND", missing.GetProperty("error").GetProperty("detail").GetString());
+        var unregistered = Body(await Call("vba_edit", new() { ["action"] = "add_reference", ["guid"] = "{00000000-1111-2222-3333-444444444444}", ["major"] = 1, ["minor"] = 0 }));
+        Assert.Equal("REFERENCE_FAILED", unregistered.GetProperty("error").GetProperty("detail").GetString());
+        Assert.Equal("ready", unregistered.GetProperty("session").GetProperty("state").GetString());
+
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(pid);
+    }
+
     // Needs AccessVBOM 1. The tests change a cell and a data file; both changes stay in the copy.
     [Fact]
     public async Task RunsTheTestsInACopyAndLeavesTheAppAsItWas()

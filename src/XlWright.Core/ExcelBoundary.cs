@@ -122,6 +122,18 @@ public interface IExcel
     IReadOnlyList<VbaComponent> ListVba();
 
     /// <summary>
+    /// Lists the references of the main workbook's VBA project in References order (docs/api.md "vba_getの参照設定").
+    /// Throws <see cref="VbaSyncException"/> with VBA_ACCESS_NOT_TRUSTED or VBA_PROJECT_LOCKED, as vba_sync does.
+    /// </summary>
+    IReadOnlyList<VbaReference> ListReferences();
+
+    /// <summary>
+    /// Adds a reference with References.AddFromGuid or removes the one with the GUID (docs/api.md "vba_edit"). Throws
+    /// <see cref="VbaSyncException"/> as <see cref="ListReferences"/> does, and the exception Excel gave when it refuses.
+    /// </summary>
+    ReferenceChange EditReference(ReferenceEdit edit);
+
+    /// <summary>
     /// Makes the main workbook's project the ActiveVBProject and executes the VBE's "Compile VBAProject" control
     /// (docs/architecture.md "テスト", docs/notes/test-copy.md). It returns at once; a compile error shows a dialog later.
     /// </summary>
@@ -181,6 +193,31 @@ public interface IOwnedProcess : IDisposable
 /// sheet module, and null for the others.
 /// </summary>
 public sealed record VbaComponent(string Name, string Type, int Lines, string? Sheet);
+
+/// <summary>
+/// One reference for vba_get (docs/api.md "vba_getの参照設定"). Name is null when a broken reference does not give it.
+/// </summary>
+public sealed record VbaReference(string? Name, string Guid, int Major, int Minor, bool BuiltIn, bool Broken);
+
+/// <summary>What vba_edit asks for: add the GUID at the version, or remove it (Major and Minor are 0).</summary>
+public sealed record ReferenceEdit(bool Add, string Guid, int Major, int Minor);
+
+/// <summary>What <see cref="IExcel.EditReference"/> did, or why it did nothing.</summary>
+public enum ReferenceChange
+{
+    Added,
+
+    /// <summary>The project already had a reference with the GUID; nothing was added.</summary>
+    AlreadyPresent,
+
+    Removed,
+
+    /// <summary>No reference has the GUID; nothing was removed.</summary>
+    NotFound,
+
+    /// <summary>The reference with the GUID is built in (VBA, Excel) and cannot be removed; nothing was removed.</summary>
+    BuiltIn,
+}
 
 public enum CompileStart
 {

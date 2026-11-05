@@ -225,7 +225,7 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
         return result;
     }
 
-    /// <summary>Lists the modules of the main workbook as they are, without a sync (docs/api.md "vba_get").</summary>
+    /// <summary>Lists the modules and the references of the main workbook as they are, without a sync (docs/api.md "vba_get").</summary>
     public Task<SessionOutcome> ListModulesAsync() => Run("vba_get", NoSession, async () =>
     {
         var active = _active!;
@@ -234,7 +234,7 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
             return rejected;
         }
 
-        var listing = active.Worker.Run(active.Excel.ListVba);
+        var listing = active.Worker.Run(() => (active.Excel.ListVba(), active.Excel.ListReferences()));
         if (!await Completes(listing, timeouts.Sync))
         {
             return await AfterTimeout(active, listing, "Listing the VBA modules did not finish within the time limit.");
@@ -249,8 +249,9 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
             };
         }
 
+        var (components, references) = listing.Result;
         var modules = new JsonArray();
-        foreach (var component in listing.Result)
+        foreach (var component in components)
         {
             var module = new JsonObject { ["name"] = component.Name, ["type"] = component.Type, ["lines"] = component.Lines };
             if (component.Sheet is not null)
@@ -261,8 +262,81 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
             modules.Add(module);
         }
 
-        return (new JsonObject { ["modules"] = modules }, null);
+        return (new JsonObject { ["modules"] = modules, ["references"] = ReferencesJson(references) }, null);
     });
+
+    /// <summary>Adds or removes a reference of the main workbook, then lists the references (docs/api.md "vba_edit").</summary>
+    public Task<SessionOutcome> EditReferenceAsync(ReferenceEdit edit) => Run("vba_edit", NoSession, async () =>
+    {
+        var active = _active!;
+        if (MacrosRejected(active) is { } rejected)
+        {
+            return rejected;
+        }
+
+        var editing = active.Worker.Run(() => active.Excel.EditReference(edit));
+        if (!await Completes(editing, timeouts.Sync))
+        {
+            return await AfterTimeout(active, editing, "Changing the reference did not finish within the time limit.");
+        }
+
+        if (editing.IsFaulted)
+        {
+            return editing.Exception!.InnerException switch
+            {
+                VbaSyncException e => Fail(ToolFailure.Conflict, e.Detail, e.Message),
+                var e => Fail(ToolFailure.ExcelError, "REFERENCE_FAILED",
+                    $"Excel refused to {(edit.Add ? "add" : "remove")} the reference {edit.Guid}: {e!.Message}"),
+            };
+        }
+
+        switch (editing.Result)
+        {
+            case ReferenceChange.NotFound:
+                return Fail(ToolFailure.NotFound, "REFERENCE_NOT_FOUND",
+                    $"The VBA project has no reference {edit.Guid}. Call vba_get to see the references.");
+            case ReferenceChange.BuiltIn:
+                return Fail(ToolFailure.InvalidRequest, "BUILTIN_REFERENCE",
+                    $"The reference {edit.Guid} is built in (VBA or Excel) and cannot be removed.");
+        }
+
+        var listing = active.Worker.Run(active.Excel.ListReferences);
+        if (!await Completes(listing, timeouts.Sync))
+        {
+            return await AfterTimeout(active, listing, "Listing the references did not finish within the time limit.");
+        }
+
+        if (listing.IsFaulted)
+        {
+            return Fail(ToolFailure.ExcelError, null,
+                $"The reference was changed, but Excel could not list the references: {listing.Exception!.InnerException!.Message}. Call vba_get to see them.");
+        }
+
+        var changed = editing.Result is ReferenceChange.Added or ReferenceChange.Removed;
+        return (new JsonObject { ["changed"] = changed, ["references"] = ReferencesJson(listing.Result) }, null);
+    });
+
+    private static JsonArray ReferencesJson(IReadOnlyList<VbaReference> references)
+    {
+        var list = new JsonArray();
+        foreach (var reference in references)
+        {
+            var item = new JsonObject();
+            if (reference.Name is not null)
+            {
+                item["name"] = reference.Name;
+            }
+
+            item["guid"] = reference.Guid;
+            item["major"] = reference.Major;
+            item["minor"] = reference.Minor;
+            item["builtin"] = reference.BuiltIn;
+            item["broken"] = reference.Broken;
+            list.Add(item);
+        }
+
+        return list;
+    }
 
     /// <summary>
     /// Syncs, then runs the macro and waits up to <paramref name="limit"/>, checking for a dialog every 250 ms

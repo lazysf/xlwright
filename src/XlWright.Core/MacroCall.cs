@@ -44,6 +44,8 @@ public static class MacroCall
     /// A Run function that calls the macro by name, so its run-time error reaches this On Error; Application.Run
     /// does not pass it on (docs/notes/macro-run.md). Each argument is in parentheses, so a typed ByRef parameter
     /// takes a copy. Run returns Array(0, value), Array(1, number, description, source), or XlWright.Result's array.
+    /// XlWright.BeginRun and EndRun mark the call as inside xlwright, so the dialog functions use the answers
+    /// (docs/architecture.md "xlwrightのVBAのモジュール"); Err is read before EndRun.
     /// </summary>
     public static string Generate(MacroName macro, int argumentCount, bool isFunction)
     {
@@ -55,10 +57,13 @@ public static class MacroCall
             .Append("Option Explicit\r\n\r\n")
             .Append("Public Function Run(ByVal args As Variant) As Variant\r\n")
             .Append("    On Error GoTo Failed\r\n")
+            .Append("    XlWright.BeginRun\r\n")
             .Append(call)
+            .Append("    XlWright.EndRun\r\n")
             .Append("    Exit Function\r\n")
             .Append("Failed:\r\n")
             .Append("    Run = Array(1, Err.Number, Err.Description, Err.Source)\r\n")
+            .Append("    XlWright.EndRun\r\n")
             .Append("End Function\r\n")
             .ToString();
     }

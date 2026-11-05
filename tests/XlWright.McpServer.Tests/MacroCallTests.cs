@@ -51,10 +51,13 @@ public sealed class MacroCallTests
             "Option Explicit\r\n\r\n" +
             "Public Function Run(ByVal args As Variant) As Variant\r\n" +
             "    On Error GoTo Failed\r\n" +
+            "    XlWright.BeginRun\r\n" +
             "    Run = XlWright.Result(Calc.Twice((args(0)), (args(1))))\r\n" +
+            "    XlWright.EndRun\r\n" +
             "    Exit Function\r\n" +
             "Failed:\r\n" +
             "    Run = Array(1, Err.Number, Err.Description, Err.Source)\r\n" +
+            "    XlWright.EndRun\r\n" +
             "End Function\r\n",
             code);
     }

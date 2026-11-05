@@ -472,6 +472,89 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         AssertNothingLeft(pid);
     }
 
+    // Needs AccessVBOM 1. Inside xlwright the dialog functions use the answers that XlWright.Answer queued, and show no
+    // dialog; a dialog would stop the macro and end the Excel. Outside xlwright they show the standard dialog, which
+    // this test does not reach.
+    [Fact]
+    public async Task TheDialogFunctionsUseTheQueuedAnswers()
+    {
+        _repo.AddApp("apps/dialogs");
+        var app = Path.Combine(_repo.Root, "apps", "dialogs");
+        MinimalWorkbook.Write(Path.Combine(app, "Dialogs.xlsm"));
+        Source(app, "src/modules/Ask.bas",
+            "Option Explicit\n\n" +
+            "Public Function All() As String\n" +
+            "    XlWright.Answer \"message\", \"yes\"\n    XlWright.Answer \"input\", \"東京\"\n" +
+            "    XlWright.Answer \"open_file\", \"data/in.csv\"\n    XlWright.Answer \"save_file\", \"C:\\out\\売上.csv\"\n" +
+            "    XlWright.Answer \"folder\", False\n    XlWright.Answer \"message\", False\n    XlWright.Answer \"input\", False\n" +
+            // In one expression joined with &, the calls did not take the answers from left to right, so each call is its own statement.
+            "    Dim parts(6) As String\n" +
+            "    parts(0) = XlWright.Message(\"続けますか\", vbYesNo)\n    parts(1) = XlWright.InputText(\"都市\")\n" +
+            "    parts(2) = Mid$(XlWright.OpenFile(), Len(ThisWorkbook.Path) + 1)\n    parts(3) = XlWright.SaveFile()\n" +
+            "    parts(4) = XlWright.Folder()\n    parts(5) = XlWright.Message(\"取り消し\", vbOKCancel)\n    parts(6) = XlWright.InputText(\"空\")\n" +
+            "    All = Join(parts, \"|\")\n" +
+            "End Function\n\n" +
+            "Public Function Queue() As Long\n    XlWright.Answer \"message\", \"ok\"\n    Queue = 1\nEnd Function\n\n" +
+            "Public Function Bare() As Long\n    Bare = XlWright.Message(\"答えが無い\")\nEnd Function\n\n" +
+            "Public Function WrongKind() As Variant\n    XlWright.Answer \"input\", \"x\"\n    WrongKind = XlWright.Folder()\nEnd Function\n\n" +
+            "Public Function WrongButton() As Long\n    XlWright.Answer \"message\", \"yes\"\n    WrongButton = XlWright.Message(\"OKだけ\")\nEnd Function\n\n" +
+            "Public Sub UnknownKind()\n    XlWright.Answer \"color\", \"red\"\nEnd Sub\n");
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/dialogs" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+
+        var all = Success(await Call("macro_run", new() { ["macro"] = "Ask.All" }));
+        Assert.Equal("6|東京|\\data\\in.csv|C:\\out\\売上.csv|False|2|False", all.GetProperty("return").GetString());
+
+        // The answer queued by one call is gone in the next, so Bare finds none.
+        Success(await Call("macro_run", new() { ["macro"] = "Ask.Queue" }));
+        foreach (var (macro, reason) in new[]
+        {
+            ("Ask.Bare", "XlWright.Message: no answer is left for the dialog."),
+            ("Ask.WrongKind", "XlWright.Folder: the next answer is for input, not folder."),
+            ("Ask.WrongButton", "XlWright.Message: the answer yes is not a button of the dialog (ok)."),
+            ("Ask.UnknownKind", "XlWright.Answer: kind must be message, input, open_file, save_file, or folder, not color."),
+        })
+        {
+            var failed = Body(await Call("macro_run", new() { ["macro"] = macro }));
+            var error = failed.GetProperty("error");
+            Assert.Equal("MACRO_ERROR", error.GetProperty("detail").GetString());
+            Assert.Equal(-2147221503, error.GetProperty("data").GetProperty("number").GetInt32());
+            Assert.Equal("XlWright", error.GetProperty("data").GetProperty("source").GetString());
+            Assert.Equal(reason, error.GetProperty("data").GetProperty("description").GetString());
+            Assert.Equal("ready", failed.GetProperty("session").GetProperty("state").GetString());
+        }
+
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(pid);
+    }
+
+    // Needs AccessVBOM 1. In test_run each test queues its own answers, and they are empty again for the next test.
+    [Fact]
+    public async Task EachTestQueuesItsOwnAnswers()
+    {
+        _repo.AddApp("apps/asked");
+        var app = Path.Combine(_repo.Root, "apps", "asked");
+        MinimalWorkbook.Write(Path.Combine(app, "Asked.xlsm"));
+        Source(app, "src/modules/Confirm.bas",
+            "Option Explicit\nPublic Function Proceed() As Boolean\n    Proceed = XlWright.Message(\"続けますか\", vbYesNo) = vbYes\nEnd Function\n");
+        Source(app, "tests/ConfirmTests.bas",
+            "Option Explicit\n\n" +
+            "Public Sub TestYes()\n    XlWright.Answer \"message\", \"yes\"\n    XlWright.Answer \"message\", \"no\"\n    XlWrightAssert.IsTrue Confirm.Proceed()\nEnd Sub\n\n" +
+            "Public Sub TestNoAnswer()\n    XlWrightAssert.IsTrue Confirm.Proceed()\nEnd Sub\n");
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/asked" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+
+        var run = Success(await Call("test_run", new()));
+
+        Assert.Equal("""{"passed":1,"failed":0,"errors":1}""", run.GetProperty("summary").GetRawText());
+        var noAnswer = run.GetProperty("tests").EnumerateArray().Single(t => t.GetProperty("name").GetString() == "ConfirmTests.TestNoAnswer");
+        Assert.Equal("XlWright", noAnswer.GetProperty("source").GetString());
+        Assert.Equal("XlWright.Message: no answer is left for the dialog.", noAnswer.GetProperty("description").GetString());
+
+        Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(pid);
+    }
+
     // Needs AccessVBOM 1. The compile error shows its dialog and the VBA editor on the person's screen for a moment.
     [Fact]
     public async Task ChecksTheCompileAndReportsACompileErrorWithItsLine()

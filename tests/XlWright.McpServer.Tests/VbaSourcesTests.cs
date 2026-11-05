@@ -149,6 +149,21 @@ public sealed class VbaSourcesTests : IDisposable
     }
 
     [Theory]
+    [InlineData("Public Sub BeginRun()")]
+    [InlineData("Public Sub EndRun()")]
+    [InlineData("Public Sub Answer(ByVal kind As String, ByVal value As Variant)")]
+    [InlineData("Public Function Message(ByVal prompt As Variant, Optional ByVal buttons As VbMsgBoxStyle = vbOKOnly, Optional ByVal title As Variant) As VbMsgBoxResult")]
+    [InlineData("Public Function InputText(ByVal prompt As Variant, Optional ByVal title As Variant, Optional ByVal default As Variant) As Variant")]
+    [InlineData("Public Function OpenFile(Optional ByVal filter As Variant, Optional ByVal title As Variant) As Variant")]
+    [InlineData("Public Function SaveFile(Optional ByVal initial As Variant, Optional ByVal filter As Variant, Optional ByVal title As Variant) As Variant")]
+    [InlineData("Public Function Folder(Optional ByVal title As Variant) As Variant")]
+    [InlineData("vbObjectError + 1, \"XlWright\"")]
+    public void TheXlWrightModuleHasTheDialogFunctions(string declaration)
+    {
+        Assert.Contains(declaration, VbaSources.XlWrightText("0.1.0"));
+    }
+
+    [Theory]
     [InlineData("src/modules/XlWrightCall.bas")]
     [InlineData("src/classes/xlwrightcall.cls")]
     public void RejectsAModuleNamedLikeTheGeneratedOne(string file)

@@ -51,6 +51,10 @@ public static partial class VbaSources
         $"' XlWright {version}: xlwright writes this module before each sync. Do not edit it.\r\n" +
         "Option Explicit\r\n" +
         "\r\n" +
+        "' Whether xlwright runs the code, and the answers for the dialog functions.\r\n" +
+        "Private mRunning As Boolean\r\n" +
+        "Private mAnswers As Collection\r\n" +
+        "\r\n" +
         "' macro_run passes a macro's return value here: Array(0, value), or Array(2, type name) for a value it does not return.\r\n" +
         "Public Function Result(ByVal value As Variant) As Variant\r\n" +
         "    If IsObject(value) Or IsArray(value) Then\r\n" +
@@ -60,7 +64,150 @@ public static partial class VbaSources
         "    Else\r\n" +
         "        Result = Array(0, value)\r\n" +
         "    End If\r\n" +
-        "End Function\r\n";
+        "End Function\r\n" +
+        DialogFunctions;
+
+    // The dialog functions. Outside xlwright they show the standard dialog; inside, they use the answers in order.
+    private static readonly string DialogFunctions = """
+
+        ' xlwright calls BeginRun before each macro_run call and each test, and EndRun after it. The app's code does not call them.
+        Public Sub BeginRun()
+            mRunning = True
+            Set mAnswers = New Collection
+        End Sub
+
+        Public Sub EndRun()
+            mRunning = False
+            Set mAnswers = Nothing
+        End Sub
+
+        ' A test queues the answer for the next dialog function. kind is message, input, open_file, save_file, or folder.
+        ' value is a button name such as "yes", the text, or a path; False cancels. A relative path is from ThisWorkbook.Path.
+        Public Sub Answer(ByVal kind As String, ByVal value As Variant)
+            If Not mRunning Then Fail "Answer", "it works only while xlwright runs the code."
+            Select Case kind
+            Case "message", "input", "open_file", "save_file", "folder"
+            Case Else
+                Fail "Answer", "kind must be message, input, open_file, save_file, or folder, not " & kind & "."
+            End Select
+            mAnswers.Add Array(kind, value)
+        End Sub
+
+        ' Use in place of MsgBox. Returns the button pressed, such as vbYes.
+        Public Function Message(ByVal prompt As Variant, Optional ByVal buttons As VbMsgBoxStyle = vbOKOnly, Optional ByVal title As Variant) As VbMsgBoxResult
+            If Not mRunning Then
+                If IsMissing(title) Then
+                    Message = VBA.MsgBox(prompt, buttons)
+                Else
+                    Message = VBA.MsgBox(prompt, buttons, title)
+                End If
+                Exit Function
+            End If
+
+            Dim value As Variant
+            value = NextAnswer("Message", "message")
+            If Cancels("Message", value) Then value = "cancel"
+            Dim names As String
+            names = Choose((buttons And 7) + 1, "ok", "ok cancel", "abort retry ignore", "yes no cancel", "yes no", "retry cancel", "", "")
+            If InStr(" " & names & " ", " " & value & " ") = 0 Or InStr(value, " ") > 0 Then
+                Fail "Message", "the answer " & value & " is not a button of the dialog (" & names & ")."
+            End If
+
+            Select Case value
+            Case "ok": Message = vbOK
+            Case "cancel": Message = vbCancel
+            Case "abort": Message = vbAbort
+            Case "retry": Message = vbRetry
+            Case "ignore": Message = vbIgnore
+            Case "yes": Message = vbYes
+            Case "no": Message = vbNo
+            End Select
+        End Function
+
+        ' Asks for text. Returns the text, or False when cancelled.
+        Public Function InputText(ByVal prompt As Variant, Optional ByVal title As Variant, Optional ByVal default As Variant) As Variant
+            If Not mRunning Then
+                InputText = Application.InputBox(prompt, title, default, Type:=2)
+                Exit Function
+            End If
+
+            Dim value As Variant
+            value = NextAnswer("InputText", "input")
+            If Cancels("InputText", value) Then
+                InputText = False
+            Else
+                InputText = CStr(value)
+            End If
+        End Function
+
+        ' Asks for a file to open. Returns its full path, or False when cancelled.
+        Public Function OpenFile(Optional ByVal filter As Variant, Optional ByVal title As Variant) As Variant
+            If mRunning Then
+                OpenFile = AnsweredPath("OpenFile", "open_file")
+            Else
+                OpenFile = Application.GetOpenFilename(filter, , title)
+            End If
+        End Function
+
+        ' Asks where to save a file. Returns its full path, or False when cancelled.
+        Public Function SaveFile(Optional ByVal initial As Variant, Optional ByVal filter As Variant, Optional ByVal title As Variant) As Variant
+            If mRunning Then
+                SaveFile = AnsweredPath("SaveFile", "save_file")
+            Else
+                SaveFile = Application.GetSaveAsFilename(initial, filter, , title)
+            End If
+        End Function
+
+        ' Asks for a folder. Returns its full path, or False when cancelled.
+        Public Function Folder(Optional ByVal title As Variant) As Variant
+            If mRunning Then
+                Folder = AnsweredPath("Folder", "folder")
+                Exit Function
+            End If
+
+            Dim picker As Object
+            Set picker = Application.FileDialog(4) ' msoFileDialogFolderPicker
+            If Not IsMissing(title) Then picker.Title = title
+            If picker.Show = -1 Then
+                Folder = picker.SelectedItems(1)
+            Else
+                Folder = False
+            End If
+        End Function
+
+        Private Function NextAnswer(ByVal name As String, ByVal kind As String) As Variant
+            If mAnswers.Count = 0 Then Fail name, "no answer is left for the dialog."
+            Dim item As Variant
+            item = mAnswers(1)
+            mAnswers.Remove 1
+            If item(0) <> kind Then Fail name, "the next answer is for " & item(0) & ", not " & kind & "."
+            NextAnswer = item(1)
+        End Function
+
+        Private Function AnsweredPath(ByVal name As String, ByVal kind As String) As Variant
+            Dim value As Variant
+            value = NextAnswer(name, kind)
+            If Cancels(name, value) Then
+                AnsweredPath = False
+            ElseIf CStr(value) Like "?:\*" Or Left$(CStr(value), 2) = "\\" Then
+                AnsweredPath = CStr(value)
+            Else
+                AnsweredPath = ThisWorkbook.Path & "\" & Replace(CStr(value), "/", "\")
+            End If
+        End Function
+
+        ' False cancels; True is not an answer.
+        Private Function Cancels(ByVal name As String, ByVal value As Variant) As Boolean
+            If VarType(value) <> vbBoolean Then Exit Function
+            If value Then Fail name, "True is not an answer; pass False to cancel."
+            Cancels = True
+        End Function
+
+        Private Sub Fail(ByVal name As String, ByVal reason As String)
+            Err.Raise vbObjectError + 1, "XlWright", "XlWright." & name & ": " & reason
+        End Sub
+
+        """.ReplaceLineEndings("\r\n");
 
     /// <summary>
     /// Checks every source before Excel is touched, writes XlWright.bas when it is missing, older than

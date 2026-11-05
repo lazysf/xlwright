@@ -76,9 +76,8 @@ public sealed class TestRunTests : IDisposable
              "RunMacro CalcTests.TestAdd", "RunMacro CalcTests.TestSplit", "RunMacro CalcTests.TestLoad",
              "CloseUnder " + Path.GetDirectoryName(copy), "Open " + _app.WorkbookPath],
             calls);
-        Assert.Empty(Directory.EnumerateFileSystemEntries(TestFolder));
-        Assert.False(Directory.Exists(Path.Combine(_app.FullPath, ".xlwright", "sync")) &&
-            Directory.EnumerateFileSystemEntries(Path.Combine(_app.FullPath, ".xlwright", "sync")).Any());
+        Assert.False(Directory.Exists(TestFolder));
+        Assert.False(Directory.Exists(Path.Combine(_app.FullPath, ".xlwright", "sync")));
     }
 
     [Fact]
@@ -146,7 +145,7 @@ public sealed class TestRunTests : IDisposable
 
         AssertFailure(outcome, "EXCEL_ERROR", "OPEN_FAILED", "ready");
         Assert.Equal("Open " + _app.WorkbookPath, Excel.Calls[^1]);
-        Assert.Empty(Directory.EnumerateFileSystemEntries(TestFolder));
+        Assert.False(Directory.Exists(TestFolder));
     }
 
     [Fact]
@@ -194,7 +193,7 @@ public sealed class TestRunTests : IDisposable
         Assert.Contains("HideEditor", Excel.Calls);
         Assert.DoesNotContain(Excel.Calls, c => c.StartsWith("RunMacro", StringComparison.Ordinal));
         Assert.Equal("Open " + _app.WorkbookPath, Excel.Calls[^1]);
-        Assert.Empty(Directory.EnumerateFileSystemEntries(TestFolder));
+        Assert.False(Directory.Exists(TestFolder));
         Assert.Null((await _session.TestRunAsync(null, Limit)).Failure);
     }
 
@@ -235,7 +234,7 @@ public sealed class TestRunTests : IDisposable
         AssertFailure(outcome, "STATE_UNKNOWN", "DIALOG", "closed");
         Assert.Equal(1, _launcher.Process.Terminations);
         Assert.DoesNotContain(Excel.Calls, c => c.StartsWith("RunMacro", StringComparison.Ordinal));
-        Assert.Empty(Directory.EnumerateFileSystemEntries(TestFolder));
+        Assert.False(Directory.Exists(TestFolder));
     }
 
     [Fact]

@@ -174,7 +174,7 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
             first.GetProperty("modules").GetRawText());
         Assert.Equal("[]", first.GetProperty("removed").GetRawText());
         Assert.True(File.Exists(Path.Combine(app, "src", "modules", "XlWright.bas")));
-        Assert.Empty(Directory.EnumerateFileSystemEntries(Path.Combine(app, ".xlwright", "sync")));
+        Assert.False(Directory.Exists(Path.Combine(app, ".xlwright", "sync")));
 
         File.Delete(Path.Combine(app, "src", "modules", "Calc.bas"));
         var second = Success(await Call("vba_sync", new()));
@@ -341,7 +341,7 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         Assert.DoesNotContain("src/modules/XlWright.bas", files);
         Assert.Contains("日本語のコメント", File.ReadAllText(Path.Combine(app, "src", "modules", "Calc.bas"), Encoding.UTF8));
         Assert.Contains("Workbook_Open", File.ReadAllText(Path.Combine(app, "src", "workbook", "ThisWorkbook.cls"), Encoding.UTF8));
-        Assert.Empty(Directory.EnumerateFileSystemEntries(Path.Combine(app, ".xlwright", "extract")));
+        Assert.False(Directory.Exists(Path.Combine(app, ".xlwright", "extract")));
 
         // The extracted files sync back as they are.
         var synced = Success(await Call("vba_sync", new())).GetProperty("modules").EnumerateArray().Select(m => m.GetProperty("name").GetString());
@@ -431,7 +431,7 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         var a1 = Success(await Call("range_read", new() { ["sheet"] = "Sheet1", ["range"] = "A1" }));
         Assert.Equal("original", a1.GetProperty("values")[0][0].GetString());
         Assert.Equal("original", File.ReadAllText(Path.Combine(app, "data", "note.txt")));
-        Assert.Empty(Directory.EnumerateFileSystemEntries(Path.Combine(app, ".xlwright", "test")));
+        Assert.False(Directory.Exists(Path.Combine(app, ".xlwright", "test")));
         var modules = Success(await Call("vba_get", new())).GetProperty("modules").EnumerateArray().Select(m => m.GetProperty("name").GetString());
         Assert.DoesNotContain("CalcTests", modules);
         Assert.DoesNotContain("XlWrightAssert", modules);
@@ -461,7 +461,7 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         Assert.Equal("COMPILE_ERROR", error.GetProperty("detail").GetString());
         Assert.False(string.IsNullOrEmpty(error.GetProperty("data").GetProperty("error").GetProperty("message").GetString()));
         Assert.Equal("ready", failed.GetProperty("session").GetProperty("state").GetString());
-        Assert.Empty(Directory.EnumerateFileSystemEntries(Path.Combine(app, ".xlwright", "test")));
+        Assert.False(Directory.Exists(Path.Combine(app, ".xlwright", "test")));
 
         Source(app, "src/modules/Text.bas",
             "Option Explicit\nPublic Function JoinFields(ByVal a As String, ByVal b As String) As String\n    JoinFields = a & \",\" & b\nEnd Function\n");

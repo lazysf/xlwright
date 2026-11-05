@@ -523,6 +523,7 @@ public sealed class ExcelSessionTests : IDisposable
             outcome.Result!["modules"]!.ToJsonString());
         Assert.Equal("""["Old"]""", outcome.Result["removed"]!.ToJsonString());
         Assert.All(_launcher.Excel.Synced!, m => Assert.False(File.Exists(m.ImportPath)));
+        Assert.False(Directory.Exists(Path.Combine(_app.FullPath, ".xlwright", "sync")));
     }
 
     [Fact]
@@ -925,6 +926,7 @@ public sealed class ExcelSessionTests : IDisposable
         Assert.Null(result["return_type"]);
         Assert.True(result["elapsed_ms"]!.GetValue<long>() >= 0);
         Assert.Equal("""{"modules":[{"name":"XlWright","type":"standard"}],"removed":[]}""", result["sync"]!.ToJsonString());
+        Assert.False(Directory.Exists(Path.Combine(_app.FullPath, ".xlwright", "sync")));
     }
 
     [Fact]

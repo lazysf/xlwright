@@ -66,6 +66,7 @@ public sealed class ExtractTests : IDisposable
         Assert.True(_launcher.Excel.ExtractCopyExisted);
         Assert.StartsWith("ExportExtractCopy " + folder, calls[1], StringComparison.Ordinal);
         Assert.False(Directory.Exists(folder));
+        Assert.False(Directory.Exists(ExtractFolder));
 
         Assert.Equal("Attribute VB_Name = \"Calc\"\r\n' 日本語\r\n", File.ReadAllText(Path.Combine(_app.FullPath, "src", "modules", "Calc.bas"), Encoding.UTF8));
     }
@@ -92,7 +93,7 @@ public sealed class ExtractTests : IDisposable
 
         AssertFailure(outcome, "EXCEL_ERROR", "OPEN_FAILED", "ready");
         Assert.DoesNotContain(_launcher.Excel.Calls, c => c.StartsWith("ExportExtractCopy", StringComparison.Ordinal));
-        Assert.Empty(Directory.EnumerateFileSystemEntries(ExtractFolder));
+        Assert.False(Directory.Exists(ExtractFolder));
     }
 
     [Theory]
@@ -106,7 +107,7 @@ public sealed class ExtractTests : IDisposable
         var outcome = await _session.ExtractAsync(null);
 
         AssertFailure(outcome, "CONFLICT", detail, "ready");
-        Assert.Empty(Directory.EnumerateFileSystemEntries(ExtractFolder));
+        Assert.False(Directory.Exists(ExtractFolder));
     }
 
     [Fact]

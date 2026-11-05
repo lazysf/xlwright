@@ -529,12 +529,29 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
         return (new JsonObject { ["workbook"] = name, ["files"] = files, ["skipped"] = skipped }, null);
     });
 
-    // The copy is only for the extraction; a folder Excel still holds is left, as .xlwright/sync/ is.
+    // Removes a folder of one call (.xlwright/sync/<id>, extract/<id>, test/<run-id>) and then its parent when that is
+    // empty. A folder Excel still holds is left, and so is a parent that still holds one.
     private static void RemoveFolder(string folder)
     {
         try
         {
             Directory.Delete(folder, recursive: true);
+            RemoveIfEmpty(Path.GetDirectoryName(folder)!);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    // The parent stays when it cannot be removed; nothing depends on it being gone.
+    private static void RemoveIfEmpty(string folder)
+    {
+        try
+        {
+            if (Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any())
+            {
+                Directory.Delete(folder);
+            }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -677,13 +694,7 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
         {
             // Prepare always adds XlWright, so there is a first module. When an Import timed out, Excel may still
             // hold a file; the folder then stays under .xlwright/sync/, which holds only converted copies.
-            try
-            {
-                Directory.Delete(Path.GetDirectoryName(modules![0].ImportPath)!, recursive: true);
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-            }
+            RemoveFolder(Path.GetDirectoryName(modules![0].ImportPath)!);
         }
     }
 

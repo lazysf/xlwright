@@ -41,13 +41,7 @@ public sealed partial class ExcelSession
                 _test = null;
             }
 
-            try
-            {
-                Directory.Delete(Path.GetDirectoryName(plan!.Modules[0].ImportPath)!, recursive: true);
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-            }
+            RemoveFolder(Path.GetDirectoryName(plan!.Modules[0].ImportPath)!);
         }
     });
 
@@ -236,6 +230,7 @@ public sealed partial class ExcelSession
                 Directory.Delete(copy, recursive: true);
             }
 
+            RemoveIfEmpty(Path.GetDirectoryName(copy)!);
             return null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)

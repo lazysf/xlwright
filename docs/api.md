@@ -465,7 +465,7 @@
 
 - 関数: どれも、xlwrightの実行の外では標準のダイアログを出します。
   - `XlWright.Message(prompt[, buttons][, title])`: `VBA.MsgBox`の代わり。押したボタンの値を返します。
-  - `XlWright.Input(prompt[, title][, default])`: 入力。文字列を、キャンセルでは`False`を返します（`Application.InputBox`の`Type:=2`）。
+  - `XlWright.InputText(prompt[, title][, default])`: 入力。文字列を、キャンセルでは`False`を返します（`Application.InputBox`の`Type:=2`）。`Input`はVBAの予約語で、関数の名前にできなかったためです（実機で確認、人の判断、2026-11-05）。
   - `XlWright.OpenFile([filter][, title])`・`XlWright.SaveFile([initial][, filter][, title])`: ファイルの選択と保存先の指定。完全なパスを、キャンセルでは`False`を返します（`Application.GetOpenFilename`・`GetSaveAsFilename`）。
   - `XlWright.Folder([title])`: フォルダーの選択。完全なパスを、キャンセルでは`False`を返します（`FileDialog`のフォルダーの選択）。
   - VBAの`MsgBox`と同じ名前にしないのは、修飾の無い`MsgBox`の呼出しをすべて置き換えてしまうためです。
@@ -476,6 +476,12 @@
 - xlwrightの実行の中では、`dialogs`を省いても、関数はダイアログを出しません。応答が尽きた時、次の応答の`kind`が違う時、`message`の`answer`が`buttons`に無い時は、`Err.Source`が`XlWright`のエラーを上げます。マクロは`MACRO_ERROR`で止まり、専用のExcelは終えません。
 - 結果に`dialogs`を加えます。`{"answered":2,"unused":1}`。使われなかった応答があっても、失敗にしません。
 - `test_run`では、テストの中で応答を決めます。`XlWright.Answer kind, value`をテストが呼び、そのテストの中の関数が順に使います。応答はテストごとに空にします。`test_run`の引数には加えません。テストごとに応答が違い、テストの書き手が知っているためです。
+  - `kind`は`dialogs`と同じです。`value`は、`message`ではボタンの名前（`"yes"`など）、`input`では文字列、ほかではパスです。キャンセルは`value`に`False`を渡します。
+  - 相対パスは`ThisWorkbook.Path`（`test_run`では写しのフォルダ）から解決し、絶対パスはそのまま渡します。テストがアプリのフォルダの外を変えることは、もともと防がないためです。
+  - 知らない`kind`と、xlwrightの実行の外での`Answer`は、関数と同じエラーを上げます。
+- 関数と`Answer`が上げるエラーは、番号が`vbObjectError + 1`、`Err.Source`が`XlWright`で、説明は何が合わなかったかを書く英語の1文です。
+- `message`の応答は、`buttons And 7`で決まるボタンの組（`vbOKOnly`から`vbRetryCancel`）にあるかで調べます。アイコンや既定のボタンの指定は調べません。
+- 以上の`Answer`の値、エラー、ボタンの組は、人が承認しました（2026-11-05）。
 
 #### `test_run`の前のコンパイル
 

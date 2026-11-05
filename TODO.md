@@ -584,6 +584,24 @@
 - [x] 実Excelの結合テストと確認の入口を通す。テストは526件と実Excelの17件。まだ無い関数を呼ぶテストが`COMPILE_ERROR`になり、関数を書いた次の`test_run`が通った。
 - [x] 文書を直す。APIの`test_run`の失敗の表に`COMPILE_ERROR`を加えた（段階4の契約のとおり）。人の判断で、`test_run`のツールの説明に、`COMPILE_ERROR`と、ダイアログとVBEのウィンドウが人の画面に短い間出ることを書いた。
 
+## 周期45（段階4）: `XlWright.bas`のダイアログの関数
+
+作るもの: APIの[ダイアログへの事前の応答](docs/api.md#ダイアログへの事前の応答)のうち、`XlWright.bas`の`Message`・`InputText`・`OpenFile`・`SaveFile`・`Folder`・`Answer`と、`XlWrightCall`が実行の中を知らせる`BeginRun`・`EndRun`。`macro_run`の`dialogs`は次の周期で作る。
+
+完了の条件:
+
+- テストで、`XlWright.bas`の関数と、`XlWrightCall`が呼ぶ前に`BeginRun`、呼んだ後と失敗の後に`EndRun`を呼ぶことを返す。どれも、テストを先に書いて失敗を確かめてから作る。
+- 実Excelの結合テストで、`Answer`で積んだ応答を各関数が返し、キャンセルで`False`（`Message`は`vbCancel`）を返し、応答が尽きた時・`kind`が違う時・ボタンに無い時に`MACRO_ERROR`（`Err.Source`が`XlWright`）で止まり、応答が実行ごとに空になり、終了の後に専用のExcelが残らない。xlwrightの外で標準のダイアログを出すことは、止まるため自動では確かめない。
+- 確認の入口が通る。
+
+作業:
+
+- [x] 名前の確認: `Public Function Input`は実機でコンパイルエラー（「修正候補: 識別子」）。`Message`・`Folder`・`Answer`と引数の名前`default`は通った。人の判断で`InputText`にした（2026-11-05）。
+- [x] 失敗するテストを書く。
+- [x] `XlWright.bas`と`XlWrightCall`を作る。`XlWright.bas`はANSIのコードページへ変えて取り込むため、ASCIIだけで書いた。
+- [x] 実Excelの結合テストと確認の入口を通す。テストは535件と実Excelの19件。1つの式の`&`で関数を並べて呼んだ時、応答が左から順に使われず、順がずれた（1回の観察）。テストのマクロは1文ずつ呼ぶ形に直した。
+- [x] 文書を直す。APIに`InputText`への変更と`Answer`の値・エラー・ボタンの組を、設計に`BeginRun`・`EndRun`を書いた。
+
 ## 書き留めたこと
 
 周期の中で後へ回した事項を書きます。
@@ -635,3 +653,8 @@
 - `test_run`の前のコンパイルで専用のExcelを終えた時（閉じたダイアログが残る、コンパイルの期限切れ）は、`STATE_UNKNOWN`の`DIALOG`か`TIMEOUT`で、`data.test`が無く`data.tests`が空になる。APIの`test_run`の表は、`data.test`に止まったテストを入れると書く。表に行を足すかは、人の判断で決める（周期44の独立レビュー、低〜中）。
 - `test_run`の前のコンパイルで`StartCompile`か`IsCompiled`が例外になった時は、`EXCEL_ERROR`（`detail`無し）で、メッセージに「No test ran.」が無い。主ブックは開き直して`ready`のまま。この経路と、コンパイルの期限切れのテストは無い。偽物の`StartCompile`には例外を投げる仕組みが無い。ダイアログが残るテストは、`data.dialog`と`data.tests`の中身を確かめていない（周期44の独立レビュー、低）。
 - コンパイルを確かめられなかった時は、見張りの5秒を使い切ってからテストへ進み、その時間も`timeout_seconds`に入る。実機で起きる頻度は確かめていない（周期44の独立レビュー、低）。
+- `XlWright.bas`のダイアログの関数が、xlwrightの外で標準のダイアログを出す経路（`MsgBox`・`Application.InputBox`・`GetOpenFilename`・`GetSaveAsFilename`・`FileDialog`、省いた引数をそのまま渡す形）は、実機で確かめていない。止まるため自動のテストに入れていない。人の操作が要る確認をまとめる時に扱う（周期45）。
+- `XlWright`のモジュールの`Public`の手続き（`Result`・`BeginRun`・`EndRun`・`Answer`・`Message`・`Folder`など）と同じ名前の`Public`の手続きが、アプリのほかの標準モジュールにあると、修飾の無い呼出しが「名前があいまい」のコンパイルエラーになりうる。確かめていない。既存のブックから取り出したソースで起きうる。参照設定のライブラリの型（Scripting Runtimeの`Folder`、CDOの`Message`など）との衝突も確かめていない。衝突した時は、`XlWright.bas`を編集できないため、アプリの側の名前を変えることになる（周期45、独立レビューで追記）。
+- `XlWright.bas`の`AnsweredPath`は、`C:/out/x.csv`や`//server/share`のようにスラッシュで書いた絶対パスを相対パスとみなし、`ThisWorkbook.Path`の後ろへつなぐ。APIの「絶対パスはそのまま渡します」と食い違う。判定の前に`/`を`\`へ変えれば直る（周期45の独立レビュー、低）。
+- 実Excelの結合テストは、`Answer`に`True`を渡した時のエラー、UNCのパス、`abort`・`retry`・`ignore`と`yes no cancel`・`retry cancel`のボタンの組、文字列の`"cancel"`を通っていない。`XlWrightText`がASCIIだけであることを固定するテストも無い。`Message`に`False`を渡してボタンに`cancel`が無い時、エラーの説明は`the answer cancel ...`になる（周期45の独立レビュー、低）。
+- アプリのコードが1つの式で複数のダイアログの関数を呼ぶと、応答の使われる順が書いた順とずれうる（周期45の観察）。APIの「順に使います」に注意を書き足すか、開発版のスキルに書くかは、人の判断で決める。スキルには`XlWright.Message`などと`XlWright.Answer`の使い方もまだ無い（段階4の残りの4で扱う）（周期45の独立レビュー、低）。

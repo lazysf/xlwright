@@ -35,6 +35,7 @@ public sealed class ComExcelLauncher : IExcelLauncher
 internal sealed partial class ComExcel(dynamic app) : IExcel
 {
     private const int AutomationSecurityLow = 1; // msoAutomationSecurityLow
+    private const int AutomationSecurityForceDisable = 3; // msoAutomationSecurityForceDisable
     private const int CalculationDone = 0; // xlDone
     private const int StdModule = 1; // vbext_ct_StdModule
     private const int ClassModule = 2; // vbext_ct_ClassModule
@@ -44,6 +45,7 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
 
     private dynamic? _app = app;
     private dynamic? _main;
+    private dynamic? _extractCopy;
 
     private dynamic App => _app ?? throw new InvalidOperationException("The Excel references were released.");
 
@@ -393,6 +395,100 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
         }
     }
 
+    public void OpenExtractCopy(string path)
+    {
+        int security = (int)App.AutomationSecurity;
+        bool events = App.EnableEvents;
+        App.AutomationSecurity = AutomationSecurityForceDisable;
+        App.EnableEvents = false;
+        dynamic workbooks = App.Workbooks;
+        try
+        {
+            // UpdateLinks 0, ReadOnly, IgnoreReadOnlyRecommended, Notify false, AddToMru false.
+            _extractCopy = workbooks.Open(path, 0, true, Type.Missing, Type.Missing, Type.Missing, true, Type.Missing, Type.Missing, false, false, Type.Missing, false);
+        }
+        finally
+        {
+            Release(workbooks);
+
+            // The copy's macros stay disabled after this (docs/notes/vba-extract.md).
+            App.AutomationSecurity = security;
+            App.EnableEvents = events;
+        }
+    }
+
+    public IReadOnlyList<ExportedModule> ExportExtractCopy(string folder)
+    {
+        dynamic copy = _extractCopy ?? throw new InvalidOperationException("The copy for the extraction is not open.");
+        try
+        {
+            Directory.CreateDirectory(folder);
+            dynamic project = TrustedProjectOf(copy);
+            try
+            {
+                ThrowIfLocked(project);
+                var list = new List<ExportedModule>();
+                dynamic components = project.VBComponents;
+                try
+                {
+                    for (var i = 1; i <= (int)components.Count; i++)
+                    {
+                        dynamic component = components.Item(i);
+                        try
+                        {
+                            string name = component.Name;
+                            int type = component.Type;
+                            var (kind, extension) = type switch
+                            {
+                                StdModule => ("standard", ".bas"),
+                                ClassModule => ("class", ".cls"),
+                                DocumentModule => ("document", ".cls"),
+                                _ => ("form", null),
+                            };
+                            string? file = null;
+                            if (extension is not null)
+                            {
+                                file = Path.Combine(folder, name + extension);
+                                component.Export(file);
+                            }
+
+                            list.Add(new ExportedModule(name, kind, file));
+                        }
+                        finally
+                        {
+                            Release(component);
+                        }
+                    }
+                }
+                finally
+                {
+                    Release(components);
+                }
+
+                return list;
+            }
+            finally
+            {
+                Release(project);
+            }
+        }
+        finally
+        {
+            bool events = App.EnableEvents;
+            App.EnableEvents = false;
+            try
+            {
+                copy.Close(false);
+            }
+            finally
+            {
+                App.EnableEvents = events;
+                Release(copy);
+                _extractCopy = null;
+            }
+        }
+    }
+
     public IReadOnlyList<VbaReference> ListReferences()
     {
         dynamic project = TrustedProject();
@@ -718,11 +814,13 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
         }
     }
 
-    private dynamic TrustedProject()
+    private dynamic TrustedProject() => TrustedProjectOf(Main);
+
+    private static dynamic TrustedProjectOf(dynamic workbook)
     {
         try
         {
-            return Main.VBProject;
+            return workbook.VBProject;
         }
         catch (COMException)
         {
@@ -942,6 +1040,12 @@ internal sealed partial class ComExcel(dynamic app) : IExcel
         {
             Release(_main);
             _main = null;
+        }
+
+        if (_extractCopy is not null)
+        {
+            Release(_extractCopy);
+            _extractCopy = null;
         }
     }
 

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ModelContextProtocol.Client;
@@ -226,6 +227,53 @@ public sealed class SessionRealExcelTests : IAsyncLifetime
         Assert.Equal("ready", missing.GetProperty("session").GetProperty("state").GetString());
 
         Success(await Call("session_end", new() { ["save"] = false }));
+        AssertNothingLeft(pid);
+    }
+
+    // Needs AccessVBOM 1. The existing workbook is made with vba_sync, then src/ is removed, so its VBA is only in the
+    // workbook. Workbook_Open writes a marker into the app folder by full path, so the removed copy cannot hide it.
+    [Fact]
+    public async Task ExtractsAnExistingWorkbookWithoutRunningItsCode()
+    {
+        _repo.AddApp("apps/legacy");
+        var app = Path.Combine(_repo.Root, "apps", "legacy");
+        MinimalWorkbook.Write(Path.Combine(app, "Legacy.xlsm"));
+        var marker = Path.Combine(app, "opened.txt");
+        Source(app, "src/modules/Calc.bas", "Option Explicit\n' 日本語のコメント\nPublic Function Twice(ByVal x As Long) As Long\n    Twice = x * 2\nEnd Function\n");
+        Source(app, "src/classes/Counter.cls", "Option Explicit\n' 数える\nPublic Value As Long\n");
+        Source(app, "src/workbook/ThisWorkbook.cls",
+            $"Option Explicit\n\nPrivate Sub Workbook_Open()\n    Dim f As Integer\n    f = FreeFile\n    Open \"{marker}\" For Output As #f\n    Close #f\nEnd Sub\n");
+        Success(await Call("session_start", new() { ["app"] = "apps/legacy" }));
+        Success(await Call("vba_sync", new()));
+        Success(await Call("session_end", new() { ["save"] = true }));
+        Directory.Delete(Path.Combine(app, "src"), recursive: true);
+
+        var pid = Success(await Call("session_start", new() { ["app"] = "apps/legacy" }))
+            .GetProperty("excel").GetProperty("pid").GetInt32();
+        var extracted = Success(await Call("vba_extract", new()));
+
+        Assert.False(File.Exists(marker));
+        Assert.Equal("Legacy.xlsm", extracted.GetProperty("workbook").GetString());
+        var files = extracted.GetProperty("files").EnumerateArray().Select(f => f.GetProperty("file").GetString()).ToList();
+        Assert.Contains("src/modules/Calc.bas", files);
+        Assert.Contains("src/classes/Counter.cls", files);
+        Assert.Contains("src/workbook/ThisWorkbook.cls", files);
+        Assert.DoesNotContain("src/modules/XlWright.bas", files);
+        Assert.Contains("日本語のコメント", File.ReadAllText(Path.Combine(app, "src", "modules", "Calc.bas"), Encoding.UTF8));
+        Assert.Contains("Workbook_Open", File.ReadAllText(Path.Combine(app, "src", "workbook", "ThisWorkbook.cls"), Encoding.UTF8));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(Path.Combine(app, ".xlwright", "extract")));
+
+        // The extracted files sync back as they are.
+        var synced = Success(await Call("vba_sync", new())).GetProperty("modules").EnumerateArray().Select(m => m.GetProperty("name").GetString());
+        Assert.Contains("Calc", synced);
+        Assert.Contains("Counter", synced);
+        var twice = Success(await Call("macro_run", new() { ["macro"] = "Calc.Twice", ["args"] = new object[] { 21 } }));
+        Assert.Equal(42, twice.GetProperty("return").GetInt32());
+        var exists = Body(await Call("vba_extract", new()));
+        Assert.Equal("SOURCE_EXISTS", exists.GetProperty("error").GetProperty("detail").GetString());
+
+        Success(await Call("session_end", new() { ["save"] = false }));
+        Assert.False(File.Exists(marker));
         AssertNothingLeft(pid);
     }
 

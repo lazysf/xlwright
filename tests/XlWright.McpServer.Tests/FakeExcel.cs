@@ -185,6 +185,47 @@ internal sealed class FakeExcel : IExcel
         return Components;
     }
 
+    /// <summary>What the copy holds: each module's name, type, and the text that its export writes in CP932.</summary>
+    public List<(string Name, string Type, string Text)> CopyModules { get; set; } = [];
+
+    public Exception? ExtractOpenThrows { get; set; }
+
+    public Block ExtractOpenBlock { get; set; } = Block.None;
+
+    public Exception? ExportThrows { get; set; }
+
+    public bool ExtractCopyExisted { get; private set; }
+
+    public void OpenExtractCopy(string path)
+    {
+        Record("OpenExtractCopy " + path);
+        ExtractCopyExisted = File.Exists(path);
+        Process.WaitIf(ExtractOpenBlock);
+        if (ExtractOpenThrows is not null) throw ExtractOpenThrows;
+    }
+
+    public IReadOnlyList<ExportedModule> ExportExtractCopy(string folder)
+    {
+        Record("ExportExtractCopy " + folder);
+        if (ExportThrows is not null) throw ExportThrows;
+        Directory.CreateDirectory(folder);
+        var list = new List<ExportedModule>();
+        foreach (var (name, type, text) in CopyModules)
+        {
+            if (type == "form")
+            {
+                list.Add(new ExportedModule(name, type, null));
+                continue;
+            }
+
+            var path = Path.Combine(folder, name + (type == "standard" ? ".bas" : ".cls"));
+            File.WriteAllBytes(path, VbaSources.AnsiEncoding(932).GetBytes(text));
+            list.Add(new ExportedModule(name, type, path));
+        }
+
+        return list;
+    }
+
     public List<VbaReference> References { get; set; } = [];
 
     public Exception? ReferenceThrows { get; set; }

@@ -122,6 +122,19 @@ public interface IExcel
     IReadOnlyList<VbaComponent> ListVba();
 
     /// <summary>
+    /// Opens the copy for vba_extract with AutomationSecurity=ForceDisable and events off, then sets both back. The copy's
+    /// macros stay disabled after that (docs/notes/vba-extract.md). The main workbook is not touched.
+    /// </summary>
+    void OpenExtractCopy(string path);
+
+    /// <summary>
+    /// Exports the standard, class, and document modules of the copy into <paramref name="folder"/>, lists the forms
+    /// without exporting them, and closes the copy without saving, also when it fails. Throws
+    /// <see cref="VbaSyncException"/> with VBA_ACCESS_NOT_TRUSTED or VBA_PROJECT_LOCKED.
+    /// </summary>
+    IReadOnlyList<ExportedModule> ExportExtractCopy(string folder);
+
+    /// <summary>
     /// Lists the references of the main workbook's VBA project in References order (docs/api.md "vba_getの参照設定").
     /// Throws <see cref="VbaSyncException"/> with VBA_ACCESS_NOT_TRUSTED or VBA_PROJECT_LOCKED, as vba_sync does.
     /// </summary>

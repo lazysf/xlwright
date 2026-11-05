@@ -5,7 +5,7 @@ using XlWright.Core;
 
 namespace XlWright.McpServer;
 
-/// <summary>vba_sync and macro_run (docs/api.md, stage 1), vba_get, vba_check, and test_run (stage 3), and vba_edit (stage 4).</summary>
+/// <summary>vba_sync and macro_run (docs/api.md, stage 1), vba_get, vba_check, and test_run (stage 3), and vba_edit and vba_extract (stage 4).</summary>
 internal sealed class VbaTools(ExcelSession? session)
 {
     private const int DefaultTimeoutSeconds = 300;
@@ -40,6 +40,17 @@ internal sealed class VbaTools(ExcelSession? session)
                 "(changed is false). The built-in references (VBA, Excel) cannot be removed. It does not save.",
             ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false,
         }, EditInput, EditOutput),
+        ToolDefinition.Create(Extract, new()
+        {
+            Name = "vba_extract",
+            Description = "Extracts the VBA source of an existing workbook into src/: standard modules to src/modules/*.bas, class " +
+                "modules to src/classes/*.cls, and sheet and workbook modules to src/workbook/<CodeName>.cls, in UTF-8. Call it " +
+                "before vba_sync on an existing workbook, because vba_sync removes the modules that are not in src/. workbook is a " +
+                "path inside the app folder; leave it out for the main workbook. It reads the saved file, through a copy opened " +
+                "with macros disabled, so no workbook code runs and unsaved changes are not extracted. UserForms are not " +
+                "extracted (skipped). It stops if src/ already has source files, and never overwrites them.",
+            ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false,
+        }, ExtractInput, ExtractOutput),
         ToolDefinition.Create(Check, new()
         {
             Name = "vba_check",
@@ -125,6 +136,27 @@ internal sealed class VbaTools(ExcelSession? session)
         return session is null
             ? NoSession()
             : ToolResults.From(await session.EditReferenceAsync(new ReferenceEdit(action == "add_reference", guid, major, minor)));
+    }
+
+    private async Task<CallToolResult> Extract(RequestContext<CallToolRequestParams> context)
+    {
+        var arguments = ToolArguments.From("vba_extract", context);
+        var values = context.Params!.Arguments ?? new Dictionary<string, JsonElement>();
+        string? workbook = null;
+        var invalid = arguments.RejectUnknown("workbook");
+        if (invalid is null && values.ContainsKey("workbook"))
+        {
+            invalid = arguments.RequireString("workbook", out var text)
+                ?? (text.Length == 0 ? "vba_extract: workbook must not be empty; leave it out for the main workbook." : null);
+            workbook = text;
+        }
+
+        if (invalid is not null)
+        {
+            return ToolResults.InvalidRequest(invalid, Current());
+        }
+
+        return session is null ? NoSession() : ToolResults.From(await session.ExtractAsync(workbook));
     }
 
     private static string? Version(IDictionary<string, JsonElement> arguments, string name, out int value)
@@ -294,6 +326,19 @@ internal sealed class VbaTools(ExcelSession? session)
          "major":{"type":"integer","minimum":0,"description":"The major version, for add_reference only."},
          "minor":{"type":"integer","minimum":0,"description":"The minor version, for add_reference only."}},
          "required":["action","guid"],"additionalProperties":false}
+        """;
+
+    private const string ExtractInput = """
+        {"type":"object","properties":{
+         "workbook":{"type":"string","minLength":1,"description":"The workbook to extract from, as a path inside the app folder, such as data/Legacy.xlsm. Leave it out for the main workbook."}},
+         "additionalProperties":false}
+        """;
+
+    private static readonly string ExtractOutput = $$$"""
+        {"type":"object","properties":{"session":{{{ToolDefinition.Session}}},"workbook":{"type":"string"},
+         "files":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"type":{"enum":["standard","class","document"]}},"required":["file","type"]}},
+         "skipped":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"type":{"type":"string"}},"required":["name","type"]}} },
+         "required":["session","workbook","files","skipped"]}
         """;
 
     private static readonly string EditOutput = $$$"""

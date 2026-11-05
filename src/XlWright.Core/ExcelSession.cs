@@ -316,6 +316,86 @@ public sealed partial class ExcelSession(IExcelLauncher launcher, IProcessQuery 
         return (new JsonObject { ["changed"] = changed, ["references"] = ReferencesJson(listing.Result) }, null);
     });
 
+    /// <summary>
+    /// Extracts the VBA source of a workbook in the app folder into src/ through a renamed copy opened with
+    /// ForceDisable (docs/api.md "vba_extract"). The main workbook is not touched.
+    /// </summary>
+    public Task<SessionOutcome> ExtractAsync(string? workbook) => Run("vba_extract", NoSession, async () =>
+    {
+        var active = _active!;
+        var (source, invalid) = VbaExtraction.Check(active.App, workbook);
+        if (invalid is not null)
+        {
+            return (null, invalid);
+        }
+
+        // The copy has its own name: Excel cannot open two workbooks with the same name (docs/notes/test-copy.md).
+        var id = Guid.NewGuid().ToString("N")[..8];
+        var folder = Path.Combine(active.App.FullPath, ".xlwright", "extract", id);
+        var copy = Path.Combine(folder, id + ".xlsm");
+        try
+        {
+            Directory.CreateDirectory(folder);
+            VbaExtraction.CopyShared(source!, copy);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            RemoveFolder(folder);
+            return Fail(ToolFailure.InternalError, null, $"xlwright could not copy the workbook for the extraction: {e.Message}");
+        }
+
+        var opening = active.Worker.Run(() => active.Excel.OpenExtractCopy(copy));
+        if (!await Completes(opening, timeouts.Save))
+        {
+            return await AfterTimeout(active, opening, "Opening the copy for the extraction did not finish within the time limit.");
+        }
+
+        if (opening.IsFaulted)
+        {
+            RemoveFolder(folder);
+            return Fail(ToolFailure.ExcelError, "OPEN_FAILED", $"Excel could not open the copy of the workbook: {opening.Exception!.InnerException!.Message}");
+        }
+
+        var exporting = active.Worker.Run(() => active.Excel.ExportExtractCopy(Path.Combine(folder, "export")));
+        if (!await Completes(exporting, timeouts.Sync))
+        {
+            return await AfterTimeout(active, exporting, "Exporting the modules did not finish within the time limit.");
+        }
+
+        if (exporting.IsFaulted)
+        {
+            RemoveFolder(folder);
+            return exporting.Exception!.InnerException switch
+            {
+                VbaSyncException e => Fail(ToolFailure.Conflict, e.Detail, e.Message),
+                var e => Fail(ToolFailure.ExcelError, "EXTRACT_FAILED", $"Excel could not export the modules: {e!.Message} Nothing was written.",
+                    new JsonObject { ["done"] = new JsonArray() }),
+            };
+        }
+
+        var (files, skipped, failure) = VbaExtraction.Write(active.App, exporting.Result, VbaSources.SystemAnsiEncoding());
+        RemoveFolder(folder);
+        if (failure is not null)
+        {
+            return (null, failure);
+        }
+
+        var name = Path.GetRelativePath(active.App.FullPath, source!).Replace(Path.DirectorySeparatorChar, '/');
+        return (new JsonObject { ["workbook"] = name, ["files"] = files, ["skipped"] = skipped }, null);
+    });
+
+    // The copy is only for the extraction; a folder Excel still holds is left, as .xlwright/sync/ is.
+    private static void RemoveFolder(string folder)
+    {
+        try
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
     private static JsonArray ReferencesJson(IReadOnlyList<VbaReference> references)
     {
         var list = new JsonArray();

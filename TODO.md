@@ -653,8 +653,8 @@
 
 作業:
 
-- [ ] 新しいセッションで1〜6を通す。
-- [ ] 記録し、ROADMAPを直す。
+- [x] 新しいセッションで1〜6を通す。6つとも支持。前後の`EXCEL.EXE`は0。1の`Workbook_Open`が動かないことは、開始で開く時にもイベントを止めるため、取り出しと切り分けていない。`ForceDisable`だけで動かないことは周期38の実験が確かめている。
+- [x] 記録し、ROADMAPを直す（[記録](docs/notes/stage4-scenarios.md)）。
 
 ## 書き留めたこと
 
@@ -716,3 +716,4 @@
 - パスがアプリのフォルダの中かの判定が、`DialogAnswer.Resolve`・`AppFolder.IsSameOrInside`・`VbaExtraction.Check`・`ExcelSession`の4か所にある。`dialogs`の`path`は、中を指す絶対パスも受け付ける（APIは相対パスと書く）。`path`にNUL文字があると、`Path.GetFullPath`の例外で`INVALID_REQUEST`でない失敗になりうる（`session_start`と`vba_extract`にも以前からある）（周期46の独立レビュー、低）。
 - テストに、同じ接頭辞の隣のフォルダ（`../sales2/x`）を拒否する場合、実Excelで`folder`の応答を使う経路と`kind`が合わない`MACRO_ERROR`が無い。偽物は`Dialogs`を設定した値で返すだけで、数え方は実Excelのテストだけが確かめる。`NextAnswer`は、`kind`の照合で失敗する前に使った数を増やす（失敗の結果に`dialogs`が無いため、今は外から見えない）（周期46の独立レビュー、低）。
 - 利用する版の配り方は保留した（人、2026-11-05）。バイナリをプラグインに同梱せず、.NET 10 SDKを利用者がそれぞれ入れることは決めた。サーバーの取得元は未定で、第1候補はnuget.orgと`dnx`（[記録](docs/notes/distribution.md)）。決めるまで、段階4の残りの5（利用する版の発行）と6（会社のPCでの確認）、要件と設計の書き直し、TFMの`net10.0`への変更は行わない。GitHubの`lazysf/xlwright`は公開の設定で空のため、最初のpushの前に公開のままにするかを決める。
+- `vba_extract`の後に`.xlwright/extract/`が、`test_run`の後に`.xlwright/test/`が、空のフォルダとして残る（周期48）。`.xlwright/sync/`の残りと合わせて扱いを決める。

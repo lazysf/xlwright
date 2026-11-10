@@ -65,3 +65,15 @@ CLAUDE_CODE_PLUGIN_DIRS=~/<リポジトリまでのパス>/plugins/xlwright-dev
 アプリを再起動してから、新しく始めた会話に`mcp__plugin_xlwright-dev_xlwright__server_info`が現れます。開いたままの会話は、始めた時のビルドを使い続けます（[記録](notes/dev-plugin-loading.md)）。
 開発版のサーバーは、このリポジトリの会話でだけ起動します。
 戻すには、`.env`の行を消します。
+
+## 環境で分かっていること
+
+開発の中で分かった、この環境での注意です（段階4の周期42までに確かめた）。
+
+- commitのhookは、未stageの変更を退避しますが、追跡していないファイルは退避しません。hookの中で確認の入口が走るため、まだcommitしない新しいファイルがあると、ビルドやMarkdownのチェックが落ちます。その間だけ、新しいファイルをセッションの一時ディレクトリへ移し、commitの後に戻します。
+- 1つのファイルに別の変更が混ざる時は、`git diff`から選んだhunkのpatchを`git apply --cached`でstageします。
+- サーバーのプロセスを起動するツールのテストのクラスには、`[Collection(ServerProcess.Collection)]`を付けます。並列に走ると、期限が数百ミリ秒の偽物のテストが落ちます（周期42）。
+- Pythonはありません。perlの置換に日本語の文書を含めると、一致しないか文字が壊れます。文書はエディターで直し、書いた後に制御文字を`grep -caP '[\x00-\x08\x0B\x0C\x0E-\x1F]'`で確かめます。
+- commitは1PasswordでSSH署名されます。失敗した時は、人に1Passwordを開いてもらってから1回だけ再試行します。
+- 実行ポリシーは、CurrentUserが`RemoteSigned`です。`-ExecutionPolicy Bypass`は使いません。確認の入口と入口の`.ps1`は、ASCIIだけで書きます。
+- `gh`はログインしていません。ExcelMcpのソースは、`api.github.com`と`raw.githubusercontent.com`から`curl`で読めます。

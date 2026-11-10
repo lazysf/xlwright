@@ -54,4 +54,4 @@
 ## 後始末とGit差分
 
 - `EXCEL.EXE`は、始める前も終えた後も0。各シナリオの後に`session_end`で終え、所有を確かめられないExcelには触れていない。`STATE_UNKNOWN`は出なかった。
-- 会話は、`.xlwright/scratch/stage4/`の外を変えていない（`git status`に変更なし）。材料は`.xlwright/scratch/stage4/`に残してある。
+- 会話は、`.xlwright/scratch/stage4/`の外を変えていない（`git status`に変更なし）。材料は`.xlwright/scratch/stage4/`に残してあった（2026-11-10に消した。作り直しは再現の手順のとおり）。

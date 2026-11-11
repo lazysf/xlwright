@@ -25,6 +25,10 @@ $strictUtf8 = New-Object System.Text.UTF8Encoding($false, $true)
 # git writes paths as UTF-8; the console default (CP932) would garble non-ASCII paths.
 $savedEncoding = [Console]::OutputEncoding
 [Console]::OutputEncoding = $strictUtf8
+# Windows PowerShell pipes text to git in $OutputEncoding, which is ASCII by default and turns
+# non-ASCII paths into '?'.
+$savedPipeEncoding = $OutputEncoding
+$OutputEncoding = $strictUtf8
 try {
     Push-Location -LiteralPath $root
     try {
@@ -32,7 +36,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "git ls-files failed (exit $LASTEXITCODE)" }
         $paths = @(($listed -join '') -split "`0" | Where-Object { $_ } | Sort-Object -Unique)
 
-        $attrs = $paths -join "`0" | git check-attr -z --stdin binary
+        # The pipe appends a newline; ending every path with NUL keeps it out of the last path.
+        $attrs = ($paths | ForEach-Object { "$_`0" }) -join '' | git check-attr -z --stdin binary
         if ($LASTEXITCODE -ne 0) { throw "git check-attr failed (exit $LASTEXITCODE)" }
         # -z output is path, attribute, value repeated, each ending with NUL.
         $fields = ($attrs -join '') -split "`0"
@@ -43,7 +48,10 @@ try {
     }
     finally { Pop-Location }
 }
-finally { [Console]::OutputEncoding = $savedEncoding }
+finally {
+    [Console]::OutputEncoding = $savedEncoding
+    $OutputEncoding = $savedPipeEncoding
+}
 
 function Get-LineNumber([string]$Text, [int]$Index) {
     return ($Text.Substring(0, $Index).Split("`n").Count)

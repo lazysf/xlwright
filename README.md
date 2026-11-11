@@ -10,7 +10,7 @@ Windows 版 Excel を PowerShell の COM で操作して、Excel のブックと
 - カスタムリボンの埋め込みと、ボタンを押して動作を確かめること
 - VBA プロジェクトをロックした配布用のブックの出力
 
-使い方の正本は [skills/xlwright/SKILL.md](skills/xlwright/SKILL.md) です。
+使い方の正本は [plugins/xlwright/skills/xlwright/SKILL.md](plugins/xlwright/skills/xlwright/SKILL.md) です。
 
 ## 前提
 
@@ -22,33 +22,36 @@ Windows 版 Excel を PowerShell の COM で操作して、Excel のブックと
 
 ## 入れ方
 
-`skills/xlwright/` を、Claude Code の個人スキルの場所 `~/.claude/skills/xlwright/` にコピーします。
+Claude Code のプラグインとして入れます。この repo を marketplace として足してから、プラグインを入れます。
 
-```powershell
-Copy-Item -Recurse skills\xlwright $HOME\.claude\skills\xlwright
+```text
+/plugin marketplace add <repo>
+/plugin install xlwright@xlwright
 ```
 
-更新する時は、古いフォルダを消してからコピーし直します。
+`<repo>` には、GitHub の `owner/repo` か、手元に clone したフォルダのパスを渡します。入れたスキルは `/xlwright:xlwright` という名前になり、依頼の内容から自動で選ばれます。配布されるのは `plugins/xlwright/` の中だけです。
+
+GitHub から入れた場合、自動更新は既定で無効です。更新する時は、`claude plugin marketplace update xlwright` の後に `claude plugin update xlwright@xlwright` を流します。
 
 ## 動作確認
 
 手元の Excel で動くかを確かめます。一時フォルダに新しいブックを作って試し、ほかのファイルは変えません。Excel が動いている時は、何もせずに止まります。
 
 ```powershell
-powershell.exe -NoProfile -File skills\xlwright\tests\Test-XlWright.ps1
+powershell.exe -NoProfile -File plugins\xlwright\skills\xlwright\tests\Test-XlWright.ps1
 ```
 
 `-Full` を付けると、Excel と VBE を画面に出す試験（リボンの押下、配布ブックの出力）も行います。
 
 ## 開発
 
-`.claude/skills/xlwright` は、`skills/xlwright` を指す相対パスのシンボリックリンクです。この repo を Claude Code で開くと、`skills/xlwright` がプロジェクトのスキルとして読み込まれ、コピーせずに手直しを試せます。
-同じ名前のスキルが `~/.claude/skills/xlwright/` にもあると、個人のスキルが優先され、repo の手直しは使われません。開発中は、個人の場所に入れたコピーを外します。
+`.claude/skills/xlwright` は、`plugins/xlwright/skills/xlwright` を指す相対パスのシンボリックリンクです。この repo を Claude Code で開くと、スキルが `/xlwright` としてプロジェクトから読み込まれ、入れ直さずに手直しを試せます。
+プラグイン版も入れている端末では、`/xlwright`（手直し中）と `/xlwright:xlwright`（入れた版）の両方が読み込まれます。開発する端末では、プラグイン版を無効にしておきます。同じ名前のスキルが `~/.claude/skills/xlwright/` にあると、そちらが `/xlwright` として優先されるので、外しておきます。
 
 リンクとして取り出すには、Git の `core.symlinks=true` と、シンボリックリンクを作れる権限（Windows の開発者モードか管理者）が要ります。リンクにならずにテキストファイルとして取り出された時は、それを消して作り直します。
 
 ```powershell
-cmd /c mklink /D .claude\skills\xlwright ..\..\skills\xlwright
+cmd /c mklink /D .claude\skills\xlwright ..\..\plugins\xlwright\skills\xlwright
 ```
 
 開発者モードが有効なら、管理者でなくても `mklink` で作れます。`New-Item -ItemType SymbolicLink` は、開発者モードでも管理者特権を求めて失敗しました（Windows PowerShell 5.1）。
@@ -62,7 +65,7 @@ npm ci
 npm run lint
 ```
 
-`npm run lint` は、`lint:md`（rumdl）と `lint:text`（`tools/Test-TextFile.ps1`）を続けて流します。`lint:text` は、Git に入るテキストファイルが BOM なしの UTF-8 で LF だけを使い、制御文字を含まないことと、`.ps1` と `.psm1` が ASCII だけであることを確かめます。`skills/xlwright/tests/data/` の試験データは UTF-8 で読まれるので、ASCII の決まりから外しています。
+`npm run lint` は、`lint:md`（rumdl）と `lint:text`（`tools/Test-TextFile.ps1`）を続けて流します。`lint:text` は、Git に入るテキストファイルが BOM なしの UTF-8 で LF だけを使い、制御文字を含まないことと、`.ps1` と `.psm1` が ASCII だけであることを確かめます。`plugins/xlwright/skills/xlwright/tests/data/` の試験データは UTF-8 で読まれるので、ASCII の決まりから外しています。
 
 commit の時に同じ検査を流すには、[prek](https://prek.j178.dev) で Git の hook を入れます。hook の設定は `prek.toml` にあります。
 
@@ -83,14 +86,20 @@ git worktree add ..\xlwright-mcp mcp
 ## 構成
 
 ```text
-skills/xlwright/
-├── SKILL.md       毎回読む規則と手順
-├── references/    作業ごとの詳しい手順（VBA、UserForm、リボン、配布など）
-├── scripts/       PowerShell のスクリプト
-└── tests/         実際の Excel で確かめる試験と、そのデータ
+.claude-plugin/marketplace.json   この repo を marketplace にする定義
+plugins/xlwright/                 配布するプラグイン（この中だけが利用者に写る）
+├── .claude-plugin/plugin.json
+└── skills/xlwright/
+    ├── SKILL.md                  毎回読む規則と手順
+    ├── references/               作業ごとの詳しい手順（VBA、UserForm、リボン、配布など）
+    ├── scripts/                  PowerShell のスクリプト
+    └── tests/                    実際の Excel で確かめる試験と、そのデータ
+tools/                            開発用の検査（配布しない）
 ```
 
-`references/excel-com-rebuild.md` は、別の端末で作った前身のスキル `excel-com` を復元するためのバンドルです。今のスキルは、これを元に作り直しました。中身は今のスキルと一致しないので、使い方は `skills/xlwright/` に従います。
+`plugin.json` には `version` を書かず、利用者は commit を追います。
+
+`references/excel-com-rebuild.md` は、別の端末で作った前身のスキル `excel-com` を復元するためのバンドルです。今のスキルは、これを元に作り直しました。中身は今のスキルと一致しないので、使い方は `plugins/xlwright/skills/xlwright/` に従います。
 
 ## MCP サーバーについて
 

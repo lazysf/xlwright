@@ -1,0 +1,14 @@
+{
+  "name": "xlwright",
+  "description": "xlwright プラグインを配布する marketplace。",
+  "owner": {
+    "name": "lazysf"
+  },
+  "plugins": [
+    {
+      "name": "xlwright",
+      "source": "./plugins/xlwright",
+      "description": "Windows 版 Excel を PowerShell COM で操作し、ブックの値・数式・書式、VBA と UserForm、カスタムリボン、VBA をロックした配布ブックを作って確かめるスキル。"
+    }
+  ]
+}

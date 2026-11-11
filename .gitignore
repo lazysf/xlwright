@@ -1,9 +1,45 @@
+# General patterns first. Add patterns specific to this repository at the end.
+
 # OS-generated files
 .DS_Store
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
 Desktop.ini
+$RECYCLE.BIN/
 
 # Editor temporary files
 *.swp
 *.swo
 *~
+*.bak
+*.tmp
+
+# Editor and IDE local state
+.vscode/
+.idea/
+.vs/
+*.code-workspace
+
+# Office lock files (created while a workbook is open)
+~$*
+
+# Node.js dependencies and logs
+node_modules/
+npm-debug.log*
+.npm/
+
+# Logs and local environment
+*.log
+.env
+.env.*
+
+# ---- Specific to this repository ----
+
+# rumdl cache
+.rumdl_cache/
+
+# Claude Code local settings (per machine)
+.claude/settings.local.json

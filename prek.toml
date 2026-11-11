@@ -1,0 +1,20 @@
+# Configuration file for `prek`, a git hook framework written in Rust.
+# See https://prek.j178.dev for more information.
+#:schema https://www.schemastore.org/prek.json
+
+[[repos]]
+repo = "builtin"
+hooks = [
+    { id = "trailing-whitespace" },
+    { id = "end-of-file-fixer" },
+    { id = "check-added-large-files" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+    # Uses the rumdl installed by `npm ci` with the Node.js version in .nvmrc.
+    { id = "rumdl", name = "rumdl", entry = "npx --no-install rumdl check", language = "system", types = ["markdown"] },
+    # Encoding, line endings, and ASCII-only scripts (README.md).
+    { id = "text-files", name = "text files", entry = "powershell -NoProfile -File tools/Test-TextFile.ps1", language = "system", pass_filenames = false, always_run = true },
+]

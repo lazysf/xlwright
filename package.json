@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "lint": "npm run lint:md && npm run lint:text",
+    "lint:md": "rumdl check .",
+    "lint:text": "powershell.exe -NoProfile -File tools/Test-TextFile.ps1"
+  },
+  "devDependencies": {
+    "rumdl": "0.3.2"
+  }
+}

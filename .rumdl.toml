@@ -1,0 +1,3 @@
+[global]
+# Japanese prose is written one sentence per line, so line length is not meaningful.
+disable = ["MD013"]

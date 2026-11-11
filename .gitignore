@@ -25,6 +25,9 @@ dist/
 # Node.js development tools
 node_modules/
 
+# rumdl cache
+.rumdl_cache/
+
 # Development plugin MCP config, written by scripts/check.ps1
 plugins/xlwright-dev/.mcp.json
 

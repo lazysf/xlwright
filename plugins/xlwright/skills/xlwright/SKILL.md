@@ -19,7 +19,7 @@ PowerShell から `Excel.Application` を COM で操作してブックを編集�
 ## 作業前の確認
 
 1. **Excel のプロセス**: `Get-Process EXCEL`。動いているなら、ユーザーが開いているブックがある可能性がある。勝手に終了させず、閉じてよいか聞く。
-2. **VBA を触るなら `AccessVBOM`**: `HKCU:\Software\Microsoft\Office\16.0\Excel\Security` の `AccessVBOM` が `1` でないと、`VBProject` へのアクセスが失敗する。これはセキュリティ設定なので、自分で変更せず、ユーザーに有効化を頼む。
+2. **VBA を触るなら `AccessVBOM`**: `HKCU:\Software\Microsoft\Office\16.0\Excel\Security` の `AccessVBOM` が `1` でないと、`VBProject` へのアクセスが失敗する。これはセキュリティ設定なので、自分で変更せず、ユーザーに有効化を頼む。ユーザーに頼まれた時も、確認を取った後も、エージェントは AccessVBOM などのトラストセンターの設定を変えない。手順を渡して、ユーザーに変えてもらう。
 3. **バックアップ**: 編集前のブックを scratchpad などの一時領域へコピーする。段階ごと（COM 編集後、customUI 埋め込み前など）にも取ると、どこで壊れたか切り分けられる。
 4. **Git 管理**: ブックが Git で追跡されているか、未 commit の変更があるかを確かめる。未 commit の編集や追跡されないブックは、Git では戻せないのでバックアップから戻す。
 

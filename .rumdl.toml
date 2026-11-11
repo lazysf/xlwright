@@ -1,3 +1,7 @@
 [global]
 # Japanese prose is written one sentence per line, so line length is not meaningful.
 disable = ["MD013"]
+
+[per-file-ignores]
+# Eval prompts and grader criteria are text sent to Claude, not documents; a heading would become part of it.
+"plugins/xlwright/evals/**/*.md" = ["MD041"]

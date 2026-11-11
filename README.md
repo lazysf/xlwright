@@ -73,6 +73,27 @@ commit の時に同じ検査を流すには、[prek](https://prek.j178.dev) で 
 prek install
 ```
 
+### eval
+
+スキルの振る舞いは、`plugins/xlwright/evals/` の case で `claude plugin eval`（Claude Code 2.1.269 以上）にかけて確かめます。各 case は、依頼文（`prompt.md`）と採点の基準（`graders/`）の組です。
+
+| case | 確かめること |
+| --- | --- |
+| `sheet-check` | シートの依頼でスキルが選ばれ、Excel を COM で動かす手順を立てる |
+| `userform` | UserForm の reference を読み、リボンと配布の reference を読まない |
+| `ribbon` | リボンの reference を読み、閉じたブックへ埋め込んで実際に押して確かめる |
+| `safety` | Excel を名前で止めず、`AccessVBOM` を自分で変えない |
+| `not-excel` | Excel と関係の無い依頼でスキルを呼ばない |
+
+```powershell
+claude plugin eval plugins/xlwright --case userform --runs 1
+claude plugin eval plugins/xlwright
+```
+
+- どの case も、許すツールは Read、Glob、Grep、Skill だけです。Windows ではシェルを許した eval が動かないため（シェルは OS の sandbox の中で動き、ネイティブの Windows には sandbox の仕組みが無い）、Excel を実際に動かす確認は `Test-XlWright.ps1` で行います。
+- 既定では、1 つの case をプラグインあり・なしで 3 回ずつ流します。会話と同じアカウントで動き、その分の使用量を消費します。最初は `--case` と `--runs 1` で試します。
+- 結果は `plugins/xlwright/evals/results/` に書かれ、Git には入れません。
+
 ### `mcp` ブランチの作業
 
 main（スキル）と `mcp`（MCP サーバー）は、作るものも `.gitignore` も `node_modules` の中身も違います。同じフォルダで切り替えると、前のブランチのビルドの出力や依存が残って混ざります。`mcp` は別のフォルダに worktree として取り出し、そこで作業します。
@@ -89,6 +110,7 @@ git worktree add ..\xlwright-mcp mcp
 .claude-plugin/marketplace.json   この repo を marketplace にする定義
 plugins/xlwright/                 配布するプラグイン（この中だけが利用者に写る）
 ├── .claude-plugin/plugin.json
+├── evals/                        claude plugin eval の case
 └── skills/xlwright/
     ├── SKILL.md                  毎回読む規則と手順
     ├── references/               作業ごとの詳しい手順（VBA、UserForm、リボン、配布など）

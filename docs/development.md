@@ -51,7 +51,7 @@ commitのhookと同じチェックを、全件に対して行う:
 prek run --all-files
 ```
 
-hookの設定は [prek.toml](../prek.toml)、Markdownのルールは [.markdownlint-cli2.jsonc](../.markdownlint-cli2.jsonc) にあります。
+hookの設定は [prek.toml](../prek.toml)、Markdownのルールは [.rumdl.toml](../.rumdl.toml) にあります（[rumdl](https://rumdl.dev)）。
 
 ## 開発版のプラグイン
 

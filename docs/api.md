@@ -49,7 +49,6 @@
 
 - 「セッション」の列は、既定の扱いです。[終了](architecture.md#終了)と[テスト](architecture.md#テスト)の手順で止まった時は、ほかのコードでも`closed`になります。失敗の本文の`session`が、実際の状態を示します。
 - AIエージェントは、`STATE_UNKNOWN`で`excel_ended`と`restartable`がともに真の時だけ、開始し直します。それ以外の時は、`message`の手順に従います。
-
 - 結果不明の扱いは[設計](architecture.md#状態と結果不明)のとおりです。xlwright自身の失敗で専用のExcelの状態が分からなくなった時は、`INTERNAL_ERROR`ではなく`STATE_UNKNOWN`を返します。
 - 応答の本文は20,000文字までです。本文と結果のファイルは、ASCII以外の文字をescapeせずに書きます。日本語の1文字は1文字に数えます。
 - 読むツールは、超える時に切り詰めずに`INVALID_REQUEST`で拒否し、範囲の絞り方を`message`に書きます。何も変えていないため、絞って呼び直せます。

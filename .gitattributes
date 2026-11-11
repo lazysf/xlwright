@@ -1,0 +1,10 @@
+# Keep LF in the working tree on every machine. Import-Vba.ps1 rejects source files with CR.
+* text=auto eol=lf
+
+# UserForm binaries and Excel workbooks
+*.frx binary
+*.xls binary
+*.xlsx binary
+*.xlsm binary
+*.xlsb binary
+*.xlam binary

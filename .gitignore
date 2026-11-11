@@ -41,5 +41,8 @@ npm-debug.log*
 # rumdl cache
 .rumdl_cache/
 
+# Results written by claude plugin eval
+plugins/xlwright/evals/results/
+
 # Claude Code local settings (per machine)
 .claude/settings.local.json

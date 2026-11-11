@@ -4,7 +4,8 @@ xlwright の開発ルール
 
 ## 対象
 
-- このリポジトリは、Claude Code のスキル xlwright（`skills/xlwright/`）を開発する。使い方と構成は [README.md](README.md) にある。
+- このリポジトリは、Claude Code のスキル xlwright（`plugins/xlwright/skills/xlwright/`）を開発し、プラグインとして配布する。使い方と構成は [README.md](README.md) にある。
+- 利用者に写るのは `plugins/xlwright/` の中だけ。開発用のファイルはその外に置く。
 - MCP サーバーの開発は中断し、`mcp` ブランチに残してある。`mcp` ブランチの規則は、そのブランチの `AGENTS.md` に従う。
 
 ## スキルの書き方
@@ -24,7 +25,7 @@ xlwright の開発ルール
 
 ## 試験
 
-- スクリプトや手順を変えたら、`skills/xlwright/tests/Test-XlWright.ps1` を流す。リボンや配布の出力に関わる変更では `-Full` も流す。`-Full` は画面に Excel を出すので、先に人へ伝える。
+- スクリプトや手順を変えたら、`plugins/xlwright/skills/xlwright/tests/Test-XlWright.ps1` を流す。リボンや配布の出力に関わる変更では `-Full` も流す。`-Full` は画面に Excel を出すので、先に人へ伝える。
 - 新しい振る舞いを加えたら、試験に項目を足す。項目が壊れたものを見つけられるかは、写しのスクリプトをわざと壊して落ちることで確かめる。
 - 試験と実験は、一時フォルダの新しいブックか写しで行う。Git で管理するファイルや人のブックを直接変えない。
 - Excel が動いている時は、試験を始めずに人へ確かめる。

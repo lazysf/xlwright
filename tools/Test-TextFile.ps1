@@ -11,7 +11,7 @@ characters other than tab and LF. Import-Vba.ps1 rejects BOM and CR, and stray c
 are hard to see in review.
 
 .ps1 and .psm1 files must be ASCII only, because Windows PowerShell 5.1 reads a script without BOM
-in the ANSI code page. Test data under skills/xlwright/tests/data/ is read as UTF-8 by
+in the ANSI code page. Test data under plugins/xlwright/skills/xlwright/tests/data/ is read as UTF-8 by
 Invoke-ExcelScript.ps1, so it is exempt from the ASCII rule.
 
 Exit code 0 when every file passes, 1 when a problem is found.
@@ -19,7 +19,7 @@ Exit code 0 when every file passes, 1 when a problem is found.
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$asciiExempt = 'skills/xlwright/tests/data/'
+$asciiExempt = 'plugins/xlwright/skills/xlwright/tests/data/'
 $strictUtf8 = New-Object System.Text.UTF8Encoding($false, $true)
 
 # git writes paths as UTF-8; the console default (CP932) would garble non-ASCII paths.

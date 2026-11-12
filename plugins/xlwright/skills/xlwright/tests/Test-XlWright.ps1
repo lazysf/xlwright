@@ -15,7 +15,7 @@ After each case no Excel process may remain. If one does, the run stops without 
 
 The result is written as UTF-8 JSON to -OutFile and summarized on the console.
 Exit code: 0 all passed, 1 a check failed, 2 preconditions not met or the run was stopped.
-The temporary folder is removed when everything passed, unless -KeepTemp is given.
+The temporary folder is removed at the end, whether the cases passed or not, unless -KeepTemp is given.
 #>
 param(
     [switch]$Full,
@@ -478,10 +478,13 @@ $summary = [ordered]@{
     TempDir = $temp; Cases = $results.ToArray()
 }
 if ($OutFile) { [IO.File]::WriteAllText($OutFile, ([pscustomobject]$summary | ConvertTo-Json -Depth 8), $utf8) }
-if ($summary.Ok -and -not $KeepTemp) {
+# The failed checks and their details are in the output and -OutFile; the workbooks are kept only on request.
+if ($KeepTemp) { Write-Output ('Temporary files kept: ' + $temp) }
+else {
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $temp) { Write-Output ('Could not remove the temporary files (in use?): ' + $temp) }
+    elseif (-not $summary.Ok) { Write-Output 'Temporary files removed. Run again with -KeepTemp to inspect them.' }
 }
-else { Write-Output ('Temporary files kept: ' + $temp) }
 Write-Output ('{0} of {1} cases passed{2}' -f ($results.Count - $failedCases.Count), $results.Count,
     $(if ($stopped) { '; stopped because Excel was left running' } else { '' }))
 if ($stopped) { exit 2 }

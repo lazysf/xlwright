@@ -6,6 +6,29 @@ Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 
 $AE = [System.Windows.Automation.AutomationElement]
 $Scope = [System.Windows.Automation.TreeScope]
+$ControlType = [System.Windows.Automation.ControlType]
+
+# The ribbon tabs in screen order. The sheet tabs are TabItems too; the ribbon tabs have this class.
+function Get-RibbonTabs($Window) {
+    $cond = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, $ControlType::TabItem)
+    $tabs = @()
+    foreach ($t in $Window.FindAll($Scope::Descendants, $cond)) {
+        if ($t.Current.ClassName -eq 'NetUIRibbonTab') { $tabs += , $t }
+    }
+    , $tabs
+}
+
+function Find-RibbonTab($Window, [string]$Label, [double]$TimeoutSeconds) {
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        $tabs = Get-RibbonTabs $Window
+        $found = @($tabs | Where-Object { $_.Current.Name -ceq $Label })
+        if ($found.Count -gt 1) { throw "Ambiguous tab '${Label}': $($found.Count) matching elements" }
+        if ($found.Count -eq 1) { return $found[0] }
+        Start-Sleep -Milliseconds 300
+    } while ((Get-Date) -lt $deadline)
+    throw "Not found: tab '$Label'"
+}
 
 function Find-UniqueElement($Root, $Condition, [double]$TimeoutSeconds, [string]$Description) {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -56,4 +79,5 @@ function New-NamedControlCondition([string]$Name, $Type) {
     [System.Windows.Automation.AndCondition]::new([System.Windows.Automation.Condition[]]@($nameCondition, $typeCondition))
 }
 
-Export-ModuleMember -Function Find-UniqueElement, Test-IsDescendant, Find-TabContent, New-NamedControlCondition
+Export-ModuleMember -Function Get-RibbonTabs, Find-RibbonTab, Find-UniqueElement, Test-IsDescendant, Find-TabContent,
+    New-NamedControlCondition

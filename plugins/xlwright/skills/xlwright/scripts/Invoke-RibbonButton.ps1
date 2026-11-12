@@ -3,7 +3,7 @@
 Clicks a custom ribbon button through UI Automation and reports the dialogs it shows.
 
 .DESCRIPTION
-Opens the workbook in a visible Excel, selects the tab, invokes the button, and handles the dialogs
+Opens the workbook in a visible, maximized Excel, selects the tab, invokes the button, and handles the dialogs
 (#32770, e.g. MsgBox) that appear afterwards: the names of each dialog's elements are recorded and the
 dialog is closed with WindowPattern.Close (the same as the x button). Only this check has been done with
 a visible window; whether the ribbon is built for a hidden one has not been checked. The workbook is
@@ -70,9 +70,10 @@ try {
     Use-ExcelWorkbook -Path $Path -Visible -EnableMacros -ScriptBlock {
         param($xl, $wb)
         $excelPid = Get-ExcelProcessId $xl
+        $xl.WindowState = -4137  # xlMaximized: in a narrow window Excel collapses groups and hides their buttons
         $win = $AE::FromHandle([IntPtr]$xl.Hwnd)
 
-        $tab = Find-UniqueElement $win (New-NamedControlCondition $TabLabel $ControlType::TabItem) $FindTimeoutSeconds "tab '$TabLabel'"
+        $tab = Find-RibbonTab $win $TabLabel $FindTimeoutSeconds
         $result.TabFound = $true
         $tabRoot = [System.Windows.Automation.TreeWalker]::RawViewWalker.GetParent($tab)
         if (!$tabRoot -or $tabRoot.Current.ControlType -ne $ControlType::Tab) {

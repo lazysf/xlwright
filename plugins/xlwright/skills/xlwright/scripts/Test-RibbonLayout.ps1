@@ -163,16 +163,6 @@ function Get-Children($Element) {
     , $list
 }
 
-function Get-RibbonTabs($Window) {
-    $cond = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, $ControlType::TabItem)
-    $tabs = @()
-    foreach ($t in $Window.FindAll($Scope::Descendants, $cond)) {
-        # The sheet tabs are TabItems too; the ribbon tabs have this class.
-        if ($t.Current.ClassName -eq 'NetUIRibbonTab') { $tabs += , $t }
-    }
-    , $tabs
-}
-
 function Read-ActualGroup($Element) {
     $c = $Element.Current
     $height = $c.BoundingRectangle.Height

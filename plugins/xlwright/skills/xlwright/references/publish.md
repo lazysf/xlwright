@@ -16,4 +16,4 @@ powershell.exe -NoProfile -File "<skill>/scripts/Publish-Workbook.ps1" -Path <�
 - `-FileName` は出力するファイルの名前（拡張子 `.xlsm` を含む）。省略時は作業ブックと同じ名前になる（`tool/tool.xlsm` なら `tool.xlsm`）。例外として、作業ブックの名前が `workbook.xlsm` の時は、ブックのフォルダ名を使う（`tool/workbook.xlsm` なら `tool.xlsm`）。
 - 出力先に同名のファイルがある場合は、`-Force` を付けたときだけ上書きする。
 
-出力後は、配布用のブックの `VBProject.Protection` が `1`、作業ブックが `0` であることを、`Invoke-ExcelScript.ps1` で読み戻して確かめる。
+出力後は、配布用のブックの `VBProject.Protection` が `1`、作業ブックが `0` であることを、`Invoke-ExcelScript.ps1` で読み戻して確かめる。リボンがある時は、配布用のブックにも `Test-RibbonLayout.ps1` を当てて、見え方を XML と照らす（[リボン](ribbon.md)）。VBA をロックしたブックでも、リボンは作られ、callback（`getEnabled`）も動いた。

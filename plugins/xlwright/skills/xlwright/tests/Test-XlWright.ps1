@@ -320,6 +320,8 @@ if ($Full) {
     Invoke-Case 'ribbon' {
         $dir = New-CaseDir 'ribbon'
         $book = New-BookWithVba $dir
+        # The sheet tab is a TabItem too: a sheet named like the ribbon tab must not make the tab ambiguous.
+        Use-ExcelWorkbook -Path $book -Save -ScriptBlock { param($xl, $wb) $wb.Worksheets.Item(1).Name = $S.Tab }
         $cases = @(
             @{ Xml = 'base.xml'; Exit = 0; Error = $null },
             @{ Xml = 'same-group.xml'; Exit = 0; Error = $null },
@@ -363,6 +365,7 @@ if ($Full) {
     Invoke-Case 'ribbon-layout' {
         $dir = New-CaseDir 'ribbon-layout'
         $book = New-BookWithVba $dir
+        Use-ExcelWorkbook -Path $book -Save -ScriptBlock { param($xl, $wb) $wb.Worksheets.Item(1).Name = $S.Tab }
         $layout = Join-Path $scripts 'Test-RibbonLayout.ps1'
 
         $noUiJson = Join-Path $dir 'no-ui.json'
@@ -417,8 +420,8 @@ if ($Full) {
         [void](New-ExcelWorkbook -Path $book)
         Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $dir 'vba') -Recurse
         New-Item -ItemType Directory -Path (Join-Path $dir 'ribbon') | Out-Null
-        Copy-Item -LiteralPath (Join-Path $data 'ribbon\base.xml') -Destination (Join-Path $dir 'ribbon\customUI14.xml')
-        $pub = Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'))
+        Copy-Item -LiteralPath (Join-Path $data 'ribbon\layout.xml') -Destination (Join-Path $dir 'ribbon\customUI14.xml')
+        $pub =Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'))
         Assert 'publish exit 0' ($pub.Exit -eq 0) $pub.Output
         $dist = Join-Path $dir 'dist\book.xlsm'
         foreach ($p in @(@{ Path = $dist; Protection = 1 }, @{ Path = $book; Protection = 0 })) {
@@ -433,6 +436,13 @@ if ($Full) {
             Assert ($label + ': macro runs') ($r.Add -eq 9) $r.Add
             Assert ($label + ': ribbon embedded') $ui 'no customUI'
         }
+        # The ribbon of the locked copy is built and its callbacks (getEnabled) still run.
+        $json = Join-Path $dir 'dist-layout.json'
+        $layout = Invoke-Script (Join-Path $scripts 'Test-RibbonLayout.ps1') @('-Path', $dist, '-OutFile', $json)
+        $res = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        $dynPath = $S.Tab + '/' + $S.Group + '/' + $S.DynButton
+        Assert 'dist: ribbon layout matches the XML' ($layout.Exit -eq 0) ($res | ConvertTo-Json -Compress -Depth 8)
+        Assert 'dist: getEnabled callback ran' (@($res.Dynamic | Where-Object { $_.Path -eq $dynPath -and $_.Item -eq 'Enabled' -and $_.Actual -eq $false }).Count -eq 1) ($res.Dynamic | ConvertTo-Json -Compress)
     }
 }
 

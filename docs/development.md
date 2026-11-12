@@ -81,7 +81,7 @@ docs/                             開発の手順と notes（配布しない）
 tools/                            開発用の検査（配布しない）
 ```
 
-`plugin.json` にも marketplace の項目にも `version` を書きません。版は `plugins/xlwright/` を最後に変えた commit のハッシュになり、その中を変えて push した時だけ新しい版になります。
+`plugin.json` にも marketplace の項目にも `version` を書きません。版は repo の先頭の commit のハッシュになり、`plugins/xlwright/` を変えていない commit を push しても新しい版になります。
 
 `references/excel-com-rebuild.md` は、別の端末で作った前身のスキル `excel-com` を復元するためのバンドルです。今のスキルは、これを元に作り直しました。中身は今のスキルと一致しないので、使い方は `plugins/xlwright/skills/xlwright/` に従います。
 

@@ -19,9 +19,11 @@ the values Excel shows are listed in Dynamic. Callbacks run with workbook events
 that depends on state made in Workbook_Open can differ from normal use.
 
 Not compared and listed in Unsupported: groups that hold other controls (menu, splitButton, gallery,
-box, ...), tabs whose label comes from a callback, contextual tabs, tooltips (UI Automation does not
-expose screentip / supertip), and icons. With -ScreenshotDir a PNG of each tab is written, so that the
-icons can be checked by eye. Separators are not exposed by UI Automation and are ignored.
+box, ...), tabs whose label comes from a callback, hidden built-in groups, insertAfterMso /
+insertBeforeMso of groups and controls, and contextual tabs. Never compared: tooltips (UI Automation
+does not expose screentip / supertip) and icons. With -ScreenshotDir a PNG of each tab is written, so
+that the icons can be checked by eye; a tab whose image fails has File = null and the reason in Error.
+Separators are not exposed by UI Automation and are ignored.
 
 A group that Excel collapsed into one button for lack of width is listed in Collapsed and its controls
 are not compared. The window is maximized to avoid this.
@@ -35,7 +37,9 @@ param(
     # Write tab-1.png, tab-2.png, ... (in the order of the XML) to this existing directory.
     [string]$ScreenshotDir,
     # How long to wait for the ribbon to appear.
-    [int]$FindTimeoutSeconds = 15
+    [int]$FindTimeoutSeconds = 15,
+    # For the tests: a normal window this many points wide instead of a maximized one.
+    [int]$WindowWidth = 0
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem, System.Drawing
@@ -92,6 +96,14 @@ function Get-Label($Node) {
     $Node.GetAttribute('label')
 }
 
+# insertAfterMso / insertBeforeMso of a group or control, e.g. 'insertAfterMso=GroupClipboard'.
+function Get-InsertMso($Node) {
+    foreach ($a in 'insertAfterMso', 'insertBeforeMso') {
+        if ($Node.HasAttribute($a)) { return $a + '=' + $Node.GetAttribute($a) }
+    }
+    $null
+}
+
 function Read-CustomUI([string]$Workbook) {
     $zip = [IO.Compression.ZipFile]::OpenRead($Workbook)
     try {
@@ -115,6 +127,7 @@ function ConvertTo-ExpectedControl($Node) {
         Enabled = (Get-Flag $Node 'enabled' 'getEnabled' 'true')
         ShowLabel = (Get-Flag $Node 'showLabel' 'getShowLabel' 'true')
         HasImage = ($Node.HasAttribute('imageMso') -or $Node.HasAttribute('image') -or $Node.HasAttribute('getImage'))
+        Insert = (Get-InsertMso $Node)
     }
 }
 
@@ -130,6 +143,7 @@ function ConvertTo-ExpectedGroup($Node) {
         BuiltIn = $Node.HasAttribute('idMso'); Id = $(if ($Node.HasAttribute('idMso')) { $Node.GetAttribute('idMso') } else { $Node.GetAttribute('id') })
         Label = $(if ($Node.HasAttribute('idMso')) { $null } else { Get-Label $Node })
         Visible = (Get-Flag $Node 'visible' 'getVisible' 'true')
+        Insert = (Get-InsertMso $Node)
         Controls = $controls; OtherControls = $others
     }
 }
@@ -167,9 +181,7 @@ function Read-ActualGroup($Element) {
     $c = $Element.Current
     $height = $c.BoundingRectangle.Height
     $children = Get-Children $Element
-    # A collapsed group is one drop-down button that carries the group label.
-    $collapsed = ($children.Count -eq 1 -and $children[0].Current.ControlType -eq $ControlType::MenuItem -and
-        $children[0].Current.Name -eq $c.Name)
+    $collapsed = Test-CollapsedGroup $Element
     $controls = @(foreach ($ch in $children) {
         $cc = $ch.Current
         $r = $cc.BoundingRectangle
@@ -200,6 +212,11 @@ function Save-TabImage($Xl, $Content, [string]$File) {
         if (!$ok) { throw 'PrintWindow failed' }
         $r = $Content.Current.BoundingRectangle
         $area = New-Object System.Drawing.Rectangle(([int]$r.X - $wr.Left), ([int]$r.Y - $wr.Top), [int]$r.Width, [int]$r.Height)
+        # Checked only at 100 % display scaling. With other scaling the window rectangle of this (not DPI
+        # aware) process and the UI Automation rectangle may disagree.
+        if ($area.X -lt 0 -or $area.Y -lt 0 -or $area.Right -gt $bmp.Width -or $area.Bottom -gt $bmp.Height) {
+            throw "The tab area $area is outside the window image ($($bmp.Width) x $($bmp.Height)). Is display scaling not 100 %?"
+        }
         $crop = $bmp.Clone($area, $bmp.PixelFormat)
         try { $crop.Save($File, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $crop.Dispose() }
     }
@@ -208,34 +225,68 @@ function Save-TabImage($Xl, $Content, [string]$File) {
 
 # --- Comparison ------------------------------------------------------------------------------
 
+# UI Automation names a group without a label " " and a button without a label "".
+function Test-SameName([string]$Actual, [string]$Expected) {
+    $Actual.Trim() -ceq $Expected.Trim()
+}
+
+# Reports an actual item that no expected item took. One that the XML hides is reported as such.
+function Add-Extra($Item, [string]$At, [string]$Kind, $Hidden, [bool]$AllowExtra) {
+    if (@($Hidden | Where-Object { Test-SameName $Item.Name $_ }).Count -gt 0) {
+        Add-Mismatch "$At/$($Item.Name)" $Kind 'hidden' 'shown'
+    }
+    elseif (-not $AllowExtra) { Add-Mismatch "$At/$($Item.Name)" $Kind 'not in the XML' 'shown' }
+}
+
 # Pairs expected items (in XML order) with actual items (in screen order). An expected item without a
-# label (built-in group, getLabel) takes the next actual item. Items whose visibility comes from a
-# callback may be absent.
-function Get-Pairs($Expected, $Actual, [string]$At, [string]$Kind) {
+# label (built-in group, getLabel) takes the next actual item, unless that item carries the label of a
+# later expected item: then the item without a label is absent. Items whose visibility comes from a
+# callback may be absent. $Hidden holds the labels of items the XML hides. With -AllowExtra, actual items
+# that are not in the XML (the built-in groups of a built-in tab) are not reported.
+function Get-Pairs($Expected, $Actual, [string]$At, [string]$Kind, $Hidden = @(), [switch]$AllowExtra) {
     $pairs = @()
     $p = 0
-    foreach ($e in $Expected) {
+    for ($k = 0; $k -lt $Expected.Count; $k++) {
+        $e = $Expected[$k]
         $name = Get-Name $e
         if ($null -eq $e.Label) {
-            if ($p -lt $Actual.Count) { $pairs += , @($e, $Actual[$p]); $p++ }
-            elseif ($e.Visible -ne 'dynamic') { Add-Mismatch "$At/$name" $Kind 'shown' 'missing' }
+            $later = @($Expected | Select-Object -Skip ($k + 1) | Where-Object { $null -ne $_.Label } | ForEach-Object { $_.Label })
+            $takenByLater = $p -lt $Actual.Count -and @($later | Where-Object { Test-SameName $Actual[$p].Name $_ }).Count -gt 0
+            if ($p -lt $Actual.Count -and -not $takenByLater) { $pairs += , @($e, $Actual[$p]); $p++ }
+            elseif ($e.Visible -eq 'dynamic') { Add-Dynamic "$At/$name" 'Visible' $false }
+            else { Add-Mismatch "$At/$name" $Kind 'shown' 'missing' }
             continue
         }
         $q = $p
-        while ($q -lt $Actual.Count -and $Actual[$q].Name -cne $e.Label) { $q++ }
+        while ($q -lt $Actual.Count -and -not (Test-SameName $Actual[$q].Name $e.Label)) { $q++ }
         if ($q -lt $Actual.Count) {
-            for ($i = $p; $i -lt $q; $i++) { Add-Mismatch "$At/$($Actual[$i].Name)" $Kind 'not in the XML here' 'shown' }
+            for ($i = $p; $i -lt $q; $i++) { Add-Extra $Actual[$i] $At $Kind $Hidden $AllowExtra.IsPresent }
             $pairs += , @($e, $Actual[$q])
             $p = $q + 1
         }
         elseif ($e.Visible -eq 'dynamic') { Add-Dynamic "$At/$name" 'Visible' $false }
         else {
-            $elsewhere = @($Actual | Where-Object { $_.Name -ceq $e.Label }).Count -gt 0
+            $elsewhere = @($Actual | Where-Object { Test-SameName $_.Name $e.Label }).Count -gt 0
             Add-Mismatch "$At/$name" $Kind 'shown' $(if ($elsewhere) { 'out of order' } else { 'missing' })
         }
     }
-    for ($i = $p; $i -lt $Actual.Count; $i++) { Add-Mismatch "$At/$($Actual[$i].Name)" $Kind 'not in the XML' 'shown' }
+    for ($i = $p; $i -lt $Actual.Count; $i++) { Add-Extra $Actual[$i] $At $Kind $Hidden $AllowExtra.IsPresent }
     , $pairs
+}
+
+# Labels used only by hidden items. A label that a shown item also uses does not tell which one appeared.
+function Get-HiddenLabels($Items) {
+    $shown = @($Items | Where-Object { $_.Visible -ne 'false' -and $null -ne $_.Label } | ForEach-Object { $_.Label })
+    , @($Items | Where-Object { $_.Visible -eq 'false' -and $null -ne $_.Label -and $shown -cnotcontains $_.Label } |
+        ForEach-Object { $_.Label })
+}
+
+# Positions relative to built-in groups or controls cannot be checked: their labels depend on the
+# Office language and UI Automation gives groups no id.
+function Add-InsertUnsupported($Items, [string]$At) {
+    foreach ($i in @($Items | Where-Object { $_.Insert })) {
+        Add-Unsupported "$At/$(Get-Name $i)" "position $($i.Insert) not compared"
+    }
 }
 
 function Compare-Control($E, $A, [string]$At) {
@@ -246,13 +297,15 @@ function Compare-Control($E, $A, [string]$At) {
     elseif ($E.Size -ne $A.Size) { Add-Mismatch $At 'Size' $E.Size $A.Size }
     if ($E.Enabled -eq 'dynamic') { Add-Dynamic $At 'Enabled' $A.Enabled }
     elseif (($E.Enabled -eq 'true') -ne $A.Enabled) { Add-Mismatch $At 'Enabled' ($E.Enabled -eq 'true') $A.Enabled }
-    if ($E.HasImage -and $A.Size -eq 'normal') {
+    # Without a label there is nothing to show beside the icon, whatever showLabel says.
+    if ($E.HasImage -and $A.Size -eq 'normal' -and $E.Label -ne '') {
         if ($E.ShowLabel -eq 'dynamic') { Add-Dynamic $At 'ShowLabel' (-not $A.IconOnly) }
         elseif (($E.ShowLabel -eq 'true') -eq $A.IconOnly) { Add-Mismatch $At 'ShowLabel' ($E.ShowLabel -eq 'true') (-not $A.IconOnly) }
     }
 }
 
 function Compare-Group($E, $A, [string]$At) {
+    Add-InsertUnsupported $E.Controls $At
     if ($E.Visible -eq 'dynamic') { Add-Dynamic $At 'Visible' $true }
     if ($null -eq $E.Label -and -not $E.BuiltIn) { Add-Dynamic $At 'Label' $A.Name }
     if ($E.BuiltIn) { return }
@@ -262,7 +315,7 @@ function Compare-Group($E, $A, [string]$At) {
         return
     }
     $expected = @($E.Controls | Where-Object { $_.Visible -ne 'false' })
-    foreach ($pair in (Get-Pairs $expected $A.Controls $At 'Control')) {
+    foreach ($pair in (Get-Pairs $expected $A.Controls $At 'Control' (Get-HiddenLabels $E.Controls))) {
         Compare-Control $pair[0] $pair[1] "$At/$(Get-Name $pair[0])"
     }
 }
@@ -271,35 +324,23 @@ function Compare-Tab($E, $Content, [string]$At) {
     $actualGroups = @(foreach ($g in (Get-Children $Content)) {
         if ($g.Current.ControlType -eq $ControlType::Group) { Read-ActualGroup $g }
     })
+    Add-InsertUnsupported $E.Groups $At
+    # A built-in group has no label in the XML and no id in UI Automation, so a hidden one cannot be found.
+    foreach ($g in @($E.Groups | Where-Object { $_.Visible -eq 'false' -and $null -eq $_.Label })) {
+        Add-Unsupported "$At/$(Get-Name $g)" 'hidden group without a fixed label: not compared'
+    }
     $expected = @($E.Groups | Where-Object { $_.Visible -ne 'false' })
+    $hidden = Get-HiddenLabels $E.Groups
     if ($E.BuiltIn) {
         # The built-in groups of the tab are not in the XML: only the custom groups and their order are checked.
-        $custom = @($expected | Where-Object { -not $_.BuiltIn -and $null -ne $_.Label })
         foreach ($g in @($expected | Where-Object { $_.BuiltIn -or $null -eq $_.Label })) {
             Add-Unsupported "$At/$(Get-Name $g)" 'group in a built-in tab without a fixed label: not compared'
         }
-        $p = 0
-        foreach ($g in $custom) {
-            $q = $p
-            while ($q -lt $actualGroups.Count -and $actualGroups[$q].Name -cne $g.Label) { $q++ }
-            if ($q -lt $actualGroups.Count) { Compare-Group $g $actualGroups[$q] "$At/$($g.Label)"; $p = $q + 1 }
-            elseif ($g.Visible -eq 'dynamic') { Add-Dynamic "$At/$($g.Label)" 'Visible' $false }
-            else {
-                $elsewhere = @($actualGroups | Where-Object { $_.Name -ceq $g.Label }).Count -gt 0
-                Add-Mismatch "$At/$($g.Label)" 'Group' 'shown' $(if ($elsewhere) { 'out of order' } else { 'missing' })
-            }
-        }
+        $custom = @($expected | Where-Object { -not $_.BuiltIn -and $null -ne $_.Label })
+        $pairs = Get-Pairs $custom $actualGroups $At 'Group' $hidden -AllowExtra
     }
-    else {
-        foreach ($pair in (Get-Pairs $expected $actualGroups $At 'Group')) {
-            Compare-Group $pair[0] $pair[1] "$At/$(Get-Name $pair[0])"
-        }
-    }
-    foreach ($g in @($E.Groups | Where-Object { $_.Visible -eq 'false' -and $null -ne $_.Label })) {
-        if (@($actualGroups | Where-Object { $_.Name -ceq $g.Label }).Count -gt 0) {
-            Add-Mismatch "$At/$($g.Label)" 'Group' 'hidden' 'shown'
-        }
-    }
+    else { $pairs = Get-Pairs $expected $actualGroups $At 'Group' $hidden }
+    foreach ($pair in $pairs) { Compare-Group $pair[0] $pair[1] "$At/$(Get-Name $pair[0])" }
     , $actualGroups
 }
 
@@ -322,7 +363,7 @@ try {
 
     Use-ExcelWorkbook -Path $Path -Visible -EnableMacros -ScriptBlock {
         param($xl, $wb)
-        $xl.WindowState = -4137  # xlMaximized: a narrow window collapses groups and shrinks buttons
+        Set-RibbonWindow $xl $WindowWidth
         $win = $AE::FromHandle([IntPtr]$xl.Hwnd)
 
         # Wait until the ribbon has the tabs of the XML (or the timeout, when the XML was rejected).
@@ -368,8 +409,14 @@ try {
             $tab = $found[0]
             if ($e.Visible -eq 'dynamic') { Add-Dynamic $at 'Visible' $true }
             $pos = [array]::IndexOf($tabs, $tab)
-            $before = $(if ($pos -gt 0) { $tabs[$pos - 1].Current.AutomationId } else { $null })
-            $after = $(if ($pos -lt $tabs.Count - 1) { $tabs[$pos + 1].Current.AutomationId } else { $null })
+            # Custom tabs have no AutomationId. Several of them can follow the same built-in tab, so the
+            # position is checked against the nearest built-in tab on each side.
+            $before = $null
+            for ($i = $pos - 1; $i -ge 0 -and -not $before; $i--) { $before = $tabs[$i].Current.AutomationId }
+            $after = $null
+            for ($i = $pos + 1; $i -lt $tabs.Count -and -not $after; $i++) { $after = $tabs[$i].Current.AutomationId }
+            if (-not $before) { $before = $null }
+            if (-not $after) { $after = $null }
             if ($e.InsertAfterMso -and $before -ne $e.InsertAfterMso) { Add-Mismatch $at 'InsertAfterMso' $e.InsertAfterMso $before }
             if ($e.InsertBeforeMso -and $after -ne $e.InsertBeforeMso) { Add-Mismatch $at 'InsertBeforeMso' $e.InsertBeforeMso $after }
 
@@ -382,8 +429,10 @@ try {
             }
             if ($ScreenshotDir) {
                 $file = Join-Path $ScreenshotDir "tab-$index.png"
-                Save-TabImage $xl $content $file
-                $result.Screenshots += , ([ordered]@{ Tab = $at; File = $file })
+                # A failed image does not stop the comparison; the entry carries the reason instead.
+                try { Save-TabImage $xl $content $file; $shotError = $null }
+                catch { $file = $null; $shotError = $_.Exception.Message }
+                $result.Screenshots += , ([ordered]@{ Tab = $at; File = $file; Error = $shotError })
             }
             $groups = Compare-Tab $e $content $at
             $result.Actual += , ([ordered]@{

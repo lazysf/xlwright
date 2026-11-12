@@ -22,6 +22,10 @@ Public Sub GetOff(control As IRibbonControl, ByRef returnedVal)
     returnedVal = False
 End Sub
 
+Public Sub GetText(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = "Dyn"
+End Sub
+
 Public Sub Spin()
     Do
         DoEvents

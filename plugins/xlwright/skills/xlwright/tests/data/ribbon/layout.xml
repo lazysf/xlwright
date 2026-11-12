@@ -5,6 +5,7 @@
         <group idMso="GroupClipboard"/>
         <group id="g1" label="操作">
           <button id="doneButton" label="完了通知" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="ghostButton" getLabel="GetText" getVisible="GetOff" onAction="Done"/>
           <button id="saveButton" label="保存" imageMso="FileSave" onAction="Done"/>
           <button id="iconButton" label="アイコンだけ" imageMso="Copy" showLabel="false" onAction="Done"/>
           <button id="offButton" label="使えない" imageMso="Paste" enabled="false" onAction="Done"/>
@@ -16,6 +17,20 @@
           <menu id="menu1" label="メニュー">
             <button id="menuButton" label="項目" onAction="Done"/>
           </menu>
+        </group>
+      </tab>
+      <tab id="extraTab" label="Extra" insertAfterMso="TabHome">
+        <group id="g3" label="ExtraGroup">
+          <button id="extraButton" label="ExtraButton" onAction="Done"/>
+        </group>
+        <group id="noLabelGroup">
+          <button id="noLabelButton" imageMso="Copy" screentip="Tip" onAction="Done"/>
+        </group>
+      </tab>
+      <tab idMso="TabHome">
+        <group idMso="GroupFont" visible="false"/>
+        <group id="homeGroup" label="HomeExtra" insertAfterMso="GroupClipboard">
+          <button id="homeButton" label="HomeButton" onAction="Done"/>
         </group>
       </tab>
     </tabs>

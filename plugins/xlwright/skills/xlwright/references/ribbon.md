@@ -25,6 +25,34 @@ customUI の要素名や属性を間違えても、Excel は何も言わずに�
 
 Excel で保存しても customUI は残るため、埋め込んだ後に COM で再編集してよい。openpyxl で保存すると、リボンが読み込まれなくなるので混ぜない。openpyxl 3.1.5 の `keep_vba=True` で確かめた結果、`customUI14.xml` 自体は残るが `_rels/.rels` の関連付けが消え、Excel で開いても `onLoad` が動かなかった。VBA とセルの値は残る。混ぜてしまった場合は、`Add-CustomUI.ps1` をもう一度かければ関連付けが戻り、リボンも読み込まれる。
 
+## 見え方を XML と照らす
+
+`Test-RibbonLayout.ps1` は、ブックに埋め込まれた `customUI14.xml` を読み、表示した Excel（最大化、マクロ有効、ブックのイベントは無効）で XML の各タブを選び、UI Automation で読んだ見え方と照らす。ユーザーの画面に Excel が数秒出るので、先に一言伝える。
+
+```powershell
+powershell.exe -NoProfile -File "<skill>/scripts/Test-RibbonLayout.ps1" -Path <workbook> -OutFile <result.json> -ScreenshotDir <既存のフォルダ>
+```
+
+終了コードは、0 が一致、1 が食い違いあり、2 が確かめられなかった（customUI が無い、簡易表示のリボンなど。理由は `Error`）。
+
+| 照らすもの | 対象 |
+| --- | --- |
+| タブ | 表示・非表示、`insertAfterMso` / `insertBeforeMso` の位置、`startFromScratch="true"` で他の組み込みタブが消えていること |
+| グループ | 表示名と順序。カスタムタブに入れた組み込みグループ（`idMso`）は位置だけ。組み込みタブ（`<tab idMso>`）では、足したグループの順序だけ |
+| `button`、`toggleButton` | 表示名と順序、`size`（large / normal）、`enabled`、画像付きの normal ボタンの `showLabel` |
+
+結果の JSON の見方:
+
+- `Mismatches` に食い違いが `Path`（タブ/グループ/ボタン）、`Item`、`Expected`、`Actual` で入る。XML の誤りで Excel がリボン全体を無視した時は、タブが `missing` になる。
+- `Dynamic` には callback（`getLabel`、`getVisible`、`getEnabled`、`getSize`、`getShowLabel`）で決まる値の、実際に出た値が入る。照合はしないので、設計どおりかを読んで確かめる。callback はブックのイベントを止めた状態で動くので、`Workbook_Open` で作る状態に頼る値は、普段と違うことがある。
+- `Unsupported` には照らせなかったものが入る。menu、splitButton、gallery、box などを含むグループ（グループの有無だけ確かめ、中のボタンは照らさない）、callback で表示名が決まるタブ、`contextualTabs`。`separator` は UI Automation に出ないので数えない。
+- `Collapsed` には、幅が足りずに 1 つのボタンにたたまれたグループが入る。中のボタンは照らさない。
+- `Actual` には読んだタブ、グループ、ボタン（`Size`、`Enabled`、`IconOnly`）が入る。
+- `-ScreenshotDir` を付けると、XML の順に `tab-1.png`、`tab-2.png` … を書き、`Screenshots` に場所が入る。アイコンの絵柄は UI Automation で読めないので、この画像を Read で見て確かめる。画像は画面ではなく Excel のウィンドウに描かせて撮る（`PrintWindow`）。手前に別のウィンドウを重ねた状態では確かめていない。
+- ツールチップ（`screentip`、`supertip`）は UI Automation で読めないので照らさない。
+
+確かめた場面（Excel 16、Windows 11）: カスタムタブの `insertAfterMso`、large と normal、`showLabel="false"`、`enabled="false"`、`visible="false"`、`getEnabled` / `getVisible` / `getLabel`、toggleButton、カスタムタブに入れた組み込みグループ、組み込みタブに足したグループ、`startFromScratch`、menu を含むグループ、未知の属性でリボン全体が無視された場合。簡易表示のリボンの見分け（タブの中身の高さが 60 px 未満）は、実機で確かめていない。
+
 ## ボタンの押下で確かめる
 
 `Invoke-RibbonButton.ps1` は、ブックを表示した Excel で開き（マクロ有効、ブックのイベントは無効）、表示名でタブを選び、そのタブの中からボタンを探して押す。ユーザーの画面に Excel が数秒出るので、先に一言伝える。

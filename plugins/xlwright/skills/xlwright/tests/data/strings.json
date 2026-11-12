@@ -7,6 +7,12 @@
   "Button": "完了通知",
   "AskButton": "確認",
   "Message": "処理が完了しました",
+  "Group": "操作",
+  "MenuGroup": "その他",
+  "SaveButton": "保存",
+  "IconButton": "アイコンだけ",
+  "OffButton": "使えない",
+  "DynButton": "状態次第",
   "FormCaption": "情報フォーム",
   "FormSheetValue": "別ブックの値"
 }

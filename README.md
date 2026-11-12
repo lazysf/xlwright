@@ -29,14 +29,7 @@ Claude Code のプラグインとして入れます。この repo を marketplac
 /plugin install xlwright@xlwright
 ```
 
-Claude Desktop の Code タブでは、`/plugin` のコマンドは実行されずに画面が開きます。次のように画面で操作します。
-
-1. `/plugin marketplace add <repo>` を送ると、「マーケットプレイスを追加」が URL を入れた状態で開きます。「同期」を押します。
-2. 「Code」の一覧に出た Xlwright の「+」（インストール）を押します。
-
-Code タブでは、手元に clone したフォルダのパスは渡せません。入れたスキルは `/xlwright:xlwright` という名前になり、短く `/xlwright` でも呼べます。依頼の内容から自動でも選ばれます。
-
-GitHub から入れた場合、自動更新は既定で無効です。更新する時は、`claude plugin marketplace update xlwright` の後に `claude plugin update xlwright@xlwright` を流します。
+入れたスキルは `/xlwright:xlwright` という名前になり、短く `/xlwright` でも呼べます。依頼の内容から自動でも選ばれます。
 
 ## 動作確認
 

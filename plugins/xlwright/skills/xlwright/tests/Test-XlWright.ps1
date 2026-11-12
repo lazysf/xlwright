@@ -397,6 +397,13 @@ if ($Full) {
         $dynPath = $S.Tab + '/' + $S.Group + '/' + $S.DynButton
         Assert 'getEnabled listed in Dynamic' (@($res.Dynamic | Where-Object { $_.Path -eq $dynPath -and $_.Item -eq 'Enabled' -and $_.Actual -eq $false }).Count -eq 1) $detail
         Assert 'group with a menu listed in Unsupported' (@($res.Unsupported | Where-Object { $_.Path -eq ($S.Tab + '/' + $S.MenuGroup) }).Count -eq 1) $detail
+        Assert 'hidden getLabel button listed as absent, not paired with the next button' (@($res.Dynamic | Where-Object { $_.Path -eq ($S.Tab + '/' + $S.Group + '/ghostButton') -and $_.Item -eq 'Visible' -and $_.Actual -eq $false }).Count -eq 1) $detail
+        $extra = @($res.Actual | Where-Object { $_.Tab -eq 'Extra' })
+        Assert 'second tab after the Home tab: nearest built-in tab is Home' ($extra.Count -eq 1 -and $extra[0].Before -eq 'TabHome') $detail
+        Assert 'hidden built-in group listed in Unsupported' (@($res.Unsupported | Where-Object { $_.Path -eq 'TabHome/GroupFont' }).Count -eq 1) $detail
+        Assert 'group position by insertAfterMso listed in Unsupported' (@($res.Unsupported | Where-Object { $_.Path -eq 'TabHome/HomeExtra' }).Count -eq 1) $detail
+        $extraGroups = @($extra | ForEach-Object { $_.Groups })
+        Assert 'group and button without a label matched' ($extraGroups.Count -eq 2 -and @($extraGroups[1].Controls).Count -eq 1) $detail
         $png = Join-Path $shots 'tab-1.png'
         $pngOk = (Test-Path -LiteralPath $png) -and ((Get-Item -LiteralPath $png).Length -gt 1000)
         if ($pngOk) {
@@ -411,6 +418,24 @@ if ($Full) {
         $badJson = Join-Path $dir 'rejected.json'
         $bad = Invoke-Script $layout @('-Path', $book, '-OutFile', $badJson, '-FindTimeoutSeconds', '5')
         $badRes = [IO.File]::ReadAllText($badJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        $add = Invoke-Script (Join-Path $scripts 'Add-CustomUI.ps1') @('-Path', $book, '-XmlPath', (Join-Path $data 'ribbon\collapse.xml'))
+        Assert 'collapse.xml: embed exit 0' ($add.Exit -eq 0) $add.Output
+        # Maximized: nothing collapses, and a group holding only a menu with the group label is not taken for collapsed.
+        $wideJson = Join-Path $dir 'wide.json'
+        $wide = Invoke-Script $layout @('-Path', $book, '-OutFile', $wideJson)
+        $wideRes = [IO.File]::ReadAllText($wideJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        $wideDetail = $wideRes | ConvertTo-Json -Compress -Depth 8
+        Assert 'maximized: nothing collapsed' ($wide.Exit -eq 0 -and @($wideRes.Collapsed).Count -eq 0) $wideDetail
+        Assert 'group with a same-named menu is Unsupported, not collapsed' (@($wideRes.Unsupported | Where-Object { $_.Path -eq 'Wide/Menus' }).Count -eq 1) $wideDetail
+        # A narrow window: groups collapse, the layout check lists them, and the click names them in the error.
+        $narrowJson = Join-Path $dir 'narrow.json'
+        $narrow = Invoke-Script $layout @('-Path', $book, '-OutFile', $narrowJson, '-WindowWidth', '420')
+        $narrowRes = [IO.File]::ReadAllText($narrowJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        Assert 'narrow: collapsed groups listed' ($narrow.Exit -eq 0 -and @($narrowRes.Collapsed) -contains 'Wide/G6') ($narrowRes | ConvertTo-Json -Compress -Depth 8)
+        $clickJson = Join-Path $dir 'narrow-click.json'
+        $click = Invoke-Script (Join-Path $scripts 'Invoke-RibbonButton.ps1') @('-Path', $book, '-TabLabel', 'Wide', '-ButtonLabel', 'G6-4', '-OutFile', $clickJson, '-FindTimeoutSeconds', '5', '-WindowWidth', '420')
+        $clickRes = [IO.File]::ReadAllText($clickJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        Assert 'narrow: click names the collapsed groups' ($click.Exit -eq 1 -and -not $clickRes.Clicked -and [string]$clickRes.Error -like '*collapsed for lack of width:*G6*') ($clickRes | ConvertTo-Json -Compress)
         Assert 'rejected XML: exit 1, tab missing' ($bad.Exit -eq 1 -and @($badRes.Mismatches | Where-Object { $_.Path -eq $S.Tab -and $_.Actual -eq 'missing' }).Count -eq 1) ($badRes | ConvertTo-Json -Compress -Depth 8)
     }
 

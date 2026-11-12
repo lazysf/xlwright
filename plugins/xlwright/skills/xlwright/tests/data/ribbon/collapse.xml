@@ -1,0 +1,49 @@
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui">
+  <ribbon>
+    <tabs>
+      <tab id="wideTab" label="Wide">
+        <group id="menus" label="Menus">
+          <menu id="menu1" label="Menus" imageMso="HappyFace" size="large">
+            <button id="menuItem" label="Item" onAction="Done"/>
+          </menu>
+        </group>
+        <group id="g1" label="G1">
+          <button id="b11" label="G1-1" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b12" label="G1-2" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b13" label="G1-3" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b14" label="G1-4" imageMso="HappyFace" size="large" onAction="Done"/>
+        </group>
+        <group id="g2" label="G2">
+          <button id="b21" label="G2-1" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b22" label="G2-2" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b23" label="G2-3" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b24" label="G2-4" imageMso="HappyFace" size="large" onAction="Done"/>
+        </group>
+        <group id="g3" label="G3">
+          <button id="b31" label="G3-1" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b32" label="G3-2" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b33" label="G3-3" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b34" label="G3-4" imageMso="HappyFace" size="large" onAction="Done"/>
+        </group>
+        <group id="g4" label="G4">
+          <button id="b41" label="G4-1" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b42" label="G4-2" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b43" label="G4-3" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b44" label="G4-4" imageMso="HappyFace" size="large" onAction="Done"/>
+        </group>
+        <group id="g5" label="G5">
+          <button id="b51" label="G5-1" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b52" label="G5-2" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b53" label="G5-3" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b54" label="G5-4" imageMso="HappyFace" size="large" onAction="Done"/>
+        </group>
+        <group id="g6" label="G6">
+          <button id="b61" label="G6-1" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b62" label="G6-2" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b63" label="G6-3" imageMso="HappyFace" size="large" onAction="Done"/>
+          <button id="b64" label="G6-4" imageMso="HappyFace" size="large" onAction="Done"/>
+        </group>
+      </tab>
+    </tabs>
+  </ribbon>
+</customUI>

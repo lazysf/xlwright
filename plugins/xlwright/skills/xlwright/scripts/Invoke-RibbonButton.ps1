@@ -36,7 +36,9 @@ param(
     # How long to wait for the click call to return after the last dialog.
     [int]$ActionTimeoutSeconds = 10,
     # Safety limit on the number of dialogs handled for one click.
-    [int]$MaxDialogs = 5
+    [int]$MaxDialogs = 5,
+    # For the tests: a normal window this many points wide instead of a maximized one.
+    [int]$WindowWidth = 0
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
@@ -70,7 +72,7 @@ try {
     Use-ExcelWorkbook -Path $Path -Visible -EnableMacros -ScriptBlock {
         param($xl, $wb)
         $excelPid = Get-ExcelProcessId $xl
-        $xl.WindowState = -4137  # xlMaximized: in a narrow window Excel collapses groups and hides their buttons
+        Set-RibbonWindow $xl $WindowWidth
         $win = $AE::FromHandle([IntPtr]$xl.Hwnd)
 
         $tab = Find-RibbonTab $win $TabLabel $FindTimeoutSeconds
@@ -85,7 +87,22 @@ try {
         # Depending on the Excel build the group is under the tab container or elsewhere in the window,
         # so search the whole window.
         $tabContent = Find-TabContent $win (New-NamedControlCondition $TabLabel $ControlType::Group) $FindTimeoutSeconds "tab content '$TabLabel'"
-        $btn = Find-UniqueElement $tabContent (New-NamedControlCondition $ButtonLabel $ControlType::Button) $FindTimeoutSeconds "button '$ButtonLabel' in '$TabLabel'"
+        try {
+            $btn = Find-UniqueElement $tabContent (New-NamedControlCondition $ButtonLabel $ControlType::Button) $FindTimeoutSeconds "button '$ButtonLabel' in '$TabLabel'"
+        }
+        catch {
+            # Even maximized, a screen narrower than the tab collapses groups and hides their buttons.
+            # The reason is only added to the error; if looking for it fails, the original error stands.
+            $notFound = $_
+            $collapsed = @()
+            if ($notFound.Exception.Message -like 'Not found:*') {
+                try { $collapsed = Get-CollapsedGroups $tabContent } catch { $collapsed = @() }
+            }
+            if ($collapsed.Count -gt 0) {
+                throw ($notFound.Exception.Message + '. These groups are collapsed for lack of width: ' + ($collapsed -join ', '))
+            }
+            throw $notFound
+        }
         $result.ButtonFound = $true
 
         # Invoke does not return while the macro shows a modal dialog, so click from another runspace.

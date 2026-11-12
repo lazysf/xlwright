@@ -1,11 +1,13 @@
 <#
 .SYNOPSIS
-Clicks a custom ribbon button through UI Automation and reports the dialogs it shows.
+Clicks a custom ribbon button and reports the dialogs it shows.
 
 .DESCRIPTION
 Opens the workbook in a visible, maximized Excel, selects the tab, invokes the button, and handles the dialogs
 (#32770, e.g. MsgBox) that appear afterwards: the names of each dialog's elements are recorded and the
-dialog is closed with WindowPattern.Close (the same as the x button). Only this check has been done with
+dialog is closed with WindowPattern.Close (the same as the x button). The tab and the button are operated
+through their MSAA default action, which unlike UI Automation does not bring Excel to the foreground
+(see Ribbon.psm1); a disabled button is reported as an error without clicking. Only this check has been done with
 a visible window; whether the ribbon is built for a hidden one has not been checked. The workbook is
 closed without saving. Workbook_Open does not run (see XlWright.psm1), the button's own macro does.
 The tab and the button must be uniquely named in their respective search scopes.
@@ -81,7 +83,7 @@ try {
         if (!$tabRoot -or $tabRoot.Current.ControlType -ne $ControlType::Tab) {
             throw "Ribbon tab container not found: $TabLabel"
         }
-        $tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+        Select-RibbonTab $tab
 
         # Excel exposes the selected tab's controls in a group named after the tab, not under the tab item.
         # Depending on the Excel build the group is under the tab container or elsewhere in the window,
@@ -104,12 +106,17 @@ try {
             throw $notFound
         }
         $result.ButtonFound = $true
+        # The MSAA default action of a disabled button may do nothing without an error.
+        if (-not $btn.Current.IsEnabled) { throw "Button '$ButtonLabel' is disabled" }
 
-        # Invoke does not return while the macro shows a modal dialog, so click from another runspace.
+        # The default action does not return while the macro shows a modal dialog, so click from another
+        # runspace. It is the MSAA action, not InvokePattern, so that Excel does not take the foreground.
+        $target = Get-RibbonAccessibleTarget $btn
         $ps = [PowerShell]::Create()
-        [void]$ps.AddScript({ param($b)
+        [void]$ps.AddScript({ param($t)
             $ErrorActionPreference = 'Stop'
-            $b.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() }).AddArgument($btn)
+            $count = [XlWright.RibbonMsaa]::DoDefaultAction($t.Hwnd, $t.Name, 0, $t.Left, $t.Top, $t.Width, $t.Height)
+            if ($count -ne 1) { throw "Expected one accessible button '$($t.Name)', found $count" } }).AddArgument($target)
         $async = $ps.BeginInvoke()
 
         $stuck = $null

@@ -18,7 +18,7 @@ Windows 版 Excel を PowerShell の COM で操作して、Excel のブックと
 - Windows PowerShell 5.1（OS 標準）
 - Excel のトラストセンターで「VBA プロジェクト オブジェクト モデルへのアクセスを信頼する」が有効（VBA を扱う時）
 - WMI（`Win32_Process.Create`）からプロセスを作れること。Excel を止める見張りのために使います。作れない環境では使えません。
-- エージェントの作業中、人はその端末で Excel を使わないこと
+- エージェントの作業中、人はその端末で Excel を使わないこと。Excel 以外のアプリは使えます
 
 ## 入れ方
 

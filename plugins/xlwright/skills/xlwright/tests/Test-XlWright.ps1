@@ -5,8 +5,8 @@ Checks the xlwright scripts against the real Excel on this machine.
 .DESCRIPTION
 Every case creates its own workbooks in a new temporary folder and checks explicit expected values.
 Nothing outside that folder is changed. The default cases keep Excel hidden. -Full adds the cases
-that show Excel and the VBE on the screen (ribbon click, ribbon layout, publish with VBA lock); do not use the
-mouse or keyboard while they run.
+that show Excel and the VBE on the screen (ribbon click, ribbon layout, publish with VBA lock); do not touch
+those windows while they run. These cases also check that Excel never takes the foreground.
 
 Preconditions: no Excel process is running, and AccessVBOM is 1. Otherwise nothing runs (exit 2).
 After each case no Excel process may remain. If one does, the run stops without touching it.
@@ -90,13 +90,54 @@ function Wait-NoExcel([int]$Seconds) {
     $left
 }
 
-function Invoke-Case([string]$Name, [scriptblock]$Body) {
+if (-not ('XlWrightTest.Foreground' -as [type])) {
+    Add-Type -Namespace XlWrightTest -Name Foreground -MemberDefinition @'
+[DllImport("user32.dll")]
+public static extern System.IntPtr GetForegroundWindow();
+[DllImport("user32.dll")]
+public static extern uint GetWindowThreadProcessId(System.IntPtr hWnd, out uint processId);
+'@
+}
+
+# Samples the foreground window every 50 ms in another runspace. The tests start only when no Excel is
+# running, so an Excel in the foreground is one this run started.
+function Start-ForegroundWatch {
+    $state = [hashtable]::Synchronized(@{ Stop = $false; Total = 0; Excel = 0 })
+    $ps = [PowerShell]::Create()
+    [void]$ps.AddScript({ param($s)
+        while (-not $s.Stop) {
+            $processId = [uint32]0
+            [void][XlWrightTest.Foreground]::GetWindowThreadProcessId([XlWrightTest.Foreground]::GetForegroundWindow(), [ref]$processId)
+            $s.Total++
+            if ((Get-Process -Id $processId -ErrorAction SilentlyContinue).ProcessName -eq 'EXCEL') { $s.Excel++ }
+            Start-Sleep -Milliseconds 50
+        }
+    }).AddArgument($state)
+    [pscustomobject]@{ State = $state; PowerShell = $ps; Async = $ps.BeginInvoke() }
+}
+
+function Stop-ForegroundWatch($Watch) {
+    $Watch.State.Stop = $true
+    try { [void]$Watch.PowerShell.EndInvoke($Watch.Async) } finally { $Watch.PowerShell.Dispose() }
+    $Watch.State
+}
+
+function Invoke-Case([string]$Name, [switch]$WatchForeground, [scriptblock]$Body) {
     if ($script:stopped) { return }
     if ($Case -and $Case -notcontains $Name) { return }
     $script:checks = New-Object System.Collections.Generic.List[object]
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $errorText = $null
+    $foreground = $null
+    if ($WatchForeground) { $foreground = Start-ForegroundWatch }
     try { & $Body } catch { $errorText = $_.Exception.Message + ' @ ' + $_.InvocationInfo.PositionMessage }
+    finally {
+        if ($foreground) {
+            $samples = Stop-ForegroundWatch $foreground
+            # The ribbon is operated through MSAA so that the user can keep working in another application.
+            Assert 'Excel never took the foreground' ($samples.Excel -eq 0) ("$($samples.Excel) of $($samples.Total) samples")
+        }
+    }
     $left = Wait-NoExcel 20
     if ($left.Count -gt 0) {
         Assert 'no Excel left after the case' $false ('PIDs ' + ($left -join ','))
@@ -317,7 +358,7 @@ Invoke-Case 'userform' {
 }
 
 if ($Full) {
-    Invoke-Case 'ribbon' {
+    Invoke-Case 'ribbon' -WatchForeground {
         $dir = New-CaseDir 'ribbon'
         $book = New-BookWithVba $dir
         # The sheet tab is a TabItem too: a sheet named like the ribbon tab must not make the tab ambiguous.
@@ -362,7 +403,7 @@ if ($Full) {
         }
     }
 
-    Invoke-Case 'ribbon-layout' {
+    Invoke-Case 'ribbon-layout' -WatchForeground {
         $dir = New-CaseDir 'ribbon-layout'
         $book = New-BookWithVba $dir
         Use-ExcelWorkbook -Path $book -Save -ScriptBlock { param($xl, $wb) $wb.Worksheets.Item(1).Name = $S.Tab }
@@ -439,7 +480,7 @@ if ($Full) {
         Assert 'rejected XML: exit 1, tab missing' ($bad.Exit -eq 1 -and @($badRes.Mismatches | Where-Object { $_.Path -eq $S.Tab -and $_.Actual -eq 'missing' }).Count -eq 1) ($badRes | ConvertTo-Json -Compress -Depth 8)
     }
 
-    Invoke-Case 'publish' {
+    Invoke-Case 'publish' -WatchForeground {
         $dir = New-CaseDir 'publish'
         $book = Join-Path $dir 'book.xlsm'
         [void](New-ExcelWorkbook -Path $book)

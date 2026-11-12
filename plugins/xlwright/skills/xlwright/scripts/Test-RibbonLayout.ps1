@@ -420,7 +420,7 @@ try {
             if ($e.InsertAfterMso -and $before -ne $e.InsertAfterMso) { Add-Mismatch $at 'InsertAfterMso' $e.InsertAfterMso $before }
             if ($e.InsertBeforeMso -and $after -ne $e.InsertBeforeMso) { Add-Mismatch $at 'InsertBeforeMso' $e.InsertBeforeMso $after }
 
-            $tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+            Select-RibbonTab $tab
             $name = $tab.Current.Name
             $content = Find-TabContent $win (New-NamedControlCondition $name $ControlType::Group) $FindTimeoutSeconds "tab content '$name'"
             # The classic ribbon is about 100 px high; the single-line (simplified) ribbon is far lower.

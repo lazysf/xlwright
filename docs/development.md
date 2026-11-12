@@ -85,7 +85,7 @@ tools/                            開発用の検査（配布しない）
 
 `references/excel-com-rebuild.md` は、別の端末で作った前身のスキル `excel-com` を復元するためのバンドルです。今のスキルは、これを元に作り直しました。中身は今のスキルと一致しないので、使い方は `plugins/xlwright/skills/xlwright/` に従います。
 
-プラグインとして入れた時の振る舞いを確かめた結果は、[notes/plugin-install.md](notes/plugin-install.md) にあります。
+プラグインとして入れた時の振る舞いを確かめた結果は、[notes/plugin-install.md](notes/plugin-install.md) にあります。リボンの操作で Excel を前面に出さない方法とその実測は、[notes/foreground.md](notes/foreground.md) にあります。
 
 ## MCP サーバーについて
 

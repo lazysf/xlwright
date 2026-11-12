@@ -27,7 +27,7 @@ Excel で保存しても customUI は残るため、埋め込んだ後に COM �
 
 ## 見え方を XML と照らす
 
-`Test-RibbonLayout.ps1` は、ブックに埋め込まれた `customUI14.xml` を読み、表示した Excel（最大化、マクロ有効、ブックのイベントは無効）で XML の各タブを選び、UI Automation で読んだ見え方と照らす。ユーザーの画面に Excel が数秒出るので、先に一言伝える。
+`Test-RibbonLayout.ps1` は、ブックに埋め込まれた `customUI14.xml` を読み、表示した Excel（最大化、マクロ有効、ブックのイベントは無効）で XML の各タブを選び、UI Automation で読んだ見え方と照らす。Excel のウィンドウが画面に出る（前面は取らない）ので、先に一言伝える。
 
 ```powershell
 powershell.exe -NoProfile -File "<skill>/scripts/Test-RibbonLayout.ps1" -Path <workbook> -OutFile <result.json> -ScreenshotDir <既存のフォルダ>
@@ -50,14 +50,14 @@ powershell.exe -NoProfile -File "<skill>/scripts/Test-RibbonLayout.ps1" -Path <w
 - `Unsupported` には照らせなかったものが入る。menu、splitButton、gallery、box などを含むグループ（グループの有無だけ確かめ、中のボタンは照らさない）、callback で表示名が決まるタブ、`visible="false"` で隠した組み込みグループ（表示名が言語で変わり、探せない）、グループとボタンの `insertAfterMso` / `insertBeforeMso`（同じ理由で、組み込みの側を探せない）、`contextualTabs`。`separator` は UI Automation に出ないので数えない。
 - `Collapsed` には、幅が足りずに 1 つのボタンにたたまれたグループが入る。中のボタンは照らさない。
 - `Actual` には読んだタブ、グループ、ボタン（`Size`、`Enabled`、`IconOnly`）が入る。
-- `-ScreenshotDir` を付けると、XML の順に `tab-1.png`、`tab-2.png` … を書き、`Screenshots` に場所が入る。アイコンの絵柄は UI Automation で読めないので、この画像を Read で見て確かめる。画像は画面ではなく Excel のウィンドウに描かせて撮る（`PrintWindow`）。手前に別のウィンドウを重ねた状態と、画面の拡大率が 100% 以外の時は確かめていない。画像を撮れなかったタブは、照合を止めずに `File` が `null`、`Error` に理由が入る。
+- `-ScreenshotDir` を付けると、XML の順に `tab-1.png`、`tab-2.png` … を書き、`Screenshots` に場所が入る。アイコンの絵柄は UI Automation で読めないので、この画像を Read で見て確かめる。画像は画面ではなく Excel のウィンドウに描かせて撮る（`PrintWindow`）。手前に別のウィンドウがある状態でも撮れた。画面の拡大率が 100% 以外の時は確かめていない。画像を撮れなかったタブは、照合を止めずに `File` が `null`、`Error` に理由が入る。
 - ツールチップ（`screentip`、`supertip`）は UI Automation で読めないので照らさない。
 
 確かめた場面（Excel 16、Windows 11）: カスタムタブの `insertAfterMso`（同じ組み込みタブの後ろに 2 つ。XML で後に書いたタブの方が組み込みタブの近くに出た）、`getLabel` と `getVisible` を持ち隠れたボタン、large と normal、`showLabel="false"`、`enabled="false"`、`visible="false"`、`getEnabled` / `getVisible` / `getLabel`、toggleButton、カスタムタブに入れた組み込みグループ、組み込みタブに足したグループ（`insertAfterMso` 付き）、組み込みグループを隠す定義、`label` の無いグループとボタン、`startFromScratch`、menu を含むグループ、未知の属性でリボン全体が無視された場合。簡易表示のリボンの見分け（タブの中身の高さが 60 px 未満）は、実機で確かめていない。
 
 ## ボタンの押下で確かめる
 
-`Invoke-RibbonButton.ps1` は、ブックを表示した Excel で開き（最大化、マクロ有効、ブックのイベントは無効）、表示名でタブを選び、そのタブの中からボタンを探して押す。ユーザーの画面に Excel が数秒出るので、先に一言伝える。
+`Invoke-RibbonButton.ps1` は、ブックを表示した Excel で開き（最大化、マクロ有効、ブックのイベントは無効）、表示名でタブを選び、そのタブの中からボタンを探して押す。Excel のウィンドウが画面に出る（前面は取らない）ので、先に一言伝える。タブの切り替えとボタンの押下は、MSAA の既定の動作で行う。UI Automation の `Select()` と `Invoke()` は Excel を前面に出し、人が使っているアプリからキー入力を奪うので使わない。無効なボタンは押さずにエラーにする。
 
 ```powershell
 powershell.exe -NoProfile -File "<skill>/scripts/Invoke-RibbonButton.ps1" -Path <workbook> -TabLabel <タブの表示名> -ButtonLabel <ボタンの表示名> -OutFile <result.json>
@@ -71,6 +71,6 @@ powershell.exe -NoProfile -File "<skill>/scripts/Invoke-RibbonButton.ps1" -Path 
 - × で閉じられないダイアログ（Yes/No の MsgBox など）が出た時は、このスクリプトが起動した Excel だけを PID で止め、エラーにする。
 - 押す操作は、マクロの終了を待たずに戻る。ダイアログを出さずに長く動くマクロは、ブックを閉じる時に終わるまで待つ。終わらないマクロは、上限で見張りが Excel を止める。
 - ブックは保存せずに閉じる。そのため、ボタンがシートに書いた値は、この結果からは見えない。シートへの効果は別に確かめる。
-- 確かめた場面: 日本語のラベル、英字のラベル、ダイアログを出さないボタン、MsgBox を 2 回続けて出すボタン、Yes/No の MsgBox、押せない要素を指定した場合、30 秒動くボタン、タブと同名のグループ、タブと同名のシート、同名のグループが並ぶタブ、同名のタブ、同じタブ内の同名のボタン。
+- 確かめた場面（MSAA で押す今の形、`-Full` の試験）: 日本語のラベル、MsgBox を出すボタン、Yes/No の MsgBox、タブと同名のグループ、タブと同名のシート、同名のグループが並ぶタブ、同名のタブ、同じタブ内の同名のボタン、たたまれたグループ。UI Automation で押していた時にだけ確かめた場面: 英字のラベル、ダイアログを出さないボタン、MsgBox を 2 回続けて出すボタン、押せない要素を指定した場合、30 秒動くボタン。無効なボタンを指定した時のエラーは、実機で確かめていない。
 - ウィンドウが狭いと、Excel はグループを 1 つのボタンにたたみ、中のボタンは探せなくなる。そのため最大化して開く。最大化しても画面の幅が足りずにボタンが見つからない時は、`Error` にたたまれたグループの名前が付く。たたまれたかは、グループと同じ名前の要素 1 つがグループの高さいっぱいを占めることで見分けるので、グループと同名の menu 1 つだけのグループは、たたまれたと扱わない。どちらのスクリプトも、試験用の `-WindowWidth`（ポイント）を付けると、最大化せずにその幅で開く。`-Full` の試験は、これでたたまれる場面を作って確かめる。
 - 非表示のまま開いた Excel では、リボンは作られない（`onLoad` が動かない）。表示して開くと動く。リボンの確認には、必ずウィンドウを表示する。

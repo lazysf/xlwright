@@ -18,6 +18,10 @@ Public Sub AskYesNo(control As IRibbonControl)
     MsgBox "続けますか", vbYesNo
 End Sub
 
+Public Sub GetOff(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = False
+End Sub
+
 Public Sub Spin()
     Do
         DoEvents

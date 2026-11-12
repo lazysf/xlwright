@@ -1,6 +1,6 @@
 ---
 name: xlwright
-description: Excel ブックを Windows 版 Excel と PowerShell COM で確認・編集する。シートの値・数式・書式、VBA と UserForm の作成・編集と入出力、カスタムリボンの埋め込みとボタンの動作確認、VBA をロックした配布ブックの出力に使う。
+description: Excel ブックを Windows 版 Excel と PowerShell COM で確認・編集する。シートの値・数式・書式、VBA と UserForm の作成・編集と入出力、カスタムリボンの埋め込みと、見え方・ボタンの動作の確認、VBA をロックした配布ブックの出力に使う。
 ---
 
 # xlwright
@@ -64,7 +64,7 @@ Excel は既定で、VBA とブックイベントを無効にし、外部ブッ�
 | シートの確認・編集 | 下の「COM 編集」。確認だけなら `-Save` を付けない |
 | VBA の変更（`vba/` の正本を編集して取り込む） | [VBA の編集ルールと入出力](references/vba.md) |
 | UserForm の作成・変更 | [UserForm の作成と編集](references/userform.md) |
-| リボンの変更とボタンの動作確認 | [リボン](references/ribbon.md) |
+| リボンの変更、見え方とボタンの動作確認 | [リボン](references/ribbon.md) |
 | VBA をロックした配布ブックの出力 | [配布ブックの出力](references/publish.md) |
 | 複数のブックを順に扱う、別ブックからシートをコピーする | [COM 編集の詳細](references/com.md) |
 | Excel が起動しない、実行が拒否される | [実行環境と起動の失敗](references/troubleshooting.md) |
@@ -78,7 +78,7 @@ VBA とリボンを持つブックを一から作る時は、次の順に進め�
 1. `Invoke-ExcelScript.ps1 -Create -Save` でブックを作り、シートの値・数式・書式を入れる。
 2. `vba/` に VBA のソースを書き、`Import-Vba.ps1` で取り込む。
 3. ブックを閉じた状態で、`ribbon/customUI14.xml` を `Add-CustomUI.ps1` で埋め込む。
-4. `Invoke-ExcelScript.ps1` で開き直し、シートと VBA を読み戻す。リボンは `Invoke-RibbonButton.ps1` で押して確かめる。
+4. `Invoke-ExcelScript.ps1` で開き直し、シートと VBA を読み戻す。リボンは `Test-RibbonLayout.ps1` で見え方を XML と照らし、`Invoke-RibbonButton.ps1` で押して確かめる。
 5. 配布する場合は、最後に `Publish-Workbook.ps1` で出力し、ロックを読み戻す。
 
 ## COM 編集
@@ -117,7 +117,7 @@ powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/scripts/Invoke-ExcelScript.
 
 - **シート**: `Value2`、`Formula`、`Text`（表示形式が適用された文字列）を読む。数式は Excel が再計算した値で確かめる。
 - **VBA**: 変更したコンポーネントの名前・種別・コードを読み戻す。実行してよいマクロは `$xl.Run('MacroName')` で戻り値を確かめる。ThisWorkbook に置いた関数は、`$xl.Run` で呼ぶと（ブック名で修飾しても）空が返る。`[System.__ComObject].InvokeMember('FuncName', [Reflection.BindingFlags]::InvokeMethod, $null, $wb, $null)` で Workbook のメンバーとして呼ぶと値が返る。
-- **リボンとボタン**: `Invoke-RibbonButton.ps1` で実際に押し、出たダイアログの文言を確かめる（[リボン](references/ribbon.md)）。
+- **リボンとボタン**: `Test-RibbonLayout.ps1` でタブ・グループ・ボタンの並び、大きさ、有効無効、表示非表示を XML と照らし、タブの画像でアイコンを見る。`Invoke-RibbonButton.ps1` で実際に押し、出たダイアログの文言を確かめる（[リボン](references/ribbon.md)）。
 
 ## 動作確認
 
@@ -128,6 +128,6 @@ powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/tests/Test-XlWright.ps1" -O
 ```
 
 - 既定の項目は Excel を表示しない。セルと VBA、`Invoke-ExcelScript.ps1`、上限、呼び出し元が殺された時、不正な入力の拒否（VBA のソース、リボンの XML、配布の失敗）、見張りが立てられない時、UserForm を確かめる。5 分ほどかかる。
-- `-Full` を付けると、リボンの押下（同名の組み合わせ、閉じられないダイアログを含む）と配布ブックの出力も確かめる。Excel と VBE が画面に出るので、先に人へ伝え、終わるまで操作しないよう頼む。
+- `-Full` を付けると、リボンの押下（同名の組み合わせ、閉じられないダイアログを含む）、リボンの見え方の照合、配布ブックの出力も確かめる。Excel と VBE が画面に出るので、先に人へ伝え、終わるまで操作しないよう頼む。
 - `-Case timeout,userform` のように、名前を指定した項目だけを流せる。
 - 終了コードは、0 がすべて合格、1 が不合格あり、2 が前提を満たさない・Excel が残って止まった。不合格の時は一時フォルダを残し、場所を出力する。

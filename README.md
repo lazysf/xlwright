@@ -7,7 +7,7 @@ Windows 版 Excel を PowerShell の COM で操作して、Excel のブックと
 
 - シートの値・数式・書式の確認と編集
 - VBA（標準・クラス・文書モジュール）と UserForm の書き出し・編集・取り込み
-- カスタムリボンの埋め込みと、ボタンを押して動作を確かめること
+- カスタムリボンの埋め込みと、見え方を XML と照らすこと、ボタンを押して動作を確かめること
 - VBA プロジェクトをロックした配布用のブックの出力
 
 使い方の正本は [plugins/xlwright/skills/xlwright/SKILL.md](plugins/xlwright/skills/xlwright/SKILL.md) です。
@@ -41,7 +41,7 @@ GitHub から入れた場合、自動更新は既定で無効です。更新す�
 powershell.exe -NoProfile -File plugins\xlwright\skills\xlwright\tests\Test-XlWright.ps1
 ```
 
-`-Full` を付けると、Excel と VBE を画面に出す試験（リボンの押下、配布ブックの出力）も行います。
+`-Full` を付けると、Excel と VBE を画面に出す試験（リボンの押下と見え方の照合、配布ブックの出力）も行います。
 
 ## 開発
 

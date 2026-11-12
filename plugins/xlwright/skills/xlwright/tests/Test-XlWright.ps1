@@ -5,7 +5,7 @@ Checks the xlwright scripts against the real Excel on this machine.
 .DESCRIPTION
 Every case creates its own workbooks in a new temporary folder and checks explicit expected values.
 Nothing outside that folder is changed. The default cases keep Excel hidden. -Full adds the cases
-that show Excel and the VBE on the screen (ribbon click, publish with VBA lock); do not use the
+that show Excel and the VBE on the screen (ribbon click, ribbon layout, publish with VBA lock); do not use the
 mouse or keyboard while they run.
 
 Preconditions: no Excel process is running, and AccessVBOM is 1. Otherwise nothing runs (exit 2).
@@ -358,6 +358,57 @@ if ($Full) {
                 Assert 'Yes/No dialog: its Excel was stopped' ($left.Count -eq 0) ('PIDs ' + ($left -join ','))
             }
         }
+    }
+
+    Invoke-Case 'ribbon-layout' {
+        $dir = New-CaseDir 'ribbon-layout'
+        $book = New-BookWithVba $dir
+        $layout = Join-Path $scripts 'Test-RibbonLayout.ps1'
+
+        $noUiJson = Join-Path $dir 'no-ui.json'
+        $noUi = Invoke-Script $layout @('-Path', $book, '-OutFile', $noUiJson)
+        $noUiRes = [IO.File]::ReadAllText($noUiJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        Assert 'no customUI: exit 2 with the reason' ($noUi.Exit -eq 2 -and [string]$noUiRes.Error -like '*no customUI*') ($noUiRes | ConvertTo-Json -Compress)
+
+        $add = Invoke-Script (Join-Path $scripts 'Add-CustomUI.ps1') @('-Path', $book, '-XmlPath', (Join-Path $data 'ribbon\layout.xml'))
+        Assert 'layout.xml: embed exit 0' ($add.Exit -eq 0) $add.Output
+        $shots = Join-Path $dir 'shots'
+        New-Item -ItemType Directory -Path $shots | Out-Null
+        $json = Join-Path $dir 'layout.json'
+        $run = Invoke-Script $layout @('-Path', $book, '-OutFile', $json, '-ScreenshotDir', $shots)
+        $res = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        $detail = $res | ConvertTo-Json -Compress -Depth 8
+        Assert 'layout.xml: exit 0, no mismatch' ($run.Exit -eq 0 -and @($res.Mismatches).Count -eq 0 -and -not $res.Error) $detail
+        $tab = @($res.Actual)[0]
+        Assert 'tab placed after the Home tab' ($tab.Before -eq 'TabHome') $tab.Before
+        $groups = @($tab.Groups)
+        Assert 'built-in group, then the custom groups' ($groups.Count -eq 3 -and $groups[1].Name -eq $S.Group -and $groups[2].Name -eq $S.MenuGroup) (@($groups | ForEach-Object { $_.Name }) -join ',')
+        $controls = @($groups[1].Controls)
+        $names = @($controls | ForEach-Object { $_.Name }) -join ','
+        Assert 'buttons in order, hidden button absent' ($names -eq (@($S.Button, $S.SaveButton, $S.IconButton, $S.OffButton, $S.DynButton) -join ',')) $names
+        if ($controls.Count -eq 5) {
+            Assert 'large and normal size read' ($controls[0].Size -eq 'large' -and $controls[1].Size -eq 'normal') (($controls | ForEach-Object { $_.Size }) -join ',')
+            Assert 'showLabel=false read as icon only' ($controls[2].IconOnly -and -not $controls[1].IconOnly) (($controls | ForEach-Object { $_.IconOnly }) -join ',')
+            Assert 'disabled button read' (-not $controls[3].Enabled -and $controls[1].Enabled) (($controls | ForEach-Object { $_.Enabled }) -join ',')
+        }
+        $dynPath = $S.Tab + '/' + $S.Group + '/' + $S.DynButton
+        Assert 'getEnabled listed in Dynamic' (@($res.Dynamic | Where-Object { $_.Path -eq $dynPath -and $_.Item -eq 'Enabled' -and $_.Actual -eq $false }).Count -eq 1) $detail
+        Assert 'group with a menu listed in Unsupported' (@($res.Unsupported | Where-Object { $_.Path -eq ($S.Tab + '/' + $S.MenuGroup) }).Count -eq 1) $detail
+        $png = Join-Path $shots 'tab-1.png'
+        $pngOk = (Test-Path -LiteralPath $png) -and ((Get-Item -LiteralPath $png).Length -gt 1000)
+        if ($pngOk) {
+            $head = [IO.File]::ReadAllBytes($png)[0..3]
+            $pngOk = ($head[0] -eq 0x89 -and $head[1] -eq 0x50 -and $head[2] -eq 0x4E -and $head[3] -eq 0x47)
+        }
+        Assert 'screenshot written as PNG' $pngOk $png
+
+        # Excel ignores the whole ribbon when the XML has an unknown attribute: the tab is reported missing.
+        $add = Invoke-Script (Join-Path $scripts 'Add-CustomUI.ps1') @('-Path', $book, '-XmlPath', (Join-Path $data 'ribbon\layout-rejected.xml'))
+        Assert 'layout-rejected.xml: embed exit 0' ($add.Exit -eq 0) $add.Output
+        $badJson = Join-Path $dir 'rejected.json'
+        $bad = Invoke-Script $layout @('-Path', $book, '-OutFile', $badJson, '-FindTimeoutSeconds', '5')
+        $badRes = [IO.File]::ReadAllText($badJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        Assert 'rejected XML: exit 1, tab missing' ($bad.Exit -eq 1 -and @($badRes.Mismatches | Where-Object { $_.Path -eq $S.Tab -and $_.Actual -eq 'missing' }).Count -eq 1) ($badRes | ConvertTo-Json -Compress -Depth 8)
     }
 
     Invoke-Case 'publish' {

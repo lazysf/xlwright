@@ -30,6 +30,7 @@ xlwright の開発ルール
 - 試験と実験は、一時フォルダの新しいブックか写しで行う。Git で管理するファイルや人のブックを直接変えない。
 - Excel が動いている時は、試験を始めずに人へ確かめる。
 - ファイルを変えたら、`npm run lint` を流す（Markdown の lint と、文字コード・改行・ASCII の検査）。
+- Claude Code を起動して確かめる時（`claude plugin eval`、`claude plugin validate` など）は、Claude Desktop に同梱された CLI を使う。PATH には `claude` が無い。同梱版は `%APPDATA%\Claude-2nd\claude-code\<版>\<ハッシュ>\claude.exe` にあり、アプリの更新で場所が変わるので、使う前に探して、更新日時が最も新しいものを使う。
 
 ## 実際の Excel
 

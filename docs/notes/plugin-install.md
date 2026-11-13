@@ -22,6 +22,7 @@
 - 新しい commit を push しても、手元の marketplace の写し（`~/.claude/plugins/marketplaces/xlwright`）を取り直すまで、アプリは気づかない。詳細の画面の「更新」は押せず、ツールチップに「最新です」と出る。
 - 「ディレクトリ」の画面の「Code」の一覧で marketplace を更新すると、写しが新しい commit になり、新しい版がキャッシュに届いた。しかし入っている版（`~/.claude/plugins/installed_plugins.json`）は切り替わらず、「更新」は押せないままだった。`/reload-plugins` とアプリの再起動でも変わらなかった。新しいセッションも古い版を読み込んだ。
 - 同梱の CLI で `claude plugin update xlwright@xlwright` を流すと、入っている版が `689ca7f5a64a` から `000448a646ae` に切り替わった。アプリを再起動すると、新しいセッションは新しい版を読み込んだ。Desktop の画面だけで更新を済ませる手段は、見つからなかった。
+- `plugin.json` に `version` を書いた commit（`51d2ad0`）を push した後、同梱の CLI で `claude plugin update xlwright@xlwright` を流すと、入っている版が `000448a646ae` から `0.1.0` に切り替わった。キャッシュには版 `0.1.0` のフォルダができ、中身は `plugins/xlwright/` と一致した。前の版のフォルダには `.orphaned_at` が置かれた。続けてもう一度流すと、`already at the latest version (0.1.0)` と出て、何も変わらなかった。
 
 ## 入れ方と版を今の形にしている理由
 
@@ -36,6 +37,5 @@
 
 ## 未確認
 
-- 詳細の画面の「更新」が押せるようになる条件。marketplace を取り直した後も、再起動した後も押せなかった。
-- `version` を書いた版（`0.1.0`）を利用者が受け取る時の振る舞い。ハッシュの版から `0.1.0` へ `claude plugin update` で切り替わるか、版を上げた後に詳細の画面の「更新」が押せるようになるかは、push の後に確かめる。
+- 詳細の画面の「更新」が押せるようになる条件。marketplace を取り直した後も、再起動した後も押せなかった。`version` を上げた時に押せるようになるかは見ていない（`0.1.0` への切り替えは CLI で行った）。
 - Code タブで、marketplace の自動更新を有効にする操作があるか。docs は `/plugin` の Marketplaces の画面の「Enable auto-update」を挙げるが、Desktop の画面では見ていない。

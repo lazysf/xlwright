@@ -34,6 +34,16 @@ commit の時に同じ検査を流すには、[prek](https://prek.j178.dev) で 
 prek install
 ```
 
+`prek install` は、commit の時と push の時の 2 つの hook を入れます。push の時に流れるのは、[版](#版)の検査だけです。pre-push の hook を足す前に入れた端末では、`prek install` を流し直します。
+
+## 版
+
+利用者に届く版は、`plugins/xlwright/.claude-plugin/plugin.json` の `version` で決まります。marketplace の項目（`.claude-plugin/marketplace.json`）には `version` を書きません。`version` を変えない限り、何度 push しても利用者は前の版のままです。
+
+`plugins/xlwright/` を変えて配る時は、push の前に `version` を上げます。作業中の commit ごとに上げる必要はありません。版は semver の形（`0.1.0` など）で書きます。
+
+push の時の hook（`tools/Test-PluginVersion.ps1`）は、origin との差に `plugins/xlwright/` の変更があるのに `version` が origin と同じなら、push を止めます。origin にまだ無いブランチは、`origin/HEAD`（無ければ `origin/main`）との分岐点と比べます。比べる相手が見つからない時は、警告を出して通します。
+
 ## eval
 
 スキルの振る舞いは、`plugins/xlwright/evals/` の case で `claude plugin eval`（Claude Code 2.1.269 以上）にかけて確かめます。各 case は、依頼文（`prompt.md`）と採点の基準（`graders/`）の組です。
@@ -80,8 +90,6 @@ plugins/xlwright/                 配布するプラグイン（この中だけ�
 docs/                             開発の手順と notes（配布しない）
 tools/                            開発用の検査（配布しない）
 ```
-
-`plugin.json` にも marketplace の項目にも `version` を書きません。版は repo の先頭の commit のハッシュになり、`plugins/xlwright/` を変えていない commit を push しても新しい版になります。
 
 `references/excel-com-rebuild.md` は、別の端末で作った前身のスキル `excel-com` を復元するためのバンドルです。今のスキルは、これを元に作り直しました。中身は今のスキルと一致しないので、使い方は `plugins/xlwright/skills/xlwright/` に従います。
 

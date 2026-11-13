@@ -39,7 +39,7 @@ Claude Code のプラグインとして入れます。この repo を marketplac
 powershell.exe -NoProfile -File "$env:USERPROFILE\.claude\plugins\cache\xlwright\xlwright\<版>\skills\xlwright\tests\Test-XlWright.ps1"
 ```
 
-`<版>` は、入れた版の commit のハッシュを名前に持つフォルダです。`-Full` を付けると、Excel と VBE を画面に出す試験（リボンの押下と見え方の照合、配布ブックの出力）も行います。
+`<版>` は、入れた版の番号（`0.1.0` など）を名前に持つフォルダです。`-Full` を付けると、Excel と VBE を画面に出す試験（リボンの押下と見え方の照合、配布ブックの出力）も行います。
 
 ## 開発
 

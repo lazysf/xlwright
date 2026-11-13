@@ -2,12 +2,17 @@
 # See https://prek.j178.dev for more information.
 #:schema https://www.schemastore.org/prek.json
 
+# `prek install` installs both shims. Hooks run at commit unless they set their own stages.
+default_install_hook_types = ["pre-commit", "pre-push"]
+default_stages = ["pre-commit"]
+
 [[repos]]
 repo = "builtin"
+# default_stages did not keep these builtin hooks at commit (they ran at pre-push with prek 0.5.7).
 hooks = [
-    { id = "trailing-whitespace" },
-    { id = "end-of-file-fixer" },
-    { id = "check-added-large-files" },
+    { id = "trailing-whitespace", stages = ["pre-commit"] },
+    { id = "end-of-file-fixer", stages = ["pre-commit"] },
+    { id = "check-added-large-files", stages = ["pre-commit"] },
 ]
 
 [[repos]]
@@ -17,4 +22,6 @@ hooks = [
     { id = "rumdl", name = "rumdl", entry = "npx --no-install rumdl check", language = "system", types = ["markdown"] },
     # Encoding, line endings, and ASCII-only scripts (README.md).
     { id = "text-files", name = "text files", entry = "powershell -NoProfile -File tools/Test-TextFile.ps1", language = "system", pass_filenames = false, always_run = true },
+    # A push that changes plugins/xlwright/ must raise the version in plugin.json.
+    { id = "plugin-version", name = "plugin version", entry = "powershell -NoProfile -File tools/Test-PluginVersion.ps1", language = "system", pass_filenames = false, always_run = true, stages = ["pre-push"] },
 ]

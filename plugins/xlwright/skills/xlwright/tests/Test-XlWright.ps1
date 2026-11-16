@@ -5,7 +5,7 @@ Checks the xlwright scripts against the real Excel on this machine.
 .DESCRIPTION
 Every case creates its own workbooks in a new temporary folder and checks explicit expected values.
 Nothing outside that folder is changed. The default cases keep Excel hidden. -Full adds the cases
-that show Excel and the VBE on the screen (ribbon click, ribbon layout, publish with VBA lock); do not touch
+that show Excel and the VBE on the screen (VBA compile error, ribbon click, ribbon layout, publish with VBA lock); do not touch
 those windows while they run. These cases also check that Excel never takes the foreground.
 
 Preconditions: no Excel process is running, and AccessVBOM is 1. Otherwise nothing runs (exit 2).
@@ -163,6 +163,14 @@ function New-BookWithVba([string]$Dir) {
     $book
 }
 
+function Invoke-Compile([string]$Book) {
+    $json = Join-Path $temp ('compile-' + [guid]::NewGuid().ToString('N') + '.json')
+    $run = Invoke-Script (Join-Path $scripts 'Test-VbaCompile.ps1') @('-Path', $Book, '-OutFile', $json)
+    $parsed = $null
+    if (Test-Path -LiteralPath $json) { $parsed = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8) | ConvertFrom-Json }
+    [pscustomobject]@{ Exit = $run.Exit; Json = $parsed; Output = $run.Output }
+}
+
 # ---------------------------------------------------------------------------------------------
 Invoke-Case 'cells-and-vba' {
     $dir = New-CaseDir 'cells-and-vba'
@@ -226,6 +234,20 @@ Invoke-Case 'invoke-excelscript' {
     Assert 'failure exit 1' ($f.Exit -eq 1) $f.Exit
     Assert 'failure reported' ((-not $f.Json.Ok) -and $f.Json.Error) ($f.Json | ConvertTo-Json -Compress)
     Assert 'workbook unchanged by read and failure' ((Get-FileHashText $book) -eq $before) 'hash changed'
+}
+
+Invoke-Case 'vba-compile' {
+    $dir = New-CaseDir 'vba-compile'
+    $book = New-BookWithVba $dir
+    $hash = Get-FileHashText $book
+    $c = Invoke-Compile $book
+    Assert 'valid code: exit 0' ($c.Exit -eq 0) $c.Output
+    Assert 'valid code: compiled, no error' ($c.Json.Compiled -eq $true -and $null -eq $c.Json.CompileError -and $null -eq $c.Json.Error) ($c.Json | ConvertTo-Json -Compress)
+    Assert 'workbook unchanged by the check' ((Get-FileHashText $book) -eq $hash) 'hash changed'
+    $plain = Join-Path $dir 'plain.xlsx'
+    [void](New-ExcelWorkbook -Path $plain)
+    $p = Invoke-Compile $plain
+    Assert 'workbook without VBA: compiled' ($p.Exit -eq 0 -and $p.Json.Compiled -eq $true) ($p.Json | ConvertTo-Json -Compress)
 }
 
 Invoke-Case 'timeout' {
@@ -358,6 +380,28 @@ Invoke-Case 'userform' {
 }
 
 if ($Full) {
+    # A compile error shows the VBE window and the error dialog on the screen.
+    Invoke-Case 'vba-compile-error' -WatchForeground {
+        $dir = New-CaseDir 'vba-compile-error'
+        $cases = @(
+            @{ Name = 'undeclared'; Column = 5 },
+            @{ Name = 'syntax'; Column = 1 })
+        foreach ($case in $cases) {
+            $book = Join-Path $dir ($case.Name + '.xlsm')
+            [void](New-ExcelWorkbook -Path $book)
+            $import = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $book, '-SourceDir', (Join-Path $data ('vba-broken\' + $case.Name)))
+            Assert ($case.Name + ': import exit 0') ($import.Exit -eq 0) $import.Output
+            $hash = Get-FileHashText $book
+            $c = Invoke-Compile $book
+            $detail = $c.Json | ConvertTo-Json -Compress
+            Assert ($case.Name + ': exit 1') ($c.Exit -eq 1) $c.Output
+            Assert ($case.Name + ': reported as a compile error, not a failed check') ($c.Json.Compiled -eq $false -and $null -eq $c.Json.Error) $detail
+            Assert ($case.Name + ': message read') ([string]$c.Json.CompileError.Message -ne '') $detail
+            Assert ($case.Name + ': place read') ($c.Json.CompileError.Module -eq 'Broken' -and $c.Json.CompileError.Line -eq 5 -and $c.Json.CompileError.Column -eq $case.Column) $detail
+            Assert ($case.Name + ': workbook unchanged by the check') ((Get-FileHashText $book) -eq $hash) 'hash changed'
+        }
+    }
+
     Invoke-Case 'ribbon' -WatchForeground {
         $dir = New-CaseDir 'ribbon'
         $book = New-BookWithVba $dir

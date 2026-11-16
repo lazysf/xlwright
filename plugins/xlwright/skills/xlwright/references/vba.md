@@ -37,3 +37,21 @@ powershell.exe -NoProfile -File "<skill>/scripts/Import-Vba.ps1" -Path <workbook
 - 変更したコンポーネントだけを反映する場合は、対象ファイルを種別ごとの配置を保って別の作業先へコピーし、そのルートを `-SourceDir` に渡す。UserForm は付随する `.frx` もコピーする。
 - シートとブックのモジュールを直接編集する場合は、`Worksheet.CodeName` または `Workbook.CodeName` で既存の `VBComponent` を取得し、その `CodeModule` に書く。
 - 既存のブックから書き出したコードには、接続先、ID、認証情報が入っていることがある。commit する前に中身を確かめる。
+
+## コンパイルの検査
+
+取り込んだ後に、VBA プロジェクトをコンパイルして、構文エラーや宣言の無い変数を実行の前に見つける。
+
+```powershell
+powershell.exe -NoProfile -File "<skill>/scripts/Test-VbaCompile.ps1" -Path <workbook> -OutFile <result.json>
+```
+
+- マクロを無効にしてブックを開き、VBE の「VBAProject のコンパイル」を実行して、保存せずに閉じる。ブックは変わらない。
+- 結果は UTF-8 の JSON で `-OutFile` に書く。`Compiled` は、通れば `true`、コンパイルエラーなら `false`、検査そのものが失敗した時は `null`。終了コードは、通った時だけ 0。
+- コンパイルエラーの時は、`CompileError` に `Message`（「コンパイル エラー: 変数が定義されていません。」など、VBE のダイアログの文言）、`Module`、`Line`、`Column` が入る。`Line` は VBE のコードウィンドウの行で、ファイルの先頭の `Attribute` 行やクラスヘッダーを数えない（`.bas` なら、ファイルの行番号から 1 を引いた値）。
+- 報告するエラーは 1 つだけ。直したら、通るまで流し直す。
+- `Module`、`Line`、`Column` は、VBE から場所を読めなかった時は `null` になる。宣言の無い変数と構文エラーでは読めた。
+- コンパイルエラーがある時だけ、VBE のウィンドウとダイアログが画面に短い間出る。スクリプトが閉じて隠す。
+- 検査そのものの失敗は `Error` に入る。VBA プロジェクトがロックされている時、`-DialogTimeoutSeconds`（既定 5）の間にコンパイルの済んだ状態にもならずダイアログも出なかった時など。後者は合格として扱わない。大きなプロジェクトでこの失敗が出たら、秒数を延ばす。
+- VBA の無いブック（`.xlsx` を含む）は `Compiled` が `true` になる。
+- 確かめたのは、標準モジュールにエラーが 1 つある場合。エラーが複数ある時、文書モジュールや UserForm にエラーがある時、VBA プロジェクトがロックされている時、日本語以外の表示言語の Excel では確かめていない。

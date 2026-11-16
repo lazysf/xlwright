@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- VBA プロジェクトをコンパイルし、コンパイルエラーの文言と場所を返す `Test-VbaCompile.ps1`。
+
 ## [0.1.0] - 2026-11-13
 
 ### Added

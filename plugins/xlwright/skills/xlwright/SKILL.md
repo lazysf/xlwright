@@ -15,6 +15,7 @@ PowerShell から `Excel.Application` を COM で操作してブックを編集�
 - WMI（`Win32_Process.Create`）からプロセスを作れること。Excel を起動するたびに、上限で Excel を止める見張りのプロセスを WMI で立てる。立てられない環境では、このスキルは使えない。`Could not start the watchdog` のエラーが出たら、迂回せずに止まり、人へ伝える。
 - エージェントの作業中、人はその端末で Excel を使わない。Excel 以外のアプリは使ってよい。
 - リボンの確認（`Test-RibbonLayout.ps1`、`Invoke-RibbonButton.ps1`）と配布ブックの出力では、Excel や VBE のウィンドウが画面に出る。前面は取らず、人が使っているアプリの後ろに出る。出たウィンドウを人が操作しないよう、始める前に伝える。
+- VBA のコンパイルの検査（`Test-VbaCompile.ps1`）は、コンパイルエラーがある時だけ、VBE のウィンドウとエラーのダイアログが画面に短い間出る。スクリプトが閉じるので、人は操作しない。
 - 利用する repo に、ブックの置き場や VBA ファイルの規則（`AGENTS.md`、`CLAUDE.md` など）があれば、そちらを優先する。無ければ、このスキルの既定に従う。
 
 ## 作業前の確認
@@ -77,7 +78,7 @@ Excel は既定で、VBA とブックイベントを無効にし、外部ブッ�
 VBA とリボンを持つブックを一から作る時は、次の順に進める。各手順の詳細は上の表の reference にある。
 
 1. `Invoke-ExcelScript.ps1 -Create -Save` でブックを作り、シートの値・数式・書式を入れる。
-2. `vba/` に VBA のソースを書き、`Import-Vba.ps1` で取り込む。
+2. `vba/` に VBA のソースを書き、`Import-Vba.ps1` で取り込む。取り込んだら `Test-VbaCompile.ps1` でコンパイルを確かめる。
 3. ブックを閉じた状態で、`ribbon/customUI14.xml` を `Add-CustomUI.ps1` で埋め込む。
 4. `Invoke-ExcelScript.ps1` で開き直し、シートと VBA を読み戻す。リボンは `Test-RibbonLayout.ps1` で見え方を XML と照らし、`Invoke-RibbonButton.ps1` で押して確かめる。
 5. 配布する場合は、最後に `Publish-Workbook.ps1` で出力し、ロックを読み戻す。
@@ -117,7 +118,7 @@ powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/scripts/Invoke-ExcelScript.
 編集した後は、`-Save` なしでブックを開き直して読み戻す。書いたつもりの値ではなく、Excel が保存した結果を見る。動かしてよいマクロの範囲は「マクロが動くことへの注意」のとおり。
 
 - **シート**: `Value2`、`Formula`、`Text`（表示形式が適用された文字列）を読む。数式は Excel が再計算した値で確かめる。
-- **VBA**: 変更したコンポーネントの名前・種別・コードを読み戻す。実行してよいマクロは `$xl.Run('MacroName')` で戻り値を確かめる。ThisWorkbook に置いた関数は、`$xl.Run` で呼ぶと（ブック名で修飾しても）空が返る。`[System.__ComObject].InvokeMember('FuncName', [Reflection.BindingFlags]::InvokeMethod, $null, $wb, $null)` で Workbook のメンバーとして呼ぶと値が返る。
+- **VBA**: 変更したコンポーネントの名前・種別・コードを読み戻す。`Test-VbaCompile.ps1` でコンパイルし、構文エラーや宣言の無い変数が無いことを確かめる（[VBA の編集ルールと入出力](references/vba.md)）。実行してよいマクロは `$xl.Run('MacroName')` で戻り値を確かめる。ThisWorkbook に置いた関数は、`$xl.Run` で呼ぶと（ブック名で修飾しても）空が返る。`[System.__ComObject].InvokeMember('FuncName', [Reflection.BindingFlags]::InvokeMethod, $null, $wb, $null)` で Workbook のメンバーとして呼ぶと値が返る。
 - **リボンとボタン**: `Test-RibbonLayout.ps1` でタブ・グループ・ボタンの並び、大きさ、有効無効、表示非表示を XML と照らし、タブの画像でアイコンを見る。`Invoke-RibbonButton.ps1` で実際に押し、出たダイアログの文言を確かめる（[リボン](references/ribbon.md)）。
 
 ## 動作確認
@@ -128,7 +129,7 @@ powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/scripts/Invoke-ExcelScript.
 powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/tests/Test-XlWright.ps1" -OutFile <result.json>
 ```
 
-- 既定の項目は Excel を表示しない。セルと VBA、`Invoke-ExcelScript.ps1`、上限、呼び出し元が殺された時、不正な入力の拒否（VBA のソース、リボンの XML、配布の失敗）、見張りが立てられない時、UserForm を確かめる。5 分ほどかかる。
-- `-Full` を付けると、リボンの押下（同名の組み合わせ、閉じられないダイアログを含む）、リボンの見え方の照合、配布ブックの出力も確かめる。Excel と VBE が画面に出るので、先に人へ伝え、出たウィンドウを操作しないよう頼む。これらの項目は、Excel が前面を取らないことも確かめる。
+- 既定の項目は Excel を表示しない。セルと VBA、`Invoke-ExcelScript.ps1`、VBA のコンパイル、上限、呼び出し元が殺された時、不正な入力の拒否（VBA のソース、リボンの XML、配布の失敗）、見張りが立てられない時、UserForm を確かめる。5 分ほどかかる。
+- `-Full` を付けると、コンパイルエラーの検出、リボンの押下（同名の組み合わせ、閉じられないダイアログを含む）、リボンの見え方の照合、配布ブックの出力も確かめる。Excel と VBE が画面に出るので、先に人へ伝え、出たウィンドウを操作しないよう頼む。これらの項目は、Excel が前面を取らないことも確かめる。
 - `-Case timeout,userform` のように、名前を指定した項目だけを流せる。
 - 終了コードは、0 がすべて合格、1 が不合格あり、2 が前提を満たさない・Excel が残って止まった。一時フォルダは合否によらず最後に消す。不合格の理由は出力と `-OutFile` に残る。試験のブックを調べたい時は、`-KeepTemp` を付けて流し直すと残り、場所を出力する。

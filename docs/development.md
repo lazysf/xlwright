@@ -64,6 +64,8 @@ claude plugin eval plugins/xlwright
 - どの case も、許すツールは Read、Glob、Grep、Skill だけです。Windows ではシェルを許した eval が動かないため（シェルは OS の sandbox の中で動き、ネイティブの Windows には sandbox の仕組みが無い）、Excel を実際に動かす確認は `Test-XlWright.ps1` で行います。
 - 既定では、1 つの case をプラグインあり・なしで 3 回ずつ流します。会話と同じアカウントで動き、その分の使用量を消費します。最初は `--case` と `--runs 1` で試します。
 - 結果は `plugins/xlwright/evals/results/` に書かれ、Git には入れません。
+- 上の `claude` には、Claude Desktop に同梱された CLI を使います。同梱版は `%APPDATA%` の下の Claude Desktop のフォルダにある `claude-code\<版>\<ハッシュ>\claude.exe` です。アプリの更新で場所が変わり、古い版も残るので、更新日時が最も新しいものを使います。
+- 使用量を Desktop とそろえて把握するため、同梱の CLI は Desktop と同じアカウントでログインして使います。流す前に `claude auth status` を実行し、`loggedIn` が `true`、`authMethod` が `claude.ai`、`email` が Desktop でログインしているアカウントと同じことを確かめます。違う時は、`claude auth login` で Desktop と同じアカウントにログインし直します。
 
 ## `mcp` ブランチの作業
 

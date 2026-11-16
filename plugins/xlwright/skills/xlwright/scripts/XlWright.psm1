@@ -288,7 +288,8 @@ $script:MacroDialogWatcher = {
     while (-not $State.Stop) {
         $dialog = [XlWright.Dialog]::Find($excelPid)
         if ($dialog -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 100; continue }
-        $text = [XlWright.Dialog]::Title($dialog) + ': ' + [XlWright.Dialog]::Message($dialog)
+        $State.DialogMessage = [XlWright.Dialog]::Message($dialog)
+        $text = [XlWright.Dialog]::Title($dialog) + ': ' + $State.DialogMessage
 
         # 4800 is the End button of the VBA runtime error dialog. The button texts depend on the display
         # language, the control id does not. WM_CLOSE does not close this dialog.
@@ -332,6 +333,10 @@ function Invoke-ExcelMacro {
 
     Returns what the macro returns, and nothing for a Sub. Use it inside the script block of
     Use-ExcelWorkbook with -EnableMacros.
+
+    The exception of the first and the last case carries Data['XlWrightFailure'] ('RuntimeError' or
+    'ExcelStopped') and Data['XlWrightDialogMessage'] (the text of the dialog without its title), so that a
+    caller such as Invoke-VbaTest.ps1 does not have to parse the message.
     #>
     [CmdletBinding()]
     param(
@@ -344,7 +349,7 @@ function Invoke-ExcelMacro {
     )
     $processId = Get-ExcelProcessId $Excel
     $state = [hashtable]::Synchronized(@{
-        Stop = $false; ProcessId = $processId; RuntimeError = $null; Fatal = $null
+        Stop = $false; ProcessId = $processId; RuntimeError = $null; Fatal = $null; DialogMessage = $null
         StartTicks = (Get-Process -Id $processId -ErrorAction Stop).StartTime.ToUniversalTime().Ticks
         Closed = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList))
     })
@@ -364,10 +369,22 @@ function Invoke-ExcelMacro {
         try { [void]$ps.EndInvoke($async) } finally { $ps.Dispose() }
     }
     foreach ($text in $state.Closed) { Write-Warning ("Closed a dialog shown by macro '" + $Name + "': " + $text) }
+    $kind = $null
+    $message = $null
     if ($state.Fatal) {
-        throw ($state.Fatal + ' Stopped the Excel instance of this call (PID ' + $processId + '). Unsaved changes are lost.')
+        $kind = 'ExcelStopped'
+        $message = $state.Fatal + ' Stopped the Excel instance of this call (PID ' + $processId + '). Unsaved changes are lost.'
     }
-    if ($state.RuntimeError) { throw ("Macro '" + $Name + "' stopped with a runtime error: " + $state.RuntimeError) }
+    elseif ($state.RuntimeError) {
+        $kind = 'RuntimeError'
+        $message = "Macro '" + $Name + "' stopped with a runtime error: " + $state.RuntimeError
+    }
+    if ($kind) {
+        $exception = New-Object System.InvalidOperationException($message)
+        $exception.Data['XlWrightFailure'] = $kind
+        $exception.Data['XlWrightDialogMessage'] = $state.DialogMessage
+        throw $exception
+    }
     if ($failure) { throw $failure }
     # A Sub returns nothing; do not put a null into the output of the script block.
     if ($null -ne $value) { $value }

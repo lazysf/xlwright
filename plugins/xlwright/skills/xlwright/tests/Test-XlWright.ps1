@@ -5,7 +5,7 @@ Checks the xlwright scripts against the real Excel on this machine.
 .DESCRIPTION
 Every case creates its own workbooks in a new temporary folder and checks explicit expected values.
 Nothing outside that folder is changed. The default cases keep Excel hidden. -Full adds the cases
-that show Excel and the VBE on the screen (VBA compile error, macro dialogs, ribbon click, ribbon layout, publish with VBA lock); do not touch
+that show Excel and the VBE on the screen (VBA compile error, macro dialogs, failing VBA tests, ribbon click, ribbon layout, publish with VBA lock); do not touch
 those windows while they run. These cases also check that Excel never takes the foreground.
 
 Preconditions: no Excel process is running, and AccessVBOM is 1. Otherwise nothing runs (exit 2).
@@ -276,6 +276,48 @@ Invoke-Case 'macro' {
     Assert 'a macro that takes time is waited for' ($r.Slow -eq 7) $r.Slow
 }
 
+function Invoke-VbaTest([string]$Book, [string[]]$Extra = @()) {
+    $json = Join-Path $temp ('vba-test-' + [guid]::NewGuid().ToString('N') + '.json')
+    $run = Invoke-Script (Join-Path $scripts 'Invoke-VbaTest.ps1') (@('-Path', $Book, '-OutFile', $json) + $Extra)
+    $parsed = $null
+    if (Test-Path -LiteralPath $json) { $parsed = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8) | ConvertFrom-Json }
+    [pscustomobject]@{ Exit = $run.Exit; Json = $parsed; Output = $run.Output }
+}
+
+Invoke-Case 'vba-test' {
+    $dir = New-CaseDir 'vba-test'
+    $book = New-BookWithMacros $dir 'vba-test\pass'
+    $hash = Get-FileHashText $book
+    $t = Invoke-VbaTest $book
+    $detail = $t.Json | ConvertTo-Json -Compress -Depth 5
+    Assert 'all passed: exit 0 and Ok' ($t.Exit -eq 0 -and $t.Json.Ok -eq $true -and $null -eq $t.Json.Error) $detail
+    # Sorted by module, in the order of the code; no Private Sub, Function, Sub with arguments or other name.
+    $names = @($t.Json.Tests | ForEach-Object { $_.Name }) -join ','
+    Assert 'only the tests are listed, in order' ($names -eq 'Alpha.Test_Second,Alpha.Test_First,Test_Calc.Test_Add,Test_Calc.Test_ImplicitPublic') $names
+    Assert 'every test ran and passed' (@($t.Json.Tests | Where-Object { $_.Result -ne 'passed' -or $null -eq $_.ElapsedMs }).Count -eq 0) $detail
+    Assert 'summary counts' ($t.Json.Summary.Total -eq 4 -and $t.Json.Summary.Passed -eq 4 -and $t.Json.Summary.Failed -eq 0 -and $t.Json.Summary.NotRun -eq 0) $detail
+    Assert 'workbook unchanged by the run' ((Get-FileHashText $book) -eq $hash) 'hash changed'
+
+    $one = Invoke-VbaTest $book @('-Name', 'Test_Calc.Test_Add,Alpha.Test_First')
+    $names = @($one.Json.Tests | ForEach-Object { $_.Name }) -join ','
+    Assert '-Name: only the named tests ran' ($one.Exit -eq 0 -and $names -eq 'Alpha.Test_First,Test_Calc.Test_Add') ($one.Json | ConvertTo-Json -Compress -Depth 5)
+
+    # A Private Sub must not become runnable by naming it.
+    $private = Invoke-VbaTest $book @('-Name', 'Test_Calc.Test_Private')
+    Assert '-Name: a name that is not a test is an error' ($private.Exit -eq 1 -and $private.Json.Ok -eq $false -and [string]$private.Json.Error -like 'Test not found: Test_Calc.Test_Private*' -and @($private.Json.Tests).Count -eq 0) ($private.Json | ConvertTo-Json -Compress -Depth 5)
+
+    $empty = Join-Path $dir 'empty.xlsm'
+    [void](New-ExcelWorkbook -Path $empty)
+    $none = Invoke-VbaTest $empty
+    Assert 'no test: an error, not a pass' ($none.Exit -eq 1 -and $none.Json.Ok -eq $false -and [string]$none.Json.Error -like 'No test found*') ($none.Json | ConvertTo-Json -Compress -Depth 5)
+
+    $hang = Invoke-VbaTest (New-BookWithMacros $dir 'vba-test\hang') @('-TimeoutSeconds', '20')
+    $detail = $hang.Json | ConvertTo-Json -Compress -Depth 5
+    $results = @($hang.Json.Tests | ForEach-Object { $_.Result }) -join ','
+    Assert 'timeout: the test that hangs failed, the rest was not run' ($hang.Exit -eq 1 -and $results -eq 'passed,failed,not_run') $detail
+    Assert 'timeout: Error says so' ([string]$hang.Json.Error -like 'Timed out after 20 s*') $detail
+}
+
 Invoke-Case 'timeout' {
     $book = Join-Path (New-CaseDir 'timeout') 'book.xlsm'
     [void](New-ExcelWorkbook -Path $book)
@@ -471,6 +513,25 @@ if ($Full) {
             $left = Wait-NoExcel 5
             Assert ($stop.Name + ': its Excel was stopped') ($left.Count -eq 0) ('PIDs ' + ($left -join ','))
         }
+    }
+
+    # A failing test shows the runtime error dialog on the screen.
+    Invoke-Case 'vba-test-fail' -WatchForeground {
+        $book = New-BookWithMacros (New-CaseDir 'vba-test-fail') 'vba-test\fail'
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        $t = Invoke-VbaTest $book
+        $detail = $t.Json | ConvertTo-Json -Compress -Depth 5
+        $tests = @($t.Json.Tests)
+        Assert 'a failed test: exit 1 and not Ok' ($t.Exit -eq 1 -and $t.Json.Ok -eq $false) $detail
+        $results = @($tests | ForEach-Object { $_.Result }) -join ','
+        Assert 'result of every test' ($results -eq 'passed,failed,passed,passed,failed,not_run') $results
+        Assert 'runtime error: message of the dialog, without the title' ([string]$tests[1].Message -like '*80040001*: expected 3, actual 2' -and [string]$tests[1].Message -notlike '*Microsoft Visual Basic*') $tests[1].Message
+        Assert 'passed tests have no message' ($null -eq $tests[0].Message -and $null -eq $tests[2].Message) $detail
+        Assert 'MsgBox with OK: closed and reported as a warning' (@($t.Json.Warnings | Where-Object { $_ -like "*'Test_Fail.Test_4_Note': probe: note" }).Count -eq 1) $detail
+        Assert 'Yes/No MsgBox: the test failed with the text' ($tests[4].Message -eq 'question') $tests[4].Message
+        Assert 'Yes/No MsgBox: Error says that Excel was stopped' ([string]$t.Json.Error -like '*cannot be closed without choosing an answer: probe: question*Stopped the Excel instance of this call*') $t.Json.Error
+        Assert 'summary counts' ($t.Json.Summary.Total -eq 6 -and $t.Json.Summary.Passed -eq 3 -and $t.Json.Summary.Failed -eq 2 -and $t.Json.Summary.NotRun -eq 1) $detail
+        Assert 'stopped within 30 s' ($watch.Elapsed.TotalSeconds -lt 30) ([int]$watch.Elapsed.TotalSeconds)
     }
 
     Invoke-Case 'ribbon' -WatchForeground {

@@ -7,3 +7,4 @@
   - [foreground.md](./notes/foreground.md): リボンの操作で Excel を前面に出さない方法と、その実測。
   - [vba-compile.md](./notes/vba-compile.md): VBA のコンパイルを COM から起こしてエラーを読む方法と、その実測。
   - [macro-dialog.md](./notes/macro-dialog.md): マクロの実行中に出たダイアログを見つけて閉じる方法と、その実測。
+  - [vba-test.md](./notes/vba-test.md): VBA のテストを列挙して実行する方法と、その実測。

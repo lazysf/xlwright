@@ -7,9 +7,8 @@
 
 ## 優先度 1: 書いた VBA が動くかを確かめる
 
-今の VBA の検証は、コードの読み戻し、コンパイル（`Test-VbaCompile.ps1`）、`Invoke-ExcelMacro` やリボンのボタンで動かすことです。ここが一番弱いので、最初に手を付けます。
+今の VBA の検証は、コードの読み戻し、コンパイル（`Test-VbaCompile.ps1`）、`Invoke-ExcelMacro` やリボンのボタンで動かすこと、VBA で書いたテストの実行（`Invoke-VbaTest.ps1`）です。ここが一番弱いので、最初に手を付けます。
 
-- [ ] VBA の単体テストの実行（`Invoke-VbaTest.ps1`）。`Test_` で始まる Sub を列挙して順に実行し、合否と `Err.Description` を JSON で返す。実行には `Invoke-ExcelMacro` を使う。
 - [ ] 中断モードに入った VBE を戻せるかの実験。戻せれば、マクロの実行中のコンパイルエラーでも Excel を止めずに済む（[docs/notes/macro-dialog.md](docs/notes/macro-dialog.md)）。
 
 ## 優先度 2: 正本との同期と、毎回の手間

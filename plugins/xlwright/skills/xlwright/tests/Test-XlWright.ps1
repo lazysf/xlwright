@@ -318,6 +318,65 @@ Invoke-Case 'vba-test' {
     Assert 'timeout: Error says so' ([string]$hang.Json.Error -like 'Timed out after 20 s*') $detail
 }
 
+function Invoke-Compare([string]$Book, [string]$SourceDir) {
+    $json = Join-Path $temp ('compare-' + [guid]::NewGuid().ToString('N') + '.json')
+    $run = Invoke-Script (Join-Path $scripts 'Compare-Vba.ps1') @('-Path', $Book, '-SourceDir', $SourceDir, '-OutFile', $json)
+    $parsed = $null
+    if (Test-Path -LiteralPath $json) { $parsed = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8) | ConvertFrom-Json }
+    [pscustomobject]@{ Exit = $run.Exit; Json = $parsed; Output = $run.Output }
+}
+
+Invoke-Case 'vba-compare' {
+    $dir = New-CaseDir 'vba-compare'
+    $book = New-BookWithVba $dir
+    $source = Join-Path $dir 'vba'
+    $hash = Get-FileHashText $book
+    $c = Invoke-Compare $book $source
+    $detail = $c.Json | ConvertTo-Json -Compress -Depth 5
+    $rows = @($c.Json.Components | ForEach-Object { $_.Kind + '/' + $_.Name + '=' + $_.Status }) -join ','
+    Assert 'imported sources: exit 0 and in sync' ($c.Exit -eq 0 -and $c.Json.InSync -eq $true -and $null -eq $c.Json.Error) $detail
+    Assert 'every component is listed, by kind and name' ($rows -eq 'standard/Util=same,classes/CalcOptions=same,documents/ThisWorkbook=same') $rows
+    Assert 'workbook unchanged by the comparison' ((Get-FileHashText $book) -eq $hash) 'hash changed'
+
+    # Edited sources: one kind of difference per component.
+    $edited = Join-Path $dir 'edited'
+    Copy-Item -LiteralPath $source -Destination $edited -Recurse
+    $util = Join-Path $edited 'standard\Util.bas'
+    $text = [IO.File]::ReadAllText($util, $utf8)
+    [IO.File]::WriteAllText($util, $text.Replace('AddNums = a + b', 'AddNums = a - b'), $utf8)
+    $book2 = Join-Path $edited 'documents\ThisWorkbook.cls'
+    $text = [IO.File]::ReadAllText($book2, $utf8)
+    [IO.File]::WriteAllText($book2, $text.Replace('Public Function BookVersion', 'Public Function BOOKVERSION'), $utf8)
+    Remove-Item -LiteralPath (Join-Path $edited 'classes\CalcOptions.cls')
+    [IO.File]::WriteAllText((Join-Path $edited 'standard\Extra.bas'), "Attribute VB_Name = ""Extra""`nOption Explicit`n", $utf8)
+    $editedHash = Get-FileHashText $util
+    $e = Invoke-Compare $book $edited
+    $detail = $e.Json | ConvertTo-Json -Compress -Depth 5
+    $rows = @($e.Json.Components | ForEach-Object { $_.Kind + '/' + $_.Name + '=' + $_.Status }) -join ','
+    Assert 'edited sources: exit 1 and not in sync' ($e.Exit -eq 1 -and $e.Json.InSync -eq $false -and $null -eq $e.Json.Error) $detail
+    Assert 'status of every component' ($rows -eq 'standard/Extra=source_only,standard/Util=different,classes/CalcOptions=workbook_only,documents/ThisWorkbook=case_only') $rows
+    $first = @($e.Json.Components | Where-Object { $_.Name -eq 'Util' })[0].FirstDifference
+    Assert 'different: the first differing line of the source file' ($first.Line -eq 6 -and $first.Source -eq '    AddNums = a - b' -and $first.Workbook -eq '    AddNums = a + b') ($first | ConvertTo-Json -Compress)
+    Assert 'sources unchanged by the comparison' ((Get-FileHashText $util) -eq $editedHash) 'hash changed'
+
+    # What the VBE or an editor changes without changing the code is not a difference.
+    $spaced = Join-Path $dir 'spaced'
+    Copy-Item -LiteralPath $source -Destination $spaced -Recurse
+    $util = Join-Path $spaced 'standard\Util.bas'
+    $text = [IO.File]::ReadAllText($util, $utf8)
+    [IO.File]::WriteAllText($util, ($text.Replace("""Util""`n", """Util""`n`n`n").TrimEnd("`n") + "`n`n`n"), $utf8)
+    $p = Invoke-Compare $book $spaced
+    Assert 'blank lines after the attributes and at the end are not a difference' ($p.Exit -eq 0 -and $p.Json.InSync -eq $true) ($p.Json | ConvertTo-Json -Compress -Depth 5)
+    $text = [IO.File]::ReadAllText($util, $utf8)
+    [IO.File]::WriteAllText($util, $text.Replace("End Function`n`nPublic Function Greeting", "End Function`n`n`nPublic Function Greeting"), $utf8)
+    $q = Invoke-Compare $book $spaced
+    $first = @($q.Json.Components | Where-Object { $_.Name -eq 'Util' })[0].FirstDifference
+    Assert 'a blank line inside the code is a difference, at its line in the file' ($q.Exit -eq 1 -and $first.Line -eq 11 -and $first.Source -eq '') ($q.Json | ConvertTo-Json -Compress -Depth 5)
+
+    $missing = Invoke-Compare $book (Join-Path $dir 'no-such-dir')
+    Assert 'missing source directory: an error' ($missing.Exit -eq 1 -and $missing.Json.InSync -eq $false -and [string]$missing.Json.Error -like 'Source directory not found*') ($missing.Json | ConvertTo-Json -Compress -Depth 5)
+}
+
 Invoke-Case 'timeout' {
     $book = Join-Path (New-CaseDir 'timeout') 'book.xlsm'
     [void](New-ExcelWorkbook -Path $book)

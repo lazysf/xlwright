@@ -377,6 +377,49 @@ Invoke-Case 'vba-compare' {
     Assert 'missing source directory: an error' ($missing.Exit -eq 1 -and $missing.Json.InSync -eq $false -and [string]$missing.Json.Error -like 'Source directory not found*') ($missing.Json | ConvertTo-Json -Compress -Depth 5)
 }
 
+Invoke-Case 'vba-prune' {
+    $dir = New-CaseDir 'vba-prune'
+    $book = New-BookWithVba $dir
+    $source = Join-Path $dir 'vba'
+    $importer = Join-Path $scripts 'Import-Vba.ps1'
+    # Components that are not in the sources: a UserForm and a standard module (uf-create), a standard
+    # module and the code of a sheet (imported from another folder).
+    $created = Invoke-Runner $book 'uf-create' @('-Save')
+    Assert 'UserForm added to the workbook' ($created.Exit -eq 0) $created.Output
+    $more = Join-Path $dir 'more'
+    New-Item -ItemType Directory -Path (Join-Path $more 'standard'), (Join-Path $more 'documents') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $more 'standard\Extra.bas'), "Attribute VB_Name = ""Extra""`nOption Explicit`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $more 'documents\Sheet1.cls'), "Attribute VB_Name = ""Sheet1""`nOption Explicit`n", $utf8)
+    $added = Invoke-Script $importer @('-Path', $book, '-SourceDir', $more)
+    Assert 'more components imported' ($added.Exit -eq 0) $added.Output
+    $extraRows = 'standard/Extra=workbook_only,standard/FormProbe=workbook_only,documents/Sheet1=workbook_only,forms/frmInfo=workbook_only'
+    $rowsOf = { param($c) @($c.Json.Components | Where-Object { $_.Status -ne 'same' } | ForEach-Object { $_.Kind + '/' + $_.Name + '=' + $_.Status }) -join ',' }
+
+    $plain = Invoke-Script $importer @('-Path', $book, '-SourceDir', $source)
+    $rows = & $rowsOf (Invoke-Compare $book $source)
+    Assert 'without -Prune: exit 0 and nothing reported as removed' ($plain.Exit -eq 0 -and $plain.Output -notmatch 'removed|cleared') $plain.Output
+    Assert 'without -Prune: the components that are not in the sources stay' ($rows -eq $extraRows) $rows
+
+    # A failed import must not leave a pruned workbook behind.
+    $bad = Join-Path $dir 'bad'
+    Copy-Item -LiteralPath $source -Destination $bad -Recurse
+    [IO.File]::WriteAllText((Join-Path $bad 'documents\NoSuchSheet.cls'), "Attribute VB_Name = ""NoSuchSheet""`nOption Explicit`n", $utf8)
+    $hash = Get-FileHashText $book
+    $failed = Invoke-Script $importer @('-Path', $book, '-SourceDir', $bad, '-Prune')
+    Assert '-Prune with a source that cannot be imported: exit 1' ($failed.Exit -eq 1 -and $failed.Output -match 'No document module named NoSuchSheet') $failed.Output
+    Assert '-Prune with a source that cannot be imported: workbook unchanged' ((Get-FileHashText $book) -eq $hash) 'hash changed'
+
+    $pruned = Invoke-Script $importer @('-Path', $book, '-SourceDir', $source, '-Prune')
+    $lines = @($pruned.Output -split "\r?\n" | Where-Object { $_ -match '^(removed|cleared document module): ' } | Sort-Object) -join ','
+    Assert '-Prune: exit 0' ($pruned.Exit -eq 0) $pruned.Output
+    Assert '-Prune: reports what it removed and cleared, and nothing else' ($lines -eq 'cleared document module: Sheet1,removed: Extra,removed: FormProbe,removed: frmInfo') $pruned.Output
+    $after = Invoke-Compare $book $source
+    Assert '-Prune: the saved workbook is in sync with the sources' ($after.Exit -eq 0 -and $after.Json.InSync -eq $true -and @($after.Json.Components).Count -eq 3) ($after.Json | ConvertTo-Json -Compress -Depth 5)
+
+    $again = Invoke-Script $importer @('-Path', $book, '-SourceDir', $source, '-Prune')
+    Assert '-Prune with nothing to remove: exit 0 and nothing reported' ($again.Exit -eq 0 -and $again.Output -notmatch 'removed|cleared') $again.Output
+}
+
 Invoke-Case 'timeout' {
     $book = Join-Path (New-CaseDir 'timeout') 'book.xlsm'
     [void](New-ExcelWorkbook -Path $book)

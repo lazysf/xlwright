@@ -13,10 +13,22 @@ Imports UTF-8 (no BOM), LF .bas / .cls / .frm files and saves the workbook.
 - The standard/, classes/, documents/, and forms/ directories determine the component type.
 - Every existing component must match the source type before any code is changed.
 - After import, each module's name and type are checked against the file.
+- Components that are not in the sources stay in the workbook, unless -Prune is given.
+
+-Prune removes, after all imports, the standard modules, class modules and UserForms that have no source
+file, and clears the code of the document modules that have none (a document module cannot be removed).
+Names are matched without regard to case. Components of other types are left alone with a warning.
+Code that still refers to a removed module does not stop the import; compile the project afterwards.
+Compare-Vba.ps1 lists the same components as workbook_only before anything is changed.
+
+Output: one line per component: "imported: <name>", "replaced document module: <name>", and with -Prune
+"removed: <name>" and "cleared document module: <name>". On an error the workbook is not saved.
 #>
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][string]$SourceDir
+    [Parameter(Mandatory)][string]$SourceDir,
+    # Remove the components that are not in the sources.
+    [switch]$Prune
 )
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'XlWright.psm1') -Force
@@ -131,6 +143,34 @@ try {
                     $s.Name + " (type " + $s.Type + ")")
             }
             "imported: " + $s.Name
+        }
+        if ($Prune) {
+            # VBA names are not case-sensitive, and neither are the keys of this hashtable.
+            $sourceNames = @{}
+            foreach ($s in $sources) { $sourceNames[$s.Name] = $true }
+            # Collected first, so that the collection does not change while it is enumerated.
+            $extra = @(foreach ($component in $components) {
+                if (-not $sourceNames.ContainsKey($component.Name)) { $component }
+            })
+            foreach ($component in $extra) {
+                $name = $component.Name
+                $type = [int]$component.Type
+                if ($type -eq 100) {
+                    # VBComponents.Remove rejects a document module (docs/notes/vba-prune.md).
+                    $cm = $component.CodeModule
+                    if ($cm.CountOfLines -gt 0) {
+                        $cm.DeleteLines(1, $cm.CountOfLines)
+                        "cleared document module: " + $name
+                    }
+                }
+                elseif ($type -in 1, 2, 3) {
+                    $components.Remove($component)
+                    "removed: " + $name
+                }
+                else {
+                    Write-Warning ("Left " + $name + " in the workbook (component type " + $type + " is not supported)")
+                }
+            }
         }
     }
 }

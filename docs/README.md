@@ -9,3 +9,4 @@
   - [macro-dialog.md](./notes/macro-dialog.md): マクロの実行中に出たダイアログを見つけて閉じる方法と、その実測。
   - [vba-test.md](./notes/vba-test.md): VBA のテストを列挙して実行する方法と、その実測。
   - [vba-roundtrip.md](./notes/vba-roundtrip.md): 取り込んだ VBA を書き出した時に、正本と変わる所の実測。
+  - [vba-prune.md](./notes/vba-prune.md): ブックから VBA のコンポーネントを消す時に COM でできることの実測。

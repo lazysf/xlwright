@@ -1,7 +1,7 @@
 # プラグインとして入れた時の振る舞い
 
 - Date: 2026-11-13
-- 出典: Claude Desktop の Code タブの設定の「プラグイン」の画面と `/plugin` の操作、同梱の Claude Code 2.1.321 の `claude plugin list`、`claude plugin marketplace add --help`、`claude plugin update`、`installed_plugins.json` とキャッシュのフォルダ、導入先での `tests/Test-XlWright.ps1` の実行（commit `689ca7f`）、Claude Code の docs（<https://code.claude.com/docs/en/plugins>、<https://code.claude.com/docs/en/skills>、<https://code.claude.com/docs/en/discover-plugins>、<https://code.claude.com/docs/en/plugins/loading>、<https://code.claude.com/docs/en/plugins-reference>）、主要なプラグインの repo の manifest と workflow（2026-11-13 の main）
+- 出典: Claude Desktop の Code タブの設定の「プラグイン」の画面と `/plugin` の操作、同梱の Claude Code 2.1.321 の `claude plugin list`、`claude plugin marketplace add --help`、`claude plugin update`、`installed_plugins.json` とキャッシュのフォルダ、導入先での `tests/Test-XlWright.ps1` の実行（commit `689ca7f`）、Claude Code の docs（<https://code.claude.com/docs/en/plugins>、<https://code.claude.com/docs/en/skills>、<https://code.claude.com/docs/en/discover-plugins>、<https://code.claude.com/docs/en/plugins/loading>、<https://code.claude.com/docs/en/plugins-reference>）、主要なプラグインの repo の manifest と workflow（2026-11-13 の main）、release-please-action の README（<https://github.com/googleapis/release-please-action>）と GitHub の docs（<https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes>）（2026-11-16）
 
 利用者と同じ手順で入れて確かめた事実と、README の入れ方と版を今の形にしている理由を書く。入れ方そのものは [README](../../README.md) を正本とする。
 
@@ -22,7 +22,7 @@
 - 新しい commit を push しても、手元の marketplace の写し（`~/.claude/plugins/marketplaces/xlwright`）を取り直すまで、アプリは気づかない。詳細の画面の「更新」は押せず、ツールチップに「最新です」と出る。
 - 「ディレクトリ」の画面の「Code」の一覧で marketplace を更新すると、写しが新しい commit になり、新しい版がキャッシュに届いた。しかし入っている版（`~/.claude/plugins/installed_plugins.json`）は切り替わらず、「更新」は押せないままだった。`/reload-plugins` とアプリの再起動でも変わらなかった。新しいセッションも古い版を読み込んだ。
 - 同梱の CLI で `claude plugin update xlwright@xlwright` を流すと、入っている版が `689ca7f5a64a` から `000448a646ae` に切り替わった。アプリを再起動すると、新しいセッションは新しい版を読み込んだ。Desktop の画面だけで更新を済ませる手段は、見つからなかった。
-- `plugin.json` に `version` を書いた commit（`51d2ad0`）を push した後、同梱の CLI で `claude plugin update xlwright@xlwright` を流すと、入っている版が `000448a646ae` から `0.1.0` に切り替わった。キャッシュには版 `0.1.0` のフォルダができ、中身は `plugins/xlwright/` と一致した。前の版のフォルダには `.orphaned_at` が置かれた。続けてもう一度流すと、`already at the latest version (0.1.0)` と出て、何も変わらなかった。
+- `plugin.json` に `version` を書いた commit（`4373f8a`）を push した後、同梱の CLI で `claude plugin update xlwright@xlwright` を流すと、入っている版が `000448a646ae` から `0.1.0` に切り替わった。キャッシュには版 `0.1.0` のフォルダができ、中身は `plugins/xlwright/` と一致した。前の版のフォルダには `.orphaned_at` が置かれた。続けてもう一度流すと、`already at the latest version (0.1.0)` と出て、何も変わらなかった。
 
 ## 入れ方と版を今の形にしている理由
 
@@ -34,6 +34,8 @@
 - marketplace の項目には `version` を書かない。docs（plugins-reference）では manifest の `version` が項目の `version` より優先されるので、項目に書いても使われず、食い違いの元になるだけになる。
 - 版の上げ忘れは、pre-push の hook（`tools/Test-PluginVersion.ps1`）で止める。commit ごとには確かめず、作業中は何度 commit してもよく、配る直前に 1 回だけ版を上げる。`wshobson/agents` も、変えたプラグインの版が上がっているかを確かめるが、場所は PR の CI になっている。この repo は main へ直接 push するので、push の時に確かめる。
 - 版を CI で自動で付ける形（release-please など）は採らない。調べた主要な repo（`obra/superpowers`、`wshobson/agents`、`anthropics/claude-plugins-official`、`anthropics/claude-code`、`anthropics/skills`）は、どれも版を手で書くか、書かずにハッシュに任せていた。自動にすると、新しい依存と、Actions に PR を作らせる権限の設定が要る。docs の版の決め方（manifest の `version`、項目の `version`、commit のハッシュの順）に git のタグは出てこないので、CI でタグを付けるだけでは利用者の版は変わらないと見ている。
+- release-please を採らない理由は、ほかに 2 つある。release-please は版を上げる PR を自分で作るので、版を上げていない push を止める pre-push の hook と両立しない。CHANGELOG は commit message から作られるので、利用者に向けて日本語でまとめて書く今の形にならない。
+- tag は、版を上げた push の後に手で付ける。版と commit の対応を残すためで、利用者の版には関わらない。GitHub の Release と CI は足さない。Release の中身は CHANGELOG.md の写しになる。GitHub が自動で作る Release のノートは、merge した PR の一覧なので、main へ直接 push するこの repo では使えないと見ている（docs は PR だけを挙げていて、PR を通さない commit が載るかは書いていない。試していない）。lint は commit の時の hook で流れているので、CI で流し直さない。
 
 ## 未確認
 

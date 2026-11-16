@@ -5,7 +5,7 @@ xlwright の開発ルール
 ## 対象
 
 - このリポジトリは、Claude Code のスキル xlwright（`plugins/xlwright/skills/xlwright/`）を開発し、プラグインとして配布する。使い方は [README.md](README.md)、開発の手順と構成は [DEVELOPMENT.md](DEVELOPMENT.md) にある。
-- 利用者に写るのは `plugins/xlwright/` の中だけ。開発用のファイルはその外に置く。
+- 利用者に写るのは `plugins/xlwright/` の中だけ。開発用のファイルはその外に置く。例外は `plugins/xlwright/evals/` で、`claude plugin eval` がプラグインの外の case を受け付けないため、中に置く。
 - MCP サーバーの開発は中断し、`mcp` ブランチに残してある。`mcp` ブランチの規則は、そのブランチの `AGENTS.md` に従う。
 
 ## スキルの書き方

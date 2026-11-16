@@ -97,6 +97,7 @@ claude plugin eval plugins/xlwright
 - どの case も、許すツールは Read、Glob、Grep、Skill だけです。Windows ではシェルを許した eval が動かないため（シェルは OS の sandbox の中で動き、ネイティブの Windows には sandbox の仕組みが無い）、Excel を実際に動かす確認は `Test-XlWright.ps1` で行います。
 - 既定では、1 つの case をプラグインあり・なしで 3 回ずつ流します。会話と同じアカウントで動き、その分の使用量を消費します。最初は `--case` と `--runs 1` で試します。
 - 結果は `plugins/xlwright/evals/results/` に書かれ、Git には入れません。
+- case は開発用ですが、プラグインの中に置きます。`--eval-dir` は、プラグインの外を受け付けませんでした。`..` を含むパスは `must stay inside the plugin root`、絶対パスは `must be a relative path inside the plugin` で拒否されました。
 - 上の `claude` には、Claude Desktop に同梱された CLI を使います。同梱版は `%APPDATA%` の下の Claude Desktop のフォルダにある `claude-code\<版>\<ハッシュ>\claude.exe` です。アプリの更新で場所が変わり、古い版も残るので、更新日時が最も新しいものを使います。
 - 使用量を Desktop とそろえて把握するため、同梱の CLI は Desktop と同じアカウントでログインして使います。流す前に `claude auth status` を実行し、`loggedIn` が `true`、`authMethod` が `claude.ai`、`email` が Desktop でログインしているアカウントと同じことを確かめます。違う時は、`claude auth login` で Desktop と同じアカウントにログインし直します。
 
@@ -118,6 +119,15 @@ git worktree add ..\xlwright-mcp mcp
 
 利用者に届く版は、`plugins/xlwright/.claude-plugin/plugin.json` の `version` で決まります。marketplace の項目（`.claude-plugin/marketplace.json`）には `version` を書きません。`version` を変えない限り、何度 push しても利用者は前の版のままです。
 
-`plugins/xlwright/` を変えて配る時は、push の前に `version` を上げ、[CHANGELOG.md](CHANGELOG.md) にその版の項目を足します。作業中の commit ごとに上げる必要はありません。版は semver の形（`0.1.0` など）で書きます。
+利用者に見える変更は、作業中に [CHANGELOG.md](CHANGELOG.md) の `[Unreleased]` へ足していきます。`plugins/xlwright/` を変えて配る時は、push の前に `version` を上げ、同じ commit で `[Unreleased]` の項目を `## [<版>] - <日付>` の節へ移します。作業中の commit ごとに上げる必要はありません。版は semver の形（`0.1.0` など）で書きます。
 
 push の時の hook（`tools/Test-PluginVersion.ps1`）は、origin との差に `plugins/xlwright/` の変更があるのに `version` が origin と同じなら、push を止めます。origin にまだ無いブランチは、`origin/HEAD`（無ければ `origin/main`）との分岐点と比べます。比べる相手が見つからない時は、警告を出して通します。
+
+版を上げた commit を push した後に、その commit を取り出した状態で `v<版>` の tag を付け、tag を push します。
+
+```powershell
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+tag は、版と commit の対応を残すために付けます。利用者に届く版は変えません。次の版の CHANGELOG を書く時は、`git diff v0.1.0..HEAD -- plugins/xlwright` のように、前の版からの差を見られます。GitHub の Release と CI は使いません。理由は [docs/notes/plugin-install.md](docs/notes/plugin-install.md) にあります。

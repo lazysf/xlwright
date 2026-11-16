@@ -20,7 +20,7 @@ repo = "local"
 hooks = [
     # Uses the rumdl installed by `npm ci` with the Node.js version in .nvmrc.
     { id = "rumdl", name = "rumdl", entry = "npx --no-install rumdl check", language = "system", types = ["markdown"] },
-    # Encoding, line endings, and ASCII-only scripts (README.md).
+    # Encoding, line endings, and ASCII-only scripts (DEVELOPMENT.md).
     { id = "text-files", name = "text files", entry = "powershell -NoProfile -File tools/Test-TextFile.ps1", language = "system", pass_filenames = false, always_run = true },
     # A push that changes plugins/xlwright/ must raise the version in plugin.json.
     { id = "plugin-version", name = "plugin version", entry = "powershell -NoProfile -File tools/Test-PluginVersion.ps1", language = "system", pass_filenames = false, always_run = true, stages = ["pre-push"] },

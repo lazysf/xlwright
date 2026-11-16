@@ -272,8 +272,8 @@ function New-ExcelWorkbook {
     $Path
 }
 
-# Runs in another runspace while Application.Run is blocked by a dialog. It only uses XlWright.Dialog and
-# the values in $State, never the COM objects of the calling runspace.
+# Runs in another runspace while Application.Run is blocked by a dialog. It uses XlWright.Dialog and the
+# values in $State. The only COM object it touches is $State.Excel, to reset the VBE after a compile error.
 $script:MacroDialogWatcher = {
     param($State)
     $excelPid = [uint32]$State.ProcessId
@@ -299,9 +299,27 @@ $script:MacroDialogWatcher = {
             [void][XlWright.Dialog]::PostMessage($endButton, [XlWright.Dialog]::BM_CLICK, [IntPtr]::Zero, [IntPtr]::Zero)
         }
         elseif ([XlWright.Dialog]::IsEditorVisible($excelPid)) {
-            # A compile error shows the VBE. Closing its dialog leaves the VBE in break mode and Run never
-            # returns (docs/notes/macro-dialog.md), so the instance is stopped right away.
-            Stop-OwnExcel ('The macro stopped with a dialog of the VBE and cannot continue: ' + $text)
+            # A compile error shows the VBE. Closing its dialog leaves the VBE in break mode and Run does not
+            # return until the VBE is reset (docs/notes/macro-dialog.md).
+            $cannotContinue = 'The macro stopped with a dialog of the VBE and cannot continue: ' + $text
+            [void][XlWright.Dialog]::PostMessage($dialog, [XlWright.Dialog]::WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)
+            if (-not [XlWright.Dialog]::WaitClosed($dialog, 3000)) { Stop-OwnExcel $cannotContinue; return }
+            try {
+                # COM calls from this runspace go through while Run is blocked in the calling one.
+                $vbe = $State.Excel.VBE
+                $reset = $vbe.CommandBars.FindControl(1, 228)  # msoControlButton, "Reset"
+                $watch = [Diagnostics.Stopwatch]::StartNew()
+                # Reset was enabled in break mode. Whether it is disabled before that was not checked.
+                while (-not $reset.Enabled -and $watch.ElapsedMilliseconds -lt 3000) { Start-Sleep -Milliseconds 50 }
+                $reset.Execute()
+                if (-not $State.EditorWasVisible) { $vbe.MainWindow.Visible = $false }
+            }
+            catch { Stop-OwnExcel ($cannotContinue + ' Reset failed: ' + $_.Exception.Message); return }
+            # Run fails a few milliseconds after the reset; the caller then sets Stop.
+            $watch = [Diagnostics.Stopwatch]::StartNew()
+            while (-not $State.Stop -and $watch.ElapsedMilliseconds -lt 3000) { Start-Sleep -Milliseconds 50 }
+            if (-not $State.Stop) { Stop-OwnExcel $cannotContinue }
+            else { $State.CompileError = $text }
             return
         }
         else {
@@ -326,17 +344,19 @@ function Invoke-ExcelMacro {
     hint of it. While the macro runs, another runspace watches the dialogs (#32770) of this instance:
 
     - VBA runtime error: the dialog is ended with its End button and its text is thrown. Excel stays usable.
+    - Compile error (the dialog comes with the VBE window): the dialog is closed, the VBE is reset with its
+      Reset command and hidden again, and the text is thrown. Excel stays usable.
     - A dialog that WM_CLOSE closes (a MsgBox with only OK): it is closed, the macro goes on, and the
       title and text are written as a warning.
-    - Anything else (a compile error, a Yes/No MsgBox): the text is read, this Excel instance is
-      stopped by its PID and start time, and the text is thrown. Unsaved changes are lost.
+    - Anything else (a Yes/No MsgBox, a compile error that the reset does not end): the text is read, this
+      Excel instance is stopped by its PID and start time, and the text is thrown. Unsaved changes are lost.
 
     Returns what the macro returns, and nothing for a Sub. Use it inside the script block of
     Use-ExcelWorkbook with -EnableMacros.
 
-    The exception of the first and the last case carries Data['XlWrightFailure'] ('RuntimeError' or
-    'ExcelStopped') and Data['XlWrightDialogMessage'] (the text of the dialog without its title), so that a
-    caller such as Invoke-VbaTest.ps1 does not have to parse the message.
+    The exception of every case but the MsgBox with only OK carries Data['XlWrightFailure'] ('RuntimeError',
+    'CompileError' or 'ExcelStopped') and Data['XlWrightDialogMessage'] (the text of the dialog without its
+    title), so that a caller such as Invoke-VbaTest.ps1 does not have to parse the message.
     #>
     [CmdletBinding()]
     param(
@@ -349,7 +369,9 @@ function Invoke-ExcelMacro {
     )
     $processId = Get-ExcelProcessId $Excel
     $state = [hashtable]::Synchronized(@{
-        Stop = $false; ProcessId = $processId; RuntimeError = $null; Fatal = $null; DialogMessage = $null
+        Stop = $false; ProcessId = $processId; RuntimeError = $null; CompileError = $null; Fatal = $null
+        DialogMessage = $null; Excel = $Excel
+        EditorWasVisible = [XlWright.Dialog]::IsEditorVisible([uint32]$processId)
         StartTicks = (Get-Process -Id $processId -ErrorAction Stop).StartTime.ToUniversalTime().Ticks
         Closed = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList))
     })
@@ -374,6 +396,10 @@ function Invoke-ExcelMacro {
     if ($state.Fatal) {
         $kind = 'ExcelStopped'
         $message = $state.Fatal + ' Stopped the Excel instance of this call (PID ' + $processId + '). Unsaved changes are lost.'
+    }
+    elseif ($state.CompileError) {
+        $kind = 'CompileError'
+        $message = "Macro '" + $Name + "' stopped with a compile error: " + $state.CompileError
     }
     elseif ($state.RuntimeError) {
         $kind = 'RuntimeError'

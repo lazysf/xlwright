@@ -493,9 +493,32 @@ if ($Full) {
         $closed = @($m.Json.Warnings)
         Assert 'MsgBox: both dialogs reported as warnings' ($closed.Count -eq 2 -and $closed[0] -like '*probe: first message' -and $closed[1] -like '*probe: second message') $detail
 
+        # A compile error leaves the VBE in break mode; it is reset so that Excel stays usable.
+        foreach ($kind in 'undeclared', 'syntax') {
+            $broken = New-BookWithMacros $dir ('vba-broken\' + $kind)
+            $warnings = @()
+            $watch = [Diagnostics.Stopwatch]::StartNew()
+            $c = Use-ExcelWorkbook -Path $broken -EnableMacros -WarningVariable +warnings -ScriptBlock {
+                param($xl, $wb)
+                $errors = foreach ($i in 1, 2) {
+                    try { Invoke-ExcelMacro -Excel $xl -Name 'Broken.Run'; 'no error' } catch { $_.Exception.Message }
+                }
+                [ordered]@{
+                    Errors = @($errors)
+                    After = Invoke-ExcelMacro -Excel $xl -Name 'Good.Seven'
+                    EditorVisible = [XlWright.Dialog]::IsEditorVisible([uint32](Get-ExcelProcessId $xl))
+                }
+            }
+            Assert ($kind + ': thrown as a compile error with the text') ($c.Errors[0] -like "Macro 'Broken.Run' stopped with a compile error: ?*") $c.Errors[0]
+            Assert ($kind + ': the same when run again') ($c.Errors[1] -eq $c.Errors[0]) $c.Errors[1]
+            Assert ($kind + ': Excel usable after the compile errors') ($c.After -eq 7) $c.After
+            Assert ($kind + ': the VBE is hidden again') ($c.EditorVisible -eq $false) $c.EditorVisible
+            Assert ($kind + ': Excel was closed, not stopped') (@($warnings).Count -eq 0) (@($warnings) -join ' | ')
+            Assert ($kind + ': done within 30 s') ($watch.Elapsed.TotalSeconds -lt 30) ([int]$watch.Elapsed.TotalSeconds)
+        }
+
         $stops = @(
-            @{ Name = 'Yes/No MsgBox'; Book = $book; Macro = 'Macros.Ask'; Error = '*cannot be closed without choosing an answer: probe: question*' },
-            @{ Name = 'compile error'; Book = (New-BookWithMacros $dir 'vba-broken\undeclared'); Macro = 'Broken.Run'; Error = '*dialog of the VBE*' })
+            @{ Name = 'Yes/No MsgBox'; Book = $book; Macro = 'Macros.Ask'; Error = '*cannot be closed without choosing an answer: probe: question*' })
         foreach ($stop in $stops) {
             $message = $null
             $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -524,13 +547,15 @@ if ($Full) {
         $tests = @($t.Json.Tests)
         Assert 'a failed test: exit 1 and not Ok' ($t.Exit -eq 1 -and $t.Json.Ok -eq $false) $detail
         $results = @($tests | ForEach-Object { $_.Result }) -join ','
-        Assert 'result of every test' ($results -eq 'passed,failed,passed,passed,failed,not_run') $results
-        Assert 'runtime error: message of the dialog, without the title' ([string]$tests[1].Message -like '*80040001*: expected 3, actual 2' -and [string]$tests[1].Message -notlike '*Microsoft Visual Basic*') $tests[1].Message
-        Assert 'passed tests have no message' ($null -eq $tests[0].Message -and $null -eq $tests[2].Message) $detail
+        # Test_Broken comes first: a compile error fails only that test and the run goes on.
+        Assert 'result of every test' ($results -eq 'failed,passed,failed,passed,passed,failed,not_run') $results
+        Assert 'compile error: the test failed with the text of the dialog' ($tests[0].Name -eq 'Test_Broken.Test_Undeclared' -and [string]$tests[0].Message -ne '' -and [string]$tests[0].Message -notlike '*Microsoft Visual Basic*') $tests[0].Message
+        Assert 'runtime error: message of the dialog, without the title' ([string]$tests[2].Message -like '*80040001*: expected 3, actual 2' -and [string]$tests[2].Message -notlike '*Microsoft Visual Basic*') $tests[2].Message
+        Assert 'passed tests have no message' ($null -eq $tests[1].Message -and $null -eq $tests[3].Message) $detail
         Assert 'MsgBox with OK: closed and reported as a warning' (@($t.Json.Warnings | Where-Object { $_ -like "*'Test_Fail.Test_4_Note': probe: note" }).Count -eq 1) $detail
-        Assert 'Yes/No MsgBox: the test failed with the text' ($tests[4].Message -eq 'question') $tests[4].Message
+        Assert 'Yes/No MsgBox: the test failed with the text' ($tests[5].Message -eq 'question') $tests[5].Message
         Assert 'Yes/No MsgBox: Error says that Excel was stopped' ([string]$t.Json.Error -like '*cannot be closed without choosing an answer: probe: question*Stopped the Excel instance of this call*') $t.Json.Error
-        Assert 'summary counts' ($t.Json.Summary.Total -eq 6 -and $t.Json.Summary.Passed -eq 3 -and $t.Json.Summary.Failed -eq 2 -and $t.Json.Summary.NotRun -eq 1) $detail
+        Assert 'summary counts' ($t.Json.Summary.Total -eq 7 -and $t.Json.Summary.Passed -eq 3 -and $t.Json.Summary.Failed -eq 3 -and $t.Json.Summary.NotRun -eq 1) $detail
         Assert 'stopped within 30 s' ($watch.Elapsed.TotalSeconds -lt 30) ([int]$watch.Elapsed.TotalSeconds)
     }
 

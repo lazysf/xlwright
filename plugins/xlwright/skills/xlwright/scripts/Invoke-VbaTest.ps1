@@ -11,9 +11,9 @@ A test is a Sub in a standard module that takes no arguments, is not Private and
 inside a module. -Name limits the run to the given tests ("<module>.<Sub>").
 
 A test passes when it returns. It fails when it stops with a VBA runtime error, e.g. one it raises itself
-with Err.Raise; Message is then the text of the error dialog, which shows on the screen for a moment.
-When a test shows a dialog that cannot be closed (a Yes/No MsgBox, a compile error), the Excel instance of
-this script is stopped: that test fails, the tests after it are reported as "not_run" and Error says why.
+with Err.Raise, or with a compile error; Message is then the text of the error dialog, which shows on the
+screen for a moment. When a test shows a dialog that cannot be closed (a Yes/No MsgBox), the Excel instance
+of this script is stopped: that test fails, the tests after it are reported as "not_run" and Error says why.
 A MsgBox with only OK is closed and reported in Warnings.
 
 After a runtime error the VBA project is reset, so module-level variables do not survive a failed test.

@@ -49,12 +49,14 @@
 - **アサーションのモジュールを同梱しない。** テストは `Err.Raise` で失敗を知らせる。そのため、アサーションの失敗とほかの実行時エラーを区別せず、どちらも `failed` にする。
 - **テストはブックの中に置く。** 写しへ取り込む形にしない。配布ブックにテストのモジュールが残る点は、`references/vba.md` に書いた。
 - **`Private Sub` を名前で指定しても実行しない。** `-Name` は、列挙したテストの中からだけ選ぶ。`Application.Run` は `Private Sub` も実行するため。
+- **コンパイルエラーのテストは `failed` にして、先へ進む。** `Invoke-ExcelMacro` が VBE をリセットし、Excel が使えるまま戻るため（[macro-dialog.md](./macro-dialog.md)）。
 - **Excel を止めた後のテストは `not_run` にする。** 閉じられないダイアログと上限では、`Invoke-ExcelMacro` と見張りがその Excel を止める。残りのテストは実行できない。
 
 `tests/Test-XlWright.ps1` の `vba-test` と `vba-test-fail` が、これを確かめる（2026-11-16）。実験に加えて、次を確かめた。
 
 - テストの実行で、ブックのファイルは変わらなかった。
 - OK だけの MsgBox を出すテストは `passed` になり、文言が `Warnings` に入った。
+- 宣言の無い変数のあるモジュールのテストは `failed` になり、`Message` にコンパイルエラーの文言が入った。後のテストは実行された。
 - Yes/No の MsgBox を出すテストは `failed` になり、後のテストは `not_run`、`Error` に Excel を止めたことが入った。
 - 終わらないテストは、`-TimeoutSeconds 20` で `failed` になり、後のテストは `not_run`、`Error` は `Timed out after 20 s` で始まった。
 - `vba-test-fail` は前面のウィンドウを 50 ms ごとに見る。Excel は一度も前面に来なかった。
@@ -62,7 +64,6 @@
 
 ## 未確認
 
-- コンパイルエラーのあるブック。`Invoke-ExcelMacro` が Excel を止めるので、最初のテストが `failed`、残りが `not_run` になる見込み。`Invoke-VbaTest.ps1` では流していない。
 - VBA プロジェクトがロックされたブック。スクリプトは `VBProject.Protection` を見て失敗にするが、その動きは確かめていない。
 - 取り込んだ順とモジュール名の順が違う時に、モジュール名の順に実行されること。試験のデータも、2 つの順が同じである。
 - テストが `On Error` で自分のエラーを握りつぶした時。`passed` になる見込み。

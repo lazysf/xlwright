@@ -5,7 +5,7 @@ Checks the xlwright scripts against the real Excel on this machine.
 .DESCRIPTION
 Every case creates its own workbooks in a new temporary folder and checks explicit expected values.
 Nothing outside that folder is changed. The default cases keep Excel hidden. -Full adds the cases
-that show Excel and the VBE on the screen (VBA compile error, ribbon click, ribbon layout, publish with VBA lock); do not touch
+that show Excel and the VBE on the screen (VBA compile error, macro dialogs, ribbon click, ribbon layout, publish with VBA lock); do not touch
 those windows while they run. These cases also check that Excel never takes the foreground.
 
 Preconditions: no Excel process is running, and AccessVBOM is 1. Otherwise nothing runs (exit 2).
@@ -250,6 +250,32 @@ Invoke-Case 'vba-compile' {
     Assert 'workbook without VBA: compiled' ($p.Exit -eq 0 -and $p.Json.Compiled -eq $true) ($p.Json | ConvertTo-Json -Compress)
 }
 
+function New-BookWithMacros([string]$Dir, [string]$Source) {
+    $book = Join-Path $Dir ((Split-Path -Leaf $Source) + '.xlsm')
+    [void](New-ExcelWorkbook -Path $book)
+    $import = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $book, '-SourceDir', (Join-Path $data $Source))
+    Assert ($Source + ': import exit 0') ($import.Exit -eq 0) $import.Output
+    $book
+}
+
+Invoke-Case 'macro' {
+    $book = New-BookWithMacros (New-CaseDir 'macro') 'vba-macro'
+    $r = Use-ExcelWorkbook -Path $book -EnableMacros -ScriptBlock {
+        param($xl, $wb)
+        Invoke-ExcelMacro -Excel $xl -Name 'Macros.CountCall'
+        Invoke-ExcelMacro -Excel $xl -Name 'Macros.CountCall'
+        [ordered]@{
+            Sum = Invoke-ExcelMacro -Excel $xl -Name 'Macros.AddThree' -ArgumentList 1, 2, 3
+            Calls = Invoke-ExcelMacro -Excel $xl -Name 'Macros.CallCount'
+            Slow = Invoke-ExcelMacro -Excel $xl -Name 'Macros.Slow'
+        }
+    }
+    Assert 'only the values of the functions are returned' (@($r).Count -eq 1) (@($r).Count)
+    Assert 'arguments passed, value returned' ($r.Sum -eq 6) $r.Sum
+    Assert 'Sub ran twice' ($r.Calls -eq 2) $r.Calls
+    Assert 'a macro that takes time is waited for' ($r.Slow -eq 7) $r.Slow
+}
+
 Invoke-Case 'timeout' {
     $book = Join-Path (New-CaseDir 'timeout') 'book.xlsm'
     [void](New-ExcelWorkbook -Path $book)
@@ -399,6 +425,51 @@ if ($Full) {
             Assert ($case.Name + ': message read') ([string]$c.Json.CompileError.Message -ne '') $detail
             Assert ($case.Name + ': place read') ($c.Json.CompileError.Module -eq 'Broken' -and $c.Json.CompileError.Line -eq 5 -and $c.Json.CompileError.Column -eq $case.Column) $detail
             Assert ($case.Name + ': workbook unchanged by the check') ((Get-FileHashText $book) -eq $hash) 'hash changed'
+        }
+    }
+
+    # The dialogs of a macro are on the screen even when Excel is hidden.
+    Invoke-Case 'macro-dialog' -WatchForeground {
+        $dir = New-CaseDir 'macro-dialog'
+        $book = New-BookWithMacros $dir 'vba-macro'
+
+        $r = Use-ExcelWorkbook -Path $book -EnableMacros -ScriptBlock {
+            param($xl, $wb)
+            $errors = foreach ($name in 'Macros.DivZero', 'Macros.DivZeroSub') {
+                try { Invoke-ExcelMacro -Excel $xl -Name $name; 'no error' } catch { $_.Exception.Message }
+            }
+            # Excel must still be usable after the runtime errors.
+            [ordered]@{ Errors = @($errors); After = Invoke-ExcelMacro -Excel $xl -Name 'Macros.AddThree' -ArgumentList 1, 2, 3 }
+        }
+        Assert 'runtime error in a Function: thrown with the text' ($r.Errors[0] -like "Macro 'Macros.DivZero' stopped with a runtime error: *11*") $r.Errors[0]
+        Assert 'runtime error in a Sub: thrown with the text' ($r.Errors[1] -like "Macro 'Macros.DivZeroSub' stopped with a runtime error: *11*") $r.Errors[1]
+        Assert 'Excel usable after the runtime errors' ($r.After -eq 6) $r.After
+
+        $m = Invoke-Runner $book 'macro-msgbox' @('-EnableMacros')
+        $detail = $m.Json | ConvertTo-Json -Compress
+        Assert 'MsgBox: closed and the macro went on' ($m.Exit -eq 0 -and $m.Json.Result[0] -eq 5) $detail
+        $closed = @($m.Json.Warnings)
+        Assert 'MsgBox: both dialogs reported as warnings' ($closed.Count -eq 2 -and $closed[0] -like '*probe: first message' -and $closed[1] -like '*probe: second message') $detail
+
+        $stops = @(
+            @{ Name = 'Yes/No MsgBox'; Book = $book; Macro = 'Macros.Ask'; Error = '*cannot be closed without choosing an answer: probe: question*' },
+            @{ Name = 'compile error'; Book = (New-BookWithMacros $dir 'vba-broken\undeclared'); Macro = 'Broken.Run'; Error = '*dialog of the VBE*' })
+        foreach ($stop in $stops) {
+            $message = $null
+            $watch = [Diagnostics.Stopwatch]::StartNew()
+            try {
+                Use-ExcelWorkbook -Path $stop.Book -EnableMacros -WarningAction SilentlyContinue -ScriptBlock {
+                    param($xl, $wb)
+                    Invoke-ExcelMacro -Excel $xl -Name $stop.Macro
+                } | Out-Null
+            }
+            catch { $message = $_.Exception.Message }
+            Assert ($stop.Name + ': thrown with the text') ([string]$message -like $stop.Error) $message
+            Assert ($stop.Name + ': says its Excel was stopped') ([string]$message -like '*Stopped the Excel instance of this call*') $message
+            # Without the watcher the call would only end at the limit of Use-ExcelWorkbook (300 s).
+            Assert ($stop.Name + ': stopped within 30 s') ($watch.Elapsed.TotalSeconds -lt 30) ([int]$watch.Elapsed.TotalSeconds)
+            $left = Wait-NoExcel 5
+            Assert ($stop.Name + ': its Excel was stopped') ($left.Count -eq 0) ('PIDs ' + ($left -join ','))
         }
     }
 

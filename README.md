@@ -8,6 +8,7 @@ Windows 版 Excel を PowerShell の COM で操作して、Excel のブックと
 - シートの値・数式・書式の確認と編集
 - VBA（標準・クラス・文書モジュール）と UserForm の書き出し・編集・取り込み
 - VBA のコンパイルと、コンパイルエラーの文言と場所の取得
+- マクロの実行と、実行時エラーや MsgBox の文言の取得
 - カスタムリボンの埋め込みと、見え方を XML と照らすこと、ボタンを押して動作を確かめること
 - VBA プロジェクトをロックした配布用のブックの出力
 
@@ -40,7 +41,7 @@ Claude Code のプラグインとして入れます。この repo を marketplac
 powershell.exe -NoProfile -File "$env:USERPROFILE\.claude\plugins\cache\xlwright\xlwright\<版>\skills\xlwright\tests\Test-XlWright.ps1"
 ```
 
-`<版>` は、入れた版の番号（`0.1.0` など）を名前に持つフォルダです。`-Full` を付けると、Excel と VBE を画面に出す試験（コンパイルエラーの検出、リボンの押下と見え方の照合、配布ブックの出力）も行います。
+`<版>` は、入れた版の番号（`0.1.0` など）を名前に持つフォルダです。`-Full` を付けると、Excel と VBE を画面に出す試験（コンパイルエラーの検出、マクロが出すダイアログの扱い、リボンの押下と見え方の照合、配布ブックの出力）も行います。
 
 ## 開発
 

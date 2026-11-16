@@ -16,6 +16,7 @@ PowerShell から `Excel.Application` を COM で操作してブックを編集�
 - エージェントの作業中、人はその端末で Excel を使わない。Excel 以外のアプリは使ってよい。
 - リボンの確認（`Test-RibbonLayout.ps1`、`Invoke-RibbonButton.ps1`）と配布ブックの出力では、Excel や VBE のウィンドウが画面に出る。前面は取らず、人が使っているアプリの後ろに出る。出たウィンドウを人が操作しないよう、始める前に伝える。
 - VBA のコンパイルの検査（`Test-VbaCompile.ps1`）は、コンパイルエラーがある時だけ、VBE のウィンドウとエラーのダイアログが画面に短い間出る。スクリプトが閉じるので、人は操作しない。
+- マクロが出すダイアログ（実行時エラー、MsgBox）は、Excel が非表示でも画面に出る。`Invoke-ExcelMacro` が閉じるので、人は操作しない。
 - 利用する repo に、ブックの置き場や VBA ファイルの規則（`AGENTS.md`、`CLAUDE.md` など）があれば、そちらを優先する。無ければ、このスキルの既定に従う。
 
 ## 作業前の確認
@@ -32,7 +33,7 @@ PowerShell から `Excel.Application` を COM で操作してブックを編集�
 Excel は既定で、VBA とブックイベントを無効にし、外部ブックリンクを更新せずに開く。この設定は Excel 4.0 マクロやデータ接続の更新全般を抑止するものではない。
 
 - VBA の動作検証に限り `-EnableMacros` を付ける。実行前に `onLoad` などのコールバックも確認する。`Workbook_Open` などのイベントを検証する時は `-EnableEvents` も付ける。
-- `$xl.Run` やボタンの押下で動かしてよいのは、この作業で自分が書いた、外部とやり取りしないマクロだけ。既存のマクロやボタンは、ユーザーの確認なしに動かさない。サーバーやファイルを読み書きするマクロは、ブックを保存せずに閉じても、その変更は戻らない。
+- マクロの実行（`Invoke-ExcelMacro`、`$xl.Run`）やボタンの押下で動かしてよいのは、この作業で自分が書いた、外部とやり取りしないマクロだけ。既存のマクロやボタンは、ユーザーの確認なしに動かさない。サーバーやファイルを読み書きするマクロは、ブックを保存せずに閉じても、その変更は戻らない。
 - sandbox を、マクロに対する防御として数えない。COM で起動した Excel が sandbox の制限の内側で動くとは限らない。
 
 ## 手段の分担と順序
@@ -108,6 +109,23 @@ powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/scripts/Invoke-ExcelScript.
 - ブックを閉じて `Quit` した後、Excel が 10 秒以内に終わらなければ、この呼び出しが起動した Excel（PID と起動時刻で照合）を止める。PowerShell が COM の参照を手放さず、`Quit` の後も Excel が数分残る実測があるため。
 - 警告で PID が出た時（照合できない、止められない）は、人へ伝える。自分で止める時も、その PID だけを `Stop-Process -Id` で止める。名前（`-Name EXCEL`）では止めない。ユーザーの Excel まで止まる。
 
+### マクロを動かす
+
+マクロは、ScriptBlock の中で `Invoke-ExcelMacro` を使って動かす。`-EnableMacros` を付けて開く。
+
+```powershell
+param($xl, $wb)
+Invoke-ExcelMacro -Excel $xl -Name 'Util.AddNums' -ArgumentList 2, 3
+```
+
+`$xl.Run` は、マクロがダイアログを出している間は戻らず、非表示の Excel では上限まで止まったままになる。`Invoke-ExcelMacro` は、マクロの実行中に出たダイアログを見張って、次のように扱う。
+
+- **実行時エラー**: ダイアログを「終了」で閉じ、その文言（「実行時エラー '11': 0 で除算しました。」など）を入れた例外にする。Excel は止まらず、続けて使える。
+- **OK だけの MsgBox**: 閉じて先へ進む。題名と本文を警告に出すので、`Invoke-ExcelScript.ps1` の結果の `Warnings` で読める。
+- **閉じられないダイアログ**（はい/いいえ の MsgBox など）と**コンパイルエラー**: 文言を読んでから、この呼び出しが起動した Excel を止め、文言を入れた例外にする。保存していない変更は失われ、`Workbook.Close failed` などの警告も出る。答えを選ぶ MsgBox を出すマクロは、確かめたい分岐を引数で選べる形に分けてから動かす。コンパイルエラーは、先に `Test-VbaCompile.ps1` で見つける。
+
+戻り値はマクロの戻り値で、`Sub` は何も返さない。引数は 30 個まで。InputBox、ファイルを選ぶダイアログ、UserForm を出すマクロでは確かめていない。
+
 ### PowerShell + COM の癖
 
 - **セルへの代入は `Range('B2')` 形式で、型を明示する。** `$ws.Cells.Item(r, c).Value2 = 3` は `System.Int32` を `System.String` にキャストできないという `InvalidCastException` で落ちることがある。`$ws.Range("B$r").Value2 = [double]$v` なら通る。
@@ -118,7 +136,7 @@ powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/scripts/Invoke-ExcelScript.
 編集した後は、`-Save` なしでブックを開き直して読み戻す。書いたつもりの値ではなく、Excel が保存した結果を見る。動かしてよいマクロの範囲は「マクロが動くことへの注意」のとおり。
 
 - **シート**: `Value2`、`Formula`、`Text`（表示形式が適用された文字列）を読む。数式は Excel が再計算した値で確かめる。
-- **VBA**: 変更したコンポーネントの名前・種別・コードを読み戻す。`Test-VbaCompile.ps1` でコンパイルし、構文エラーや宣言の無い変数が無いことを確かめる（[VBA の編集ルールと入出力](references/vba.md)）。実行してよいマクロは `$xl.Run('MacroName')` で戻り値を確かめる。ThisWorkbook に置いた関数は、`$xl.Run` で呼ぶと（ブック名で修飾しても）空が返る。`[System.__ComObject].InvokeMember('FuncName', [Reflection.BindingFlags]::InvokeMethod, $null, $wb, $null)` で Workbook のメンバーとして呼ぶと値が返る。
+- **VBA**: 変更したコンポーネントの名前・種別・コードを読み戻す。`Test-VbaCompile.ps1` でコンパイルし、構文エラーや宣言の無い変数が無いことを確かめる（[VBA の編集ルールと入出力](references/vba.md)）。実行してよいマクロは `Invoke-ExcelMacro` で動かし、戻り値を確かめる（「マクロを動かす」）。ThisWorkbook に置いた関数は、`$xl.Run` で呼ぶと（ブック名で修飾しても）空が返る。`[System.__ComObject].InvokeMember('FuncName', [Reflection.BindingFlags]::InvokeMethod, $null, $wb, $null)` で Workbook のメンバーとして呼ぶと値が返る。
 - **リボンとボタン**: `Test-RibbonLayout.ps1` でタブ・グループ・ボタンの並び、大きさ、有効無効、表示非表示を XML と照らし、タブの画像でアイコンを見る。`Invoke-RibbonButton.ps1` で実際に押し、出たダイアログの文言を確かめる（[リボン](references/ribbon.md)）。
 
 ## 動作確認
@@ -129,7 +147,7 @@ powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/scripts/Invoke-ExcelScript.
 powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/tests/Test-XlWright.ps1" -OutFile <result.json>
 ```
 
-- 既定の項目は Excel を表示しない。セルと VBA、`Invoke-ExcelScript.ps1`、VBA のコンパイル、上限、呼び出し元が殺された時、不正な入力の拒否（VBA のソース、リボンの XML、配布の失敗）、見張りが立てられない時、UserForm を確かめる。5 分ほどかかる。
-- `-Full` を付けると、コンパイルエラーの検出、リボンの押下（同名の組み合わせ、閉じられないダイアログを含む）、リボンの見え方の照合、配布ブックの出力も確かめる。Excel と VBE が画面に出るので、先に人へ伝え、出たウィンドウを操作しないよう頼む。これらの項目は、Excel が前面を取らないことも確かめる。
+- 既定の項目は Excel を表示しない。セルと VBA、`Invoke-ExcelScript.ps1`、VBA のコンパイル、マクロの実行、上限、呼び出し元が殺された時、不正な入力の拒否（VBA のソース、リボンの XML、配布の失敗）、見張りが立てられない時、UserForm を確かめる。5 分ほどかかる。
+- `-Full` を付けると、コンパイルエラーの検出、マクロが出すダイアログの扱い、リボンの押下（同名の組み合わせ、閉じられないダイアログを含む）、リボンの見え方の照合、配布ブックの出力も確かめる。Excel と VBE が画面に出るので、先に人へ伝え、出たウィンドウを操作しないよう頼む。これらの項目は、Excel が前面を取らないことも確かめる。
 - `-Case timeout,userform` のように、名前を指定した項目だけを流せる。
 - 終了コードは、0 がすべて合格、1 が不合格あり、2 が前提を満たさない・Excel が残って止まった。一時フォルダは合否によらず最後に消す。不合格の理由は出力と `-OutFile` に残る。試験のブックを調べたい時は、`-KeepTemp` を付けて流し直すと残り、場所を出力する。

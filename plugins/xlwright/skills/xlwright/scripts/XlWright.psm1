@@ -4,7 +4,8 @@ Runs Excel through COM in a dedicated instance and always cleans up.
 
 .DESCRIPTION
 Use-ExcelWorkbook opens an existing workbook and invokes a script block with the Excel.Application
-and Workbook objects. New-ExcelWorkbook creates a new empty workbook file.
+and Workbook objects. New-ExcelWorkbook creates a new empty workbook file. Invoke-ExcelMacro runs a macro
+inside that script block and handles the dialogs the macro shows.
 
 Use-ExcelWorkbook disables VBA macros and workbook events by default and opens without updating
 external workbook links. Use -EnableMacros for an intentional macro test. Event handlers such as
@@ -26,6 +27,80 @@ if (-not ('XlWright.Native' -as [type])) {
     Add-Type -Namespace XlWright -Name Native -MemberDefinition @'
 [DllImport("user32.dll")]
 public static extern uint GetWindowThreadProcessId(System.IntPtr hWnd, out uint processId);
+'@
+}
+
+# Dialogs (#32770) shown by one Excel process: the VBA runtime and compile error dialogs and MsgBox.
+if (-not ('XlWright.Dialog' -as [type])) {
+    Add-Type -Namespace XlWright -Name Dialog -MemberDefinition @'
+public delegate bool EnumProc(System.IntPtr hWnd, System.IntPtr lParam);
+[DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, System.IntPtr lParam);
+[DllImport("user32.dll")] static extern bool EnumChildWindows(System.IntPtr parent, EnumProc callback, System.IntPtr lParam);
+[DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(System.IntPtr hWnd, out uint processId);
+[DllImport("user32.dll")] static extern bool IsWindowVisible(System.IntPtr hWnd);
+[DllImport("user32.dll")] public static extern bool IsWindow(System.IntPtr hWnd);
+[DllImport("user32.dll")] public static extern System.IntPtr GetDlgItem(System.IntPtr dialog, int id);
+[DllImport("user32.dll")] public static extern bool PostMessage(System.IntPtr hWnd, uint message, System.IntPtr wParam, System.IntPtr lParam);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(System.IntPtr hWnd, System.Text.StringBuilder text, int count);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(System.IntPtr hWnd, System.Text.StringBuilder text, int count);
+
+public const uint WM_CLOSE = 0x10;
+public const uint BM_CLICK = 0xF5;
+
+static string ClassOf(System.IntPtr hWnd) {
+    var text = new System.Text.StringBuilder(256);
+    GetClassName(hWnd, text, text.Capacity);
+    return text.ToString();
+}
+
+public static string Title(System.IntPtr hWnd) {
+    var text = new System.Text.StringBuilder(2048);
+    GetWindowText(hWnd, text, text.Capacity);
+    return text.ToString();
+}
+
+// The first visible top-level window of this class in the process, or zero.
+static System.IntPtr FindWindowOf(uint processId, string className) {
+    System.IntPtr found = System.IntPtr.Zero;
+    EnumWindows((hWnd, lParam) => {
+        uint owner;
+        GetWindowThreadProcessId(hWnd, out owner);
+        if (owner != processId || !IsWindowVisible(hWnd) || ClassOf(hWnd) != className) return true;
+        found = hWnd;
+        return false;
+    }, System.IntPtr.Zero);
+    return found;
+}
+
+// These dialogs are not owned by the Excel window (a compile error dialog is owned by the VBE window),
+// so they are looked up among the top-level windows of the process.
+public static System.IntPtr Find(uint processId) { return FindWindowOf(processId, "#32770"); }
+
+public static bool IsEditorVisible(uint processId) {
+    return FindWindowOf(processId, "wndclass_desked_gsk") != System.IntPtr.Zero;
+}
+
+// The message is in the Static children; the buttons are left out. Line breaks become single spaces.
+public static string Message(System.IntPtr dialog) {
+    var texts = new System.Collections.Generic.List<string>();
+    EnumChildWindows(dialog, (hWnd, lParam) => {
+        if (ClassOf(hWnd) != "Static") return true;
+        var text = Title(hWnd);
+        if (text.Length > 0) texts.Add(text);
+        return true;
+    }, System.IntPtr.Zero);
+    return System.Text.RegularExpressions.Regex.Replace(string.Join(" ", texts.ToArray()), @"\s+", " ").Trim();
+}
+
+// Waits until the dialog window is gone. False when it is still there after the time.
+public static bool WaitClosed(System.IntPtr dialog, int milliseconds) {
+    var watch = System.Diagnostics.Stopwatch.StartNew();
+    while (IsWindow(dialog)) {
+        if (watch.ElapsedMilliseconds >= milliseconds) return false;
+        System.Threading.Thread.Sleep(50);
+    }
+    return true;
+}
 '@
 }
 
@@ -197,4 +272,105 @@ function New-ExcelWorkbook {
     $Path
 }
 
-Export-ModuleMember -Function Use-ExcelWorkbook, New-ExcelWorkbook, Get-ExcelProcessId
+# Runs in another runspace while Application.Run is blocked by a dialog. It only uses XlWright.Dialog and
+# the values in $State, never the COM objects of the calling runspace.
+$script:MacroDialogWatcher = {
+    param($State)
+    $excelPid = [uint32]$State.ProcessId
+    function Stop-OwnExcel([string]$Reason) {
+        $State.Fatal = $Reason
+        $process = Get-Process -Id $State.ProcessId -ErrorAction SilentlyContinue
+        # Only the instance of this call: same PID and start time.
+        if ($process -and $process.StartTime.ToUniversalTime().Ticks -eq $State.StartTicks) {
+            Stop-Process -Id $State.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    }
+    while (-not $State.Stop) {
+        $dialog = [XlWright.Dialog]::Find($excelPid)
+        if ($dialog -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 100; continue }
+        $text = [XlWright.Dialog]::Title($dialog) + ': ' + [XlWright.Dialog]::Message($dialog)
+
+        # 4800 is the End button of the VBA runtime error dialog. The button texts depend on the display
+        # language, the control id does not. WM_CLOSE does not close this dialog.
+        $endButton = [XlWright.Dialog]::GetDlgItem($dialog, 4800)
+        if ($endButton -ne [IntPtr]::Zero) {
+            $State.RuntimeError = $text
+            [void][XlWright.Dialog]::PostMessage($endButton, [XlWright.Dialog]::BM_CLICK, [IntPtr]::Zero, [IntPtr]::Zero)
+        }
+        elseif ([XlWright.Dialog]::IsEditorVisible($excelPid)) {
+            # A compile error shows the VBE. Closing its dialog leaves the VBE in break mode and Run never
+            # returns (docs/notes/macro-dialog.md), so the instance is stopped right away.
+            Stop-OwnExcel ('The macro stopped with a dialog of the VBE and cannot continue: ' + $text)
+            return
+        }
+        else {
+            [void][XlWright.Dialog]::PostMessage($dialog, [XlWright.Dialog]::WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)
+        }
+        if (-not [XlWright.Dialog]::WaitClosed($dialog, 3000)) {
+            # E.g. a Yes/No MsgBox: answering it would decide what the macro does.
+            Stop-OwnExcel ('The macro shows a dialog that cannot be closed without choosing an answer: ' + $text)
+            return
+        }
+        if ($endButton -eq [IntPtr]::Zero) { [void]$State.Closed.Add($text) }
+    }
+}
+
+function Invoke-ExcelMacro {
+    <#
+    .SYNOPSIS
+    Runs a macro like Application.Run and handles the dialogs that would block it.
+
+    .DESCRIPTION
+    Application.Run does not return while the macro shows a dialog, and a hidden Excel instance gives no
+    hint of it. While the macro runs, another runspace watches the dialogs (#32770) of this instance:
+
+    - VBA runtime error: the dialog is ended with its End button and its text is thrown. Excel stays usable.
+    - A dialog that WM_CLOSE closes (a MsgBox with only OK): it is closed, the macro goes on, and the
+      title and text are written as a warning.
+    - Anything else (a compile error, a Yes/No MsgBox): the text is read, this Excel instance is
+      stopped by its PID and start time, and the text is thrown. Unsaved changes are lost.
+
+    Returns what the macro returns, and nothing for a Sub. Use it inside the script block of
+    Use-ExcelWorkbook with -EnableMacros.
+    #>
+    [CmdletBinding()]
+    param(
+        # The Excel.Application given to the script block.
+        [Parameter(Mandatory)]$Excel,
+        # As for Application.Run, e.g. 'Module1.Main'.
+        [Parameter(Mandatory)][string]$Name,
+        # Application.Run takes at most 30 arguments.
+        [ValidateCount(0, 30)][object[]]$ArgumentList = @()
+    )
+    $processId = Get-ExcelProcessId $Excel
+    $state = [hashtable]::Synchronized(@{
+        Stop = $false; ProcessId = $processId; RuntimeError = $null; Fatal = $null
+        StartTicks = (Get-Process -Id $processId -ErrorAction Stop).StartTime.ToUniversalTime().Ticks
+        Closed = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList))
+    })
+    $ps = [PowerShell]::Create()
+    [void]$ps.AddScript($script:MacroDialogWatcher.ToString()).AddArgument($state)
+    $async = $ps.BeginInvoke()
+    $value = $null
+    $failure = $null
+    try {
+        # InvokeMember passes a variable number of arguments, which $Excel.Run(...) cannot.
+        $value = [System.__ComObject].InvokeMember('Run', [Reflection.BindingFlags]::InvokeMethod, $null, $Excel,
+            [object[]](@($Name) + $ArgumentList))
+    }
+    catch { $failure = $_ }
+    finally {
+        $state.Stop = $true
+        try { [void]$ps.EndInvoke($async) } finally { $ps.Dispose() }
+    }
+    foreach ($text in $state.Closed) { Write-Warning ("Closed a dialog shown by macro '" + $Name + "': " + $text) }
+    if ($state.Fatal) {
+        throw ($state.Fatal + ' Stopped the Excel instance of this call (PID ' + $processId + '). Unsaved changes are lost.')
+    }
+    if ($state.RuntimeError) { throw ("Macro '" + $Name + "' stopped with a runtime error: " + $state.RuntimeError) }
+    if ($failure) { throw $failure }
+    # A Sub returns nothing; do not put a null into the output of the script block.
+    if ($null -ne $value) { $value }
+}
+
+Export-ModuleMember -Function Use-ExcelWorkbook, New-ExcelWorkbook, Get-ExcelProcessId, Invoke-ExcelMacro

@@ -24,6 +24,7 @@ Use-ExcelWorkbook -Path $Path -Save -ScriptBlock {
 - **日本語の結果はファイルに書いて読む。** 確認したい値は `[IO.File]::WriteAllLines($p, $lines, (New-Object Text.UTF8Encoding($false)))` で UTF-8 のファイルに書き出す。
 - 新しいブックは `New-ExcelWorkbook -Path <file>` で作る。拡張子が `.xlsm` ならマクロ有効ブック、`.xlsx` なら通常のブックで保存する。既にファイルがあればエラーで止まる。作ったブックの絶対パスを出力するので、要らなければ `[void]` で捨てる。上限は `-TimeoutSeconds`（既定 120）。
 - `Use-ExcelWorkbook` は `Invoke-ExcelScript.ps1` と同じ `-Save`、`-Visible`、`-EnableMacros`、`-EnableEvents`、`-TimeoutSeconds` を取り、上限と終了の扱いも同じ（SKILL.md の「COM 編集」）。
+- モジュールを読み込むと、ScriptBlock の中で `Invoke-ExcelMacro` も使える（SKILL.md の「マクロを動かす」）。
 - `Use-ExcelWorkbook` は ScriptBlock が出力した値をそのまま返す。COM メソッドの戻り値（`Worksheets.Add()` など）も混ざるので、要らないものは `[void]` で捨てる。COM オブジェクトを返すと、ブックを閉じた後も参照が残る。
 
 ## 別ブックからシートをコピーするとき

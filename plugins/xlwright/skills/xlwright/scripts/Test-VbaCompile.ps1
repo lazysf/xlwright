@@ -35,53 +35,6 @@ param(
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'XlWright.psm1') -Force
 
-if (-not ('XlWright.CompileDialog' -as [type])) {
-    Add-Type -Namespace XlWright -Name CompileDialog -MemberDefinition @'
-public delegate bool EnumProc(System.IntPtr hWnd, System.IntPtr lParam);
-[DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, System.IntPtr lParam);
-[DllImport("user32.dll")] static extern bool EnumChildWindows(System.IntPtr parent, EnumProc callback, System.IntPtr lParam);
-[DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(System.IntPtr hWnd, out uint processId);
-[DllImport("user32.dll")] static extern bool IsWindowVisible(System.IntPtr hWnd);
-[DllImport("user32.dll")] public static extern bool IsWindow(System.IntPtr hWnd);
-[DllImport("user32.dll")] public static extern bool PostMessage(System.IntPtr hWnd, uint message, System.IntPtr wParam, System.IntPtr lParam);
-[DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(System.IntPtr hWnd, System.Text.StringBuilder text, int count);
-[DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(System.IntPtr hWnd, System.Text.StringBuilder text, int count);
-
-static string ClassOf(System.IntPtr hWnd) {
-    var text = new System.Text.StringBuilder(256);
-    GetClassName(hWnd, text, text.Capacity);
-    return text.ToString();
-}
-
-// The compile error dialog is owned by the VBE window, not by the Excel window, so it is looked up among
-// the top-level windows of the process.
-public static System.IntPtr FindDialog(uint processId) {
-    System.IntPtr found = System.IntPtr.Zero;
-    EnumWindows((hWnd, lParam) => {
-        uint owner;
-        GetWindowThreadProcessId(hWnd, out owner);
-        if (owner != processId || !IsWindowVisible(hWnd) || ClassOf(hWnd) != "#32770") return true;
-        found = hWnd;
-        return false;
-    }, System.IntPtr.Zero);
-    return found;
-}
-
-// The message is in the Static children; the buttons (OK, Help) are left out.
-public static string[] StaticTexts(System.IntPtr dialog) {
-    var texts = new System.Collections.Generic.List<string>();
-    EnumChildWindows(dialog, (hWnd, lParam) => {
-        if (ClassOf(hWnd) != "Static") return true;
-        var text = new System.Text.StringBuilder(2048);
-        GetWindowText(hWnd, text, text.Capacity);
-        if (text.Length > 0) texts.Add(text.ToString());
-        return true;
-    }, System.IntPtr.Zero);
-    return texts.ToArray();
-}
-'@
-}
-
 $result = [ordered]@{ Compiled = $null; CompileError = $null; Error = $null }
 try {
     Use-ExcelWorkbook -Path $Path -TimeoutSeconds $TimeoutSeconds -ScriptBlock {
@@ -103,7 +56,7 @@ try {
         $dialog = [IntPtr]::Zero
         $deadline = (Get-Date).AddSeconds($DialogTimeoutSeconds)
         do {
-            $dialog = [XlWright.CompileDialog]::FindDialog([uint32]$excelPid)
+            $dialog = [XlWright.Dialog]::Find([uint32]$excelPid)
             if ($dialog -ne [IntPtr]::Zero) { break }
             if (-not $control.Enabled) { $result.Compiled = $true; return }
             Start-Sleep -Milliseconds 100
@@ -112,8 +65,7 @@ try {
             throw "The compile could not be confirmed: no error dialog and the project is not in the compiled state after $DialogTimeoutSeconds s."
         }
 
-        $message = ([XlWright.CompileDialog]::StaticTexts($dialog) -join ' ') -replace '\s+', ' '
-        $place = [ordered]@{ Message = $message.Trim(); Module = $null; Line = $null; Column = $null }
+        $place = [ordered]@{ Message = [XlWright.Dialog]::Message($dialog); Module = $null; Line = $null; Column = $null }
         $pane = $vbe.ActiveCodePane
         if ($null -ne $pane) {
             $startLine = 0; $startColumn = 0; $endLine = 0; $endColumn = 0
@@ -127,10 +79,8 @@ try {
         $result.Compiled = $false
         $result.CompileError = $place
 
-        [void][XlWright.CompileDialog]::PostMessage($dialog, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)  # WM_CLOSE
-        $deadline = (Get-Date).AddSeconds(3)
-        while ([XlWright.CompileDialog]::IsWindow($dialog) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 50 }
-        if ([XlWright.CompileDialog]::IsWindow($dialog)) {
+        [void][XlWright.Dialog]::PostMessage($dialog, [XlWright.Dialog]::WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)
+        if (-not [XlWright.Dialog]::WaitClosed($dialog, 3000)) {
             # The instance is blocked in a modal state; closing the workbook would hang. Stop only this instance.
             Stop-Process -Id $excelPid -Force -ErrorAction SilentlyContinue
             throw "The compile error dialog could not be closed. Stopped the Excel instance of this script (PID $excelPid)."

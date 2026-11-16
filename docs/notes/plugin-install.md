@@ -1,9 +1,11 @@
 # プラグインとして入れた時の振る舞い
 
 - Date: 2026-11-13
-- 出典: Claude Desktop の Code タブの設定の「プラグイン」の画面と `/plugin` の操作、同梱の Claude Code 2.1.321 の `claude plugin list`、`claude plugin marketplace add --help`、`claude plugin update`、`installed_plugins.json` とキャッシュのフォルダ、導入先での `tests/Test-XlWright.ps1` の実行（commit `689ca7f`）、Claude Code の docs（<https://code.claude.com/docs/en/plugins>、<https://code.claude.com/docs/en/skills>、<https://code.claude.com/docs/en/discover-plugins>、<https://code.claude.com/docs/en/plugins/loading>、<https://code.claude.com/docs/en/plugins-reference>）、主要なプラグインの repo の manifest と workflow（2026-11-13 の main）、release-please-action の README（<https://github.com/googleapis/release-please-action>）と GitHub の docs（<https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes>）（2026-11-16）
+- 出典: Claude Desktop の Code タブの設定の「プラグイン」の画面と `/plugin` の操作、同梱の Claude Code 2.1.321 の `claude plugin list`、`claude plugin marketplace add --help`、`claude plugin update`、`installed_plugins.json` とキャッシュのフォルダ、導入先での `tests/Test-XlWright.ps1` の実行（commit `9cf0254`）、Claude Code の docs（<https://code.claude.com/docs/en/plugins>、<https://code.claude.com/docs/en/skills>、<https://code.claude.com/docs/en/discover-plugins>、<https://code.claude.com/docs/en/plugins/loading>、<https://code.claude.com/docs/en/plugins-reference>）、主要なプラグインの repo の manifest と workflow（2026-11-13 の main）、release-please-action の README（<https://github.com/googleapis/release-please-action>）と GitHub の docs（<https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes>）（2026-11-16）
 
 利用者と同じ手順で入れて確かめた事実と、README の入れ方と版を今の形にしている理由を書く。入れ方そのものは [README](../../README.md) を正本とする。
+
+版として出てくるハッシュ（`689ca7f5a64a`、`cb12836fb035`、`000448a646ae`）は、実際に入った版の文字列をそのまま書いている。commit に署名し直してハッシュが変わったので、今の履歴の commit（順に `9cf0254`、`d3a2067`、`3e730d8`）とは一致しない。中身は同じ。
 
 ## 確かめた事実
 
@@ -18,7 +20,7 @@
 - 導入先の `tests/Test-XlWright.ps1` は、既定の 7 項目も、`-Full` の 10 項目も、すべて合格した。
 - Code タブで `/plugin marketplace update xlwright` を送ると、更新せずに設定の「プラグイン」の画面が開いた。ほかの `/plugin` のサブコマンドを Code タブで送る形は試していない。
 - 設定の「プラグイン」の画面で xlwright の行を押すと詳細が開き、「更新」のボタンと、有効と無効を切り替えるスイッチがある。行の「…」には「無効にする」と「削除」だけがある。スイッチを切ると、`~/.claude/settings.json` の `enabledPlugins` の `xlwright@xlwright` が `false` になった。
-- `version` を書いていない時、版は、marketplace の repo の先頭の commit のハッシュ（12 文字）になった。`plugins/xlwright/` を変えていない commit（`cb12836`、README だけの変更）でも、キャッシュに版 `cb12836fb035` のフォルダができた（中身は前の版と同じ）。docs の「相対パスのプラグインは、そのディレクトリの commit のハッシュ」（<https://code.claude.com/docs/en/plugins/loading>）とは合わない。
+- `version` を書いていない時、版は、marketplace の repo の先頭の commit のハッシュ（12 文字）になった。`plugins/xlwright/` を変えていない commit（`d3a2067`、doc だけの変更）でも、キャッシュに版 `cb12836fb035` のフォルダができた（中身は前の版と同じ）。docs の「相対パスのプラグインは、そのディレクトリの commit のハッシュ」（<https://code.claude.com/docs/en/plugins/loading>）とは合わない。
 - 新しい commit を push しても、手元の marketplace の写し（`~/.claude/plugins/marketplaces/xlwright`）を取り直すまで、アプリは気づかない。詳細の画面の「更新」は押せず、ツールチップに「最新です」と出る。
 - 「ディレクトリ」の画面の「Code」の一覧で marketplace を更新すると、写しが新しい commit になり、新しい版がキャッシュに届いた。しかし入っている版（`~/.claude/plugins/installed_plugins.json`）は切り替わらず、「更新」は押せないままだった。`/reload-plugins` とアプリの再起動でも変わらなかった。新しいセッションも古い版を読み込んだ。
 - 同梱の CLI で `claude plugin update xlwright@xlwright` を流すと、入っている版が `689ca7f5a64a` から `000448a646ae` に切り替わった。アプリを再起動すると、新しいセッションは新しい版を読み込んだ。Desktop の画面だけで更新を済ませる手段は、見つからなかった。

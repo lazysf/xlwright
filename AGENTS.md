@@ -4,7 +4,7 @@ xlwright の開発ルール
 
 ## 対象
 
-- このリポジトリは、Claude Code のスキル xlwright（`plugins/xlwright/skills/xlwright/`）を開発し、プラグインとして配布する。使い方は [README.md](README.md)、開発の手順と構成は [docs/development.md](docs/development.md) にある。
+- このリポジトリは、Claude Code のスキル xlwright（`plugins/xlwright/skills/xlwright/`）を開発し、プラグインとして配布する。使い方は [README.md](README.md)、開発の手順と構成は [DEVELOPMENT.md](DEVELOPMENT.md) にある。
 - 利用者に写るのは `plugins/xlwright/` の中だけ。開発用のファイルはその外に置く。
 - MCP サーバーの開発は中断し、`mcp` ブランチに残してある。`mcp` ブランチの規則は、そのブランチの `AGENTS.md` に従う。
 
@@ -25,12 +25,11 @@ xlwright の開発ルール
 
 ## 試験
 
-- スクリプトや手順を変えたら、`plugins/xlwright/skills/xlwright/tests/Test-XlWright.ps1` を流す。リボンや配布の出力に関わる変更では `-Full` も流す。`-Full` は画面に Excel を出すので、先に人へ伝える。
+- lint や試験を流す前に、[DEVELOPMENT.md](DEVELOPMENT.md) の「変更の確かめ方」を読む。`-Full` は画面に Excel を出すので、先に人へ伝える。
 - 新しい振る舞いを加えたら、試験に項目を足す。項目が壊れたものを見つけられるかは、写しのスクリプトをわざと壊して落ちることで確かめる。
 - 試験と実験は、一時フォルダの新しいブックか写しで行う。Git で管理するファイルや人のブックを直接変えない。
 - Excel が動いている時は、試験を始めずに人へ確かめる。
-- ファイルを変えたら、`npm run lint` を流す（Markdown の lint と、文字コード・改行・ASCII の検査）。
-- プラグインを検証する時（`claude plugin eval`、`claude plugin validate`）は、Claude Desktop に同梱された CLI を使う。使用量を Desktop とそろえるため、使う前に Desktop と同じアカウントでログインしていることを確かめ、違えば止まって人にログインを頼む。探し方と確かめ方は [docs/development.md](docs/development.md) の「eval」にある。
+- プラグインを検証する時（`claude plugin eval`、`claude plugin validate`）は、Claude Desktop に同梱された CLI を使う。使用量を Desktop とそろえるため、使う前に Desktop と同じアカウントでログインしていることを確かめ、違えば止まって人にログインを頼む。探し方と確かめ方は [DEVELOPMENT.md](DEVELOPMENT.md) の「eval」にある。
 
 ## 実際の Excel
 

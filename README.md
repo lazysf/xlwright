@@ -43,7 +43,7 @@ powershell.exe -NoProfile -File "$env:USERPROFILE\.claude\plugins\cache\xlwright
 
 ## 開発
 
-手直しの手順と repo の構成は [docs/development.md](docs/development.md) にあります。
+手直しの手順と repo の構成は [DEVELOPMENT.md](DEVELOPMENT.md) にあります。版ごとの変更は [CHANGELOG.md](CHANGELOG.md) にあります。
 
 ## ライセンス
 

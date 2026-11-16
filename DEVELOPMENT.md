@@ -1,8 +1,26 @@
 # 開発
 
-xlwright を手直しする人のための手順です。利用者向けの入れ方と使い方は [README](../README.md) にあります。
+xlwright を手直しする人のための手順です。利用者向けの入れ方と使い方は [README](README.md) にあります。
 
-## スキルの手直し
+## 前提と環境構築
+
+### lint と hook
+
+Markdown の lint には [rumdl](https://rumdl.dev) を使います。Node.js の版は `.nvmrc` にあります。
+
+```powershell
+npm ci
+```
+
+commit の時に lint と同じ検査を流すには、[prek](https://prek.j178.dev) で Git の hook を入れます。hook の設定は `prek.toml` にあります。
+
+```powershell
+prek install
+```
+
+`prek install` は、commit の時と push の時の 2 つの hook を入れます。push の時に流れるのは、[版](#リリース)の検査だけです。pre-push の hook を足す前に入れた端末では、`prek install` を流し直します。
+
+### スキルの手直し
 
 `.claude/skills/xlwright` は、`plugins/xlwright/skills/xlwright` を指す相対パスのシンボリックリンクです。この repo を Claude Code で開くと、スキルが `/xlwright` としてプロジェクトから読み込まれ、入れ直さずに手直しを試せます。
 プラグイン版も入れている端末では、`/xlwright`（手直し中）と `/xlwright:xlwright`（入れた版）の両方が読み込まれます。開発する端末では、プラグイン版を無効にしておきます。同じ名前のスキルが `~/.claude/skills/xlwright/` にあると、そちらが `/xlwright` として優先されるので、外しておきます。
@@ -17,34 +35,49 @@ cmd /c mklink /D .claude\skills\xlwright ..\..\plugins\xlwright\skills\xlwright
 
 セッションを始めた時に `.claude/skills/` が無かった場合は、`/reload-skills` で読み込み直します。
 
-## lint
+## 構成
 
-Markdown の lint には [rumdl](https://rumdl.dev) を使います。Node.js の版は `.nvmrc` にあります。
+```text
+.claude-plugin/marketplace.json   この repo を marketplace にする定義
+plugins/xlwright/                 配布するプラグイン（この中だけが利用者に写る）
+├── .claude-plugin/plugin.json
+├── evals/                        claude plugin eval の case
+└── skills/xlwright/
+    ├── SKILL.md                  毎回読む規則と手順
+    ├── references/               作業ごとの詳しい手順（VBA、UserForm、リボン、配布など）
+    ├── scripts/                  PowerShell のスクリプト
+    └── tests/                    実際の Excel で確かめる試験と、そのデータ
+docs/                             notes（配布しない）
+tools/                            開発用の検査（配布しない）
+```
+
+`docs/` の中身は [docs/README.md](docs/README.md) から辿れます。
+
+## 変更の確かめ方
+
+### lint
+
+ファイルを変えたら流します。
 
 ```powershell
-npm ci
 npm run lint
 ```
 
 `npm run lint` は、`lint:md`（rumdl）と `lint:text`（`tools/Test-TextFile.ps1`）を続けて流します。`lint:text` は、Git に入るテキストファイルが BOM なしの UTF-8 で LF だけを使い、制御文字を含まないことと、`.ps1` と `.psm1` が ASCII だけであることを確かめます。`plugins/xlwright/skills/xlwright/tests/data/` の試験データは UTF-8 で読まれるので、ASCII の決まりから外しています。
 
-commit の時に同じ検査を流すには、[prek](https://prek.j178.dev) で Git の hook を入れます。hook の設定は `prek.toml` にあります。
+### 試験
+
+スクリプトや手順を変えたら、実際の Excel で試験を流します。Excel が動いている時は、何もせずに止まります。
 
 ```powershell
-prek install
+powershell.exe -NoProfile -File plugins\xlwright\skills\xlwright\tests\Test-XlWright.ps1
 ```
 
-`prek install` は、commit の時と push の時の 2 つの hook を入れます。push の時に流れるのは、[版](#版)の検査だけです。pre-push の hook を足す前に入れた端末では、`prek install` を流し直します。
+- 既定の項目は、Excel を画面に出しません。
+- `-Full` を付けると、Excel と VBE を画面に出す項目（リボンの押下と見え方の照合、配布ブックの出力）も流します。リボンや配布の出力に関わる変更では、`-Full` も流します。流している間は、出たウィンドウに触れません。
+- `-Case timeout,userform` のように名前を渡すと、その項目だけを流します。
 
-## 版
-
-利用者に届く版は、`plugins/xlwright/.claude-plugin/plugin.json` の `version` で決まります。marketplace の項目（`.claude-plugin/marketplace.json`）には `version` を書きません。`version` を変えない限り、何度 push しても利用者は前の版のままです。
-
-`plugins/xlwright/` を変えて配る時は、push の前に `version` を上げます。作業中の commit ごとに上げる必要はありません。版は semver の形（`0.1.0` など）で書きます。
-
-push の時の hook（`tools/Test-PluginVersion.ps1`）は、origin との差に `plugins/xlwright/` の変更があるのに `version` が origin と同じなら、push を止めます。origin にまだ無いブランチは、`origin/HEAD`（無ければ `origin/main`）との分岐点と比べます。比べる相手が見つからない時は、警告を出して通します。
-
-## eval
+### eval
 
 スキルの振る舞いは、`plugins/xlwright/evals/` の case で `claude plugin eval`（Claude Code 2.1.269 以上）にかけて確かめます。各 case は、依頼文（`prompt.md`）と採点の基準（`graders/`）の組です。
 
@@ -67,7 +100,11 @@ claude plugin eval plugins/xlwright
 - 上の `claude` には、Claude Desktop に同梱された CLI を使います。同梱版は `%APPDATA%` の下の Claude Desktop のフォルダにある `claude-code\<版>\<ハッシュ>\claude.exe` です。アプリの更新で場所が変わり、古い版も残るので、更新日時が最も新しいものを使います。
 - 使用量を Desktop とそろえて把握するため、同梱の CLI は Desktop と同じアカウントでログインして使います。流す前に `claude auth status` を実行し、`loggedIn` が `true`、`authMethod` が `claude.ai`、`email` が Desktop でログインしているアカウントと同じことを確かめます。違う時は、`claude auth login` で Desktop と同じアカウントにログインし直します。
 
-## `mcp` ブランチの作業
+## branch
+
+### `mcp` ブランチ
+
+このリポジトリでは、もともと Excel を操作する MCP サーバーを開発していました。スキルの形で足りる見込みが立ったため、その開発は中断し、履歴は `mcp` ブランチにあります。再開の手順は、`mcp` ブランチの `TODO.md` にあります。
 
 main（スキル）と `mcp`（MCP サーバー）は、作るものも `.gitignore` も `node_modules` の中身も違います。同じフォルダで切り替えると、前のブランチのビルドの出力や依存が残って混ざります。`mcp` は別のフォルダに worktree として取り出し、そこで作業します。
 
@@ -77,24 +114,10 @@ git worktree add ..\xlwright-mcp mcp
 
 取り出したフォルダでの準備と確認の手順は、そのフォルダの `docs/development.md` にあります。
 
-## 構成
+## リリース
 
-```text
-.claude-plugin/marketplace.json   この repo を marketplace にする定義
-plugins/xlwright/                 配布するプラグイン（この中だけが利用者に写る）
-├── .claude-plugin/plugin.json
-├── evals/                        claude plugin eval の case
-└── skills/xlwright/
-    ├── SKILL.md                  毎回読む規則と手順
-    ├── references/               作業ごとの詳しい手順（VBA、UserForm、リボン、配布など）
-    ├── scripts/                  PowerShell のスクリプト
-    └── tests/                    実際の Excel で確かめる試験と、そのデータ
-docs/                             開発の手順と notes（配布しない）
-tools/                            開発用の検査（配布しない）
-```
+利用者に届く版は、`plugins/xlwright/.claude-plugin/plugin.json` の `version` で決まります。marketplace の項目（`.claude-plugin/marketplace.json`）には `version` を書きません。`version` を変えない限り、何度 push しても利用者は前の版のままです。
 
-プラグインとして入れた時の振る舞いを確かめた結果は、[notes/plugin-install.md](notes/plugin-install.md) にあります。リボンの操作で Excel を前面に出さない方法とその実測は、[notes/foreground.md](notes/foreground.md) にあります。
+`plugins/xlwright/` を変えて配る時は、push の前に `version` を上げ、[CHANGELOG.md](CHANGELOG.md) にその版の項目を足します。作業中の commit ごとに上げる必要はありません。版は semver の形（`0.1.0` など）で書きます。
 
-## MCP サーバーについて
-
-このリポジトリでは、もともと Excel を操作する MCP サーバーを開発していました。スキルの形で足りる見込みが立ったため、その開発は中断し、履歴は `mcp` ブランチにあります。再開の手順は、`mcp` ブランチの `TODO.md` にあります。
+push の時の hook（`tools/Test-PluginVersion.ps1`）は、origin との差に `plugins/xlwright/` の変更があるのに `version` が origin と同じなら、push を止めます。origin にまだ無いブランチは、`origin/HEAD`（無ければ `origin/main`）との分岐点と比べます。比べる相手が見つからない時は、警告を出して通します。

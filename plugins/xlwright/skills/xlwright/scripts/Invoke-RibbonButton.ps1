@@ -15,8 +15,8 @@ The tab and the button must be uniquely named in their respective search scopes.
 In a MsgBox both the message and the buttons are exposed as Pane elements, so they cannot be told
 apart by control type. Each entry of Dialogs lists them all, e.g. ["OK", "<message>"].
 
-A dialog whose buttons ask for an answer (a MsgBox with Yes/No or OK/Cancel; the x button would choose
-Cancel) is not closed. If such a dialog appears, a dialog cannot be closed, or the click call does not return in
+A dialog whose buttons ask for an answer (a MsgBox with Yes/No or OK/Cancel; the x button closes the latter
+with an answer the macro then acts on) is not closed. If such a dialog appears, a dialog cannot be closed, or the click call does not return in
 time, the Excel instance started by this script is stopped by its PID and start time and the result records
 the error. Other Excel processes are never touched.
 
@@ -130,7 +130,7 @@ try {
             $names = Get-DialogNames $dlg
             $result.Dialogs += , ([ordered]@{ Title = $dlg.Current.Name; Names = $names })
             $handle = $dlg.Current.NativeWindowHandle
-            # The x button answers a MsgBox with Cancel, so a dialog with an answer to choose is not closed.
+            # The x button would close an OK/Cancel MsgBox with an answer, so a dialog with an answer to choose is not closed.
             if ([XlWright.Dialog]::AsksForAnswer([IntPtr]$handle)) { $stuck = 'A dialog could not be closed without choosing an answer'; break }
             try { $dlg.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close() } catch { }
             # The next MsgBox may reuse the same window, so "closed" means the same window with the

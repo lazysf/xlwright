@@ -19,7 +19,7 @@
 
 ### Fixed
 
-- `Invoke-RibbonButton.ps1` が、OK/キャンセル の MsgBox を × で閉じ、キャンセルを選んでいた。答えを選ぶダイアログは閉じずに、そのスクリプトが起動した Excel を止めてエラーにする。
+- `Invoke-RibbonButton.ps1` が、OK/キャンセル の MsgBox を × で閉じ、マクロの答えを決めていた。答えを選ぶダイアログは閉じずに、そのスクリプトが起動した Excel を止めてエラーにする。
 - `Invoke-RibbonButton.ps1` と `Lock-VbaProject.ps1` が、Excel を PID だけで照合して止めていた。起動時刻も照合する。
 
 ## [0.1.0] - 2026-11-13

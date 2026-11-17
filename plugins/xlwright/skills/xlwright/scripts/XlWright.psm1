@@ -108,9 +108,10 @@ static int[] ButtonIds(System.IntPtr dialog) {
     return ids.ToArray();
 }
 
-// True when closing the dialog would choose an answer for the macro. WM_CLOSE and the x button answer a MsgBox
-// with IDCANCEL (2), so only a dialog whose buttons are 2 and Help (9) has a single answer: the OK button of a
-// MsgBox with only OK has id 2 (docs/notes/macro-dialog.md).
+// True when closing the dialog would choose an answer for the macro. WM_CLOSE and the x button close a MsgBox
+// with OK and Cancel too, with an answer the macro then acts on (which one was not read). Only a dialog whose
+// buttons are 2 and Help (9) has a single answer: the OK button of a MsgBox with only OK has id 2
+// (docs/notes/macro-dialog.md).
 public static bool AsksForAnswer(System.IntPtr dialog) {
     foreach (var id in ButtonIds(dialog)) { if (id != 2 && id != 9) return true; }
     return false;
@@ -403,7 +404,7 @@ $script:MacroDialogWatcher = {
             return
         }
         else {
-            # WM_CLOSE answers a MsgBox with IDCANCEL: with OK and Cancel it would choose Cancel.
+            # WM_CLOSE would close a MsgBox with OK and Cancel too, choosing an answer for the macro.
             if ([XlWright.Dialog]::AsksForAnswer($dialog)) {
                 Stop-OwnExcel ('The macro shows a dialog that cannot be closed without choosing an answer: ' + $text)
                 return

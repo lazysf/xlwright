@@ -523,14 +523,26 @@ Invoke-Case 'stop-own-process' {
     try {
         $ticks = [XlWright.ExcelProcess]::StartTicks($child.Id)
         Assert 'start ticks of the process' ($ticks -eq $child.StartTime.ToUniversalTime().Ticks) $ticks
-        $other = [XlWright.ExcelProcess]::StopIfSame($child.Id, $ticks - 1)
-        Assert 'another start time: not stopped' ($other -eq $false -and -not $child.HasExited) ('returned ' + $other)
-        $same = [XlWright.ExcelProcess]::StopIfSame($child.Id, $ticks)
-        Assert 'same PID and start time: stopped' ($same -eq $true -and $child.WaitForExit(5000)) ('returned ' + $same)
-        $gone = [XlWright.ExcelProcess]::StopIfSame($child.Id, $ticks)
-        Assert 'a process that is gone: false' ($gone -eq $false) ('returned ' + $gone)
+        $other = [string][XlWright.ExcelProcess]::StopIfSame($child.Id, $ticks - 1)
+        Assert 'another start time: NotSame, not stopped' ($other -eq 'NotSame' -and -not $child.HasExited) ('returned ' + $other)
+        $same = [string][XlWright.ExcelProcess]::StopIfSame($child.Id, $ticks)
+        Assert 'same PID and start time: Stopped' ($same -eq 'Stopped' -and $child.WaitForExit(5000)) ('returned ' + $same)
+        $gone = [string][XlWright.ExcelProcess]::StopIfSame($child.Id, $ticks)
+        Assert 'a process that is gone: Gone' ($gone -eq 'Gone') ('returned ' + $gone)
     }
     finally { if (-not $child.HasExited) { Stop-Process -Id $child.Id -Force -ErrorAction SilentlyContinue } }
+
+    # A session that loaded the types of another version cannot replace them; the module must refuse to run.
+    $stale = '$ErrorActionPreference = ''Stop''; Add-Type -Namespace XlWright -Name Dialog -MemberDefinition ''public static int Old;''; ' +
+        'Import-Module ''' + $module + '''; ''imported'''
+    $ErrorActionPreference = 'Continue'
+    $output = & powershell.exe -NoProfile -Command $stale 2>&1 | Out-String
+    $exit = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    # The console wraps long lines anywhere, so the text is compared without white space.
+    $flat = $output -replace '\s+', ''
+    Assert 'old XlWright.Dialog in the session: the import fails with the reason' ($exit -ne 0 -and $flat -notmatch "'?imported'?$" -and
+        $flat -like '*XlWright.DialogofanotherversionofXlWright.psm1*newpowershell.exe*') $output
 }
 
 function Invoke-Prerequisite([string[]]$Arguments) {

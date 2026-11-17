@@ -150,10 +150,11 @@ try {
         if ($stuck) {
             # The instance is blocked in a modal state; COM calls to it would hang. Stop only this instance.
             # The runspace is left undisposed on purpose: Dispose waits for the blocked Invoke.
-            if (-not [XlWright.ExcelProcess]::StopIfSame($excelPid, $excelStartTicks)) {
-                throw "$stuck. Excel PID $excelPid could not be stopped as the instance of this script."
+            switch ([string][XlWright.ExcelProcess]::StopIfSame($excelPid, $excelStartTicks)) {
+                'Stopped' { throw "$stuck. Stopped the Excel instance of this script (PID $excelPid)." }
+                'Gone' { throw "$stuck. The Excel instance of this script (PID $excelPid) had already exited." }
+                default { throw "$stuck. Excel PID $excelPid could not be stopped as the instance of this script. Report it to the user." }
             }
-            throw "$stuck. Stopped the Excel instance of this script (PID $excelPid)."
         }
         try {
             [void]$ps.EndInvoke($async)

@@ -47,6 +47,9 @@ public delegate bool EnumProc(System.IntPtr hWnd, System.IntPtr lParam);
 [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(System.IntPtr hWnd, System.Text.StringBuilder text, int count);
 [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(System.IntPtr hWnd, System.Text.StringBuilder text, int count);
 
+// Raised with every change of the members; see Assert-TypeRevision.
+public const int Revision = 2;
+
 public const uint WM_CLOSE = 0x10;
 public const uint BM_CLICK = 0xF5;
 
@@ -96,7 +99,7 @@ public static string Message(System.IntPtr dialog) {
 }
 
 // The control ids of the Button children, e.g. 1 (OK) and 2 (Cancel) of a MsgBox with OK and Cancel.
-public static int[] ButtonIds(System.IntPtr dialog) {
+static int[] ButtonIds(System.IntPtr dialog) {
     var ids = new System.Collections.Generic.List<int>();
     EnumChildWindows(dialog, (hWnd, lParam) => {
         if (ClassOf(hWnd) == "Button") ids.Add(GetDlgCtrlID(hWnd));
@@ -129,29 +132,58 @@ public static bool WaitClosed(System.IntPtr dialog, int milliseconds) {
 # an Excel that cannot be confirmed as the own one). A type, so that the other runspaces of the scripts can use it.
 if (-not ('XlWright.ExcelProcess' -as [type])) {
     Add-Type -Namespace XlWright -Name ExcelProcess -MemberDefinition @'
+// Raised with every change of the members; see Assert-TypeRevision.
+public const int Revision = 1;
+
+// Gone: no such process (it has exited). NotSame: another process, or its start time could not be read.
+// Failed: it is the same process, but it could not be stopped; the reason is in the out parameter.
+public enum StopResult { Stopped, Gone, NotSame, Failed }
+
 public static long StartTicks(int processId) {
     using (var process = System.Diagnostics.Process.GetProcessById(processId)) {
         return process.StartTime.ToUniversalTime().Ticks;
     }
 }
 
-// True when the process was stopped. False when it is gone, is another process now, or could not be checked or stopped.
-public static bool StopIfSame(int processId, long startTicks) {
+public static StopResult StopIfSame(int processId, long startTicks) {
+    string reason;
+    return StopIfSame(processId, startTicks, out reason);
+}
+
+public static StopResult StopIfSame(int processId, long startTicks, out string reason) {
+    reason = null;
     System.Diagnostics.Process process;
     try { process = System.Diagnostics.Process.GetProcessById(processId); }
-    catch (System.ArgumentException) { return false; }
+    catch (System.ArgumentException) { return StopResult.Gone; }
     using (process) {
         try {
-            if (process.StartTime.ToUniversalTime().Ticks != startTicks) return false;
-            process.Kill();
-            return true;
+            if (process.StartTime.ToUniversalTime().Ticks != startTicks) return StopResult.NotSame;
         }
-        catch (System.InvalidOperationException) { return false; }
-        catch (System.ComponentModel.Win32Exception) { return false; }
+        catch (System.InvalidOperationException) { return StopResult.Gone; }
+        catch (System.ComponentModel.Win32Exception) { return StopResult.NotSame; }
+        try {
+            process.Kill();
+            return StopResult.Stopped;
+        }
+        catch (System.InvalidOperationException) { return StopResult.Gone; }
+        catch (System.ComponentModel.Win32Exception e) { reason = e.Message; return StopResult.Failed; }
     }
 }
 '@
 }
+
+# A PowerShell session keeps the types it loaded first: Import-Module -Force does not replace them, so a session
+# that loaded an older module would run this one with old types and fail inside another runspace.
+function Assert-TypeRevision([type]$Type, [int]$Revision) {
+    $field = $Type.GetField('Revision')
+    $loaded = if ($null -ne $field) { [int]$field.GetValue($null) } else { 0 }
+    if ($loaded -ne $Revision) {
+        throw ($Type.FullName + " of another version of XlWright.psm1 (revision " + $loaded + ", this one needs " +
+            $Revision + ") is loaded in this PowerShell session. Run the script in a new powershell.exe.")
+    }
+}
+Assert-TypeRevision ([XlWright.Dialog]) 2
+Assert-TypeRevision ([XlWright.ExcelProcess]) 1
 
 function Get-ExcelProcessId($Xl) {
     # Hwnd is available even for a hidden instance.
@@ -239,20 +271,23 @@ function Stop-ExcelSession($Session, $Workbook) {
         if (-not (Get-Process -Id $Session.ProcessId -ErrorAction SilentlyContinue)) { return }
         Start-Sleep -Milliseconds 500
     }
-    $process = Get-Process -Id $Session.ProcessId -ErrorAction SilentlyContinue
-    if (-not $process) { return }
-    if ($null -eq $Session.StartTicks -or $process.StartTime.ToUniversalTime().Ticks -ne $Session.StartTicks) {
-        Write-Warning ("PID " + $Session.ProcessId + " could not be confirmed as the Excel instance of this call " +
-            "and was left running. Report it to the user.")
-        return
+    $stopped = 'NotSame'
+    $reason = $null
+    if ($null -ne $Session.StartTicks) {
+        $stopped = [string][XlWright.ExcelProcess]::StopIfSame($Session.ProcessId, $Session.StartTicks, [ref]$reason)
     }
-    try {
-        Stop-Process -Id $Session.ProcessId -Force -ErrorAction Stop
-        Write-Verbose ("Stopped the Excel instance of this call (PID " + $Session.ProcessId + ") after Quit.")
-    }
-    catch {
-        Write-Warning ("Could not stop the Excel instance of this call (PID " + $Session.ProcessId + "): " +
-            $_.Exception.Message + " Report it to the user.")
+    elseif (-not (Get-Process -Id $Session.ProcessId -ErrorAction SilentlyContinue)) { return }
+    switch ($stopped) {
+        'Stopped' { Write-Verbose ("Stopped the Excel instance of this call (PID " + $Session.ProcessId + ") after Quit.") }
+        'Gone' { }
+        'NotSame' {
+            Write-Warning ("PID " + $Session.ProcessId + " could not be confirmed as the Excel instance of this call " +
+                "and was left running. Report it to the user.")
+        }
+        default {
+            Write-Warning ("Could not stop the Excel instance of this call (PID " + $Session.ProcessId + "): " +
+                $reason + " Report it to the user.")
+        }
     }
 }
 

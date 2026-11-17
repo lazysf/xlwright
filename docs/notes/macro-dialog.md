@@ -94,6 +94,7 @@
 | `Application.InputBox` | `#32770` が 8 秒で見つからない | - | 実験の見張りが Excel を止めた |
 
 - OK だけのダイアログは、どれも OK が ID 2 だった。3 の判定で止める側に入るものは無かった。
+- 表示した Excel で、マクロから `DisplayAlerts` を真にして Excel 自身の警告を出した（2026-11-17、各 1 回）。セルの結合（値のある 2 セル）とシートの削除の警告は、8 秒待っても `#32770` として見つからず、実験の見張りが Excel を止めた。警告のウィンドウのクラスは読んでいない。循環参照になる数式を入れたマクロは、警告を出さずに値を返した。Excel 自身の警告は 3 の判定まで届かないので、判定の変更で新しく止めるものは無い。見つけられない警告では、`Run` が上限まで戻らない。
 - VBA の `InputBox` は、`WM_CLOSE` でキャンセルを選んで閉じた。3 の判定では止める側に入る。答えを選ぶダイアログとして扱われる。`Invoke-ExcelMacro` を通しては確かめていない。
 
 `tests/Test-XlWright.ps1` の `macro` と `macro-dialog` が、これを確かめる（2026-11-16）。実験に加えて、次を確かめた。
@@ -109,7 +110,8 @@
 - リセットを実行しない写しは、3 秒後に Excel を止め、`macro-dialog` と `vba-test-fail` で落ちた。
 - VBE を隠さない写しも、同じ 2 項目で落ちた。この写しでは、後の MsgBox が 2 の扱いになった。VBE が表示されたままだと、MsgBox とコンパイルエラーを見分けられない。
 - リボンのボタンが出した OK/Cancel の MsgBox も、閉じずに Excel を止めた（`ribbon`、2026-11-17）。判定を外した `Invoke-RibbonButton.ps1` の写しでは、× で閉じて `Clicked` が `true` になり、`ribbon` で落ちた。
-- 起動時刻を照合しない `StopIfSame` の写しは、`stop-own-process` で落ちた。
+- 起動時刻を照合しない `StopIfSame` の写しと、居ないプロセスを別のプロセスと返す写しは、`stop-own-process` で落ちた。`StopIfSame` は、止めた（`Stopped`）、居ない（`Gone`）、別のプロセスか起動時刻を読めない（`NotSame`）、止められなかった（`Failed`）を返し、呼び出し元はそれぞれ別の文言にする。
+- 古い版の `XlWright.Dialog` を先に読み込んだ session では、module の読み込みが、新しい `powershell.exe` で流すよう求める例外になった（`stop-own-process`）。型は同じ session で置き換えられないので、`Revision` の値で見分ける。照合を外した写しは、読み込みが通り、`stop-own-process` で落ちた。
 - ボタンの ID を見ない写しは、`macro-dialog` で落ちた。OK/Cancel の MsgBox が `WM_CLOSE` で閉じ、例外にならなかった（2026-11-17）。
 
 ## 未確認
@@ -120,6 +122,7 @@
 - 「デバッグ」や「継続」を押した時。
 - 文書モジュールのマクロでの実行時エラー。
 - `On Error` の無い実行時エラーが、イベント（`Workbook_Open` など）の中で出た時。`Invoke-ExcelMacro` が見張るのは、自分が呼んだマクロの実行中だけ。
+- `DisplayAlerts` を真にしたマクロが出す Excel 自身の警告のウィンドウの種類と、それを見つけて閉じる方法。
 - `Application.InputBox`、ファイルを選ぶダイアログ、UserForm。`Application.InputBox` は、8 秒待っても `#32770` が見つからなかった（下の「ボタンの ID」）。見張りは見つけられず、`Run` は上限まで戻らない見込み。
 - ダイアログを見つけた時点で、VBE のウィンドウがまだ表示されていないコンパイルエラーがあるか。あれば 3 の扱いになり、`Run` は上限まで戻らない。実験と試験では、毎回表示されていた。
 - 32-bit の Excel、日本語以外の表示言語（ボタンの ID が同じか）。

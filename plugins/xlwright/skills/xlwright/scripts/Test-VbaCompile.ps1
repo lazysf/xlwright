@@ -84,10 +84,12 @@ try {
         if (-not [XlWright.Dialog]::WaitClosed($dialog, 3000)) {
             # The instance is blocked in a modal state; closing the workbook would hang. Stop only this instance:
             # same PID and start time.
-            if (-not [XlWright.ExcelProcess]::StopIfSame($excelPid, $excelStartTicks)) {
-                throw "The compile error dialog could not be closed, and Excel PID $excelPid could not be stopped as the instance of this script."
+            $stuck = 'The compile error dialog could not be closed.'
+            switch ([string][XlWright.ExcelProcess]::StopIfSame($excelPid, $excelStartTicks)) {
+                'Stopped' { throw "$stuck Stopped the Excel instance of this script (PID $excelPid)." }
+                'Gone' { throw "$stuck The Excel instance of this script (PID $excelPid) had already exited." }
+                default { throw "$stuck Excel PID $excelPid could not be stopped as the instance of this script. Report it to the user." }
             }
-            throw "The compile error dialog could not be closed. Stopped the Excel instance of this script (PID $excelPid)."
         }
         if (-not $vbeWasVisible) { $vbe.MainWindow.Visible = $false }
     }

@@ -670,6 +670,13 @@ Invoke-Case 'workbook-summary' {
     Assert 'empty .xlsx: exit 0 and nothing listed' ($plain.Exit -eq 0 -and @($plain.Json.Sheets).Count -eq 1 -and $null -eq $plain.Json.Sheets[0].UsedRange -and
         @($plain.Json.Names).Count -eq 0 -and @($plain.Json.ExternalLinks).Count -eq 0 -and @($plain.Json.Connections).Count -eq 0 -and
         $plain.Json.Vba.HasProject -eq $false -and @($plain.Json.Vba.Components).Count -eq 0 -and @($plain.Json.CustomUI).Count -eq 0) $plain.Text
+    # An .xlsb is a zip file as well and can carry a ribbon.
+    $binary = Join-Path $dir 'binary.xlsb'
+    Use-ExcelWorkbook -Path $other -ScriptBlock { param($xl, $wb) $wb.SaveAs($binary, 50) }  # xlExcel12
+    $ribbon = Invoke-Script (Join-Path $scripts 'Add-CustomUI.ps1') @('-Path', $binary, '-XmlPath', (Join-Path $data 'ribbon\base.xml'))
+    Assert '.xlsb: ribbon embedded' ($ribbon.Exit -eq 0) $ribbon.Output
+    $xlsb = Invoke-Summary $binary
+    Assert '.xlsb: customUI entries' ($xlsb.Exit -eq 0 -and (@($xlsb.Json.CustomUI) -join ',') -eq 'customUI/customUI14.xml') $xlsb.Text
     $missing = Invoke-Summary (Join-Path $dir 'no-such.xlsm')
     Assert 'missing workbook: exit 1 and Error' ($missing.Exit -eq 1 -and $missing.Json.Error) $missing.Text
 }

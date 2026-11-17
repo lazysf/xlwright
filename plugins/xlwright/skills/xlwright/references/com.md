@@ -28,7 +28,7 @@ powershell.exe -NoProfile -File "<skill>/scripts/Get-WorkbookSummary.ps1" -Path 
 - `Connections` に、接続文字列と SQL は入れない。サーバー名や認証情報が入っていることがあるため。中身が要る時は、ユーザーに確かめてから読む。
 - `Vba.Components` の `Kind` は、`standard`、`classes`、`documents`、`forms`、`other`。コードの無い文書モジュールは省く。VBA を読めない時（`AccessVBOM` が `1` でない、VBA プロジェクトがロックされている）は、`Components` が `null` になり、`Vba.Error` に理由が入る。ほかの項目は返り、終了コードは 0 のまま。
 - ブックが無い時や開けない時は、`Error` に理由が入り、終了コードは 1 になる。
-- 確かめたのは、`.xlsm` と `.xlsx`、グラフシート、非表示のシート、テーブル、CSV を読み込んだ接続、ブックへのリンク 1 つ、VBA プロジェクトをロックしたブック。OLE DB や ODBC の接続、Power Query、リンク先の無いリンク、保護されたシート、Excel 4.0 マクロシート、`AccessVBOM` が `1` でない時、`.xlsb` と `.xls` では確かめていない。
+- 確かめたのは、`.xlsm` と `.xlsx`、グラフシート、非表示のシート、テーブル、CSV を読み込んだ接続、ブックへのリンク 1 つ、VBA プロジェクトをロックしたブック、リボンを埋め込んだ `.xlsb` の `CustomUI`。OLE DB や ODBC の接続、Power Query、リンク先の無いリンク、保護されたシート、Excel 4.0 マクロシート、`AccessVBOM` が `1` でない時、`.xlsb` の `CustomUI` のほかの項目、`.xls` では確かめていない。
 
 ## エラー値のセルを探す
 

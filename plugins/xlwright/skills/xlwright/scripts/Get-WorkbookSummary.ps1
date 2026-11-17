@@ -47,8 +47,8 @@ try {
     $result.Path = $full
 
     # Before Excel opens the workbook: while it is open, the zip cannot be read (docs/notes/workbook-summary.md).
-    # Only the Open XML formats are zip files.
-    if ([IO.Path]::GetExtension($full) -in '.xlsx', '.xlsm', '.xltx', '.xltm', '.xlam') {
+    # The Open XML formats and .xlsb are zip files; .xls is not.
+    if ([IO.Path]::GetExtension($full) -in '.xlsx', '.xlsm', '.xltx', '.xltm', '.xlam', '.xlsb') {
         $zip = [IO.Compression.ZipFile]::OpenRead($full)
         try {
             $result.CustomUI = @($zip.Entries | ForEach-Object { $_.FullName } |

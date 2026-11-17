@@ -76,32 +76,14 @@ powershell.exe -NoProfile -File plugins\xlwright\skills\xlwright\tests\Test-XlWr
 - 既定の項目は、Excel を画面に出しません。
 - `-Full` を付けると、Excel と VBE を画面に出す項目（コンパイルエラーの検出、マクロが出すダイアログの扱い、失敗する VBA のテスト、リボンの押下と見え方の照合、配布ブックの出力、ブックの見た目の画像）も流します。流している間は、出たウィンドウに触れません。
 - `-Case timeout,userform` のように名前を渡すと、その項目だけを流します。`-Full` の項目を名前で選ぶ時も、`-Full` を付けます。
+- `-Changed` を付けると、HEAD から変えたスキルのファイル（stage 済み、未 stage、未追跡）に関わる項目だけを流します。どのファイルがどの項目に関わるかは、`Test-XlWright.ps1` の `$CasesByFile` にあります。表に無い `scripts/` のファイル、`tests/data/` の中、`Test-XlWright.ps1` を変えた時は、すべての項目を流します。`-Full` が要る項目は、`-Full` を付けない時は名前を出して飛ばします。`-Case` とは一緒に使えません。
 
-全体を流すと時間がかかります（2026-11-17 に測った時は、`-Full` を付けて 668 秒、そのうち既定の項目が 367 秒）。多くの項目が Excel を何度も起動するので、項目を選ぶほど短くなります。項目を足す時、確かめる対象でない準備のブックは、`New-EmptyBook`、`New-BookWithVba`、`New-BookWithMacros` で作ります。どれも最初の 1 回だけ Excel で作り、後は写しを渡します。そこで、次のように流し分けます。
+全体を流すと時間がかかります（2026-11-17 に測った時は、`-Full` を付けて 668 秒、そのうち既定の項目が 367 秒）。多くの項目が Excel を何度も起動するので、項目を選ぶほど短くなります。そこで、次のように流し分けます。
 
-- 作業の途中は、変えたスクリプトに関わる項目だけを、下の表から選んで `-Case` で流します。
-- commit の前に、既定の項目をすべて流します。表で `-Full` の項目に関わる変更をした時は、`-Full` を付けて全体を流します。
+- 作業の途中は、`-Changed` で流します。
+- commit の前に、既定の項目をすべて流します。`-Changed` が `-Full` の要る項目を飛ばした時は、`-Full` を付けて全体を流します。
 
-| 変えたもの | 項目（太字は `-Full` が要る） |
-| --- | --- |
-| `XlWright.psm1`、`tests/Test-XlWright.ps1` | すべて |
-| `Import-Vba.ps1` | すべて（多くの項目が、ブックの準備に使う） |
-| `Invoke-ExcelScript.ps1` | `invoke-excelscript`、`timeout`、`range`、`userform`、`vba-prune`、`workbook-summary`、**`macro-dialog`** |
-| `Export-Vba.ps1` | `cells-and-vba`、`userform`、`vba-compare`、`vba-prune` |
-| `Compare-Vba.ps1` | `vba-compare`、`vba-prune` |
-| `Test-VbaCompile.ps1` | `vba-compile`、**`vba-compile-error`**、**`publish-exclude-tests`** |
-| `Invoke-VbaTest.ps1` | `vba-test`、**`vba-test-fail`** |
-| `Add-CustomUI.ps1` | `input-rejected`、`workbook-summary`、**`ribbon`**、**`ribbon-layout`**、**`publish`** |
-| `Ribbon.psm1`、`Invoke-RibbonButton.ps1` | **`ribbon`**、**`ribbon-layout`** |
-| `Test-RibbonLayout.ps1` | **`ribbon-layout`**、**`publish`** |
-| `Publish-Workbook.ps1`、`Lock-VbaProject.ps1` | `input-rejected`、**`publish`**、**`publish-exclude-tests`** |
-| `Get-WorkbookSummary.ps1` | `workbook-summary`、**`publish`** |
-| `Find-CellError.ps1` | `cell-error` |
-| `Test-Prerequisite.ps1` | `prerequisite` |
-| `Save-WorkbookScreenshot.ps1` | **`screenshot`** |
-| `tests/data/` の中 | そのデータを読む項目 |
-
-表は、試験がどのスクリプトを呼ぶかと、スクリプトどうしの呼び出し（`Publish-Workbook.ps1` から `Import-Vba.ps1`、`Add-CustomUI.ps1`、`Lock-VbaProject.ps1`、`-ExcludeTests` の時は `Test-VbaCompile.ps1`。`Compare-Vba.ps1` から `Export-Vba.ps1`）から作りました。項目やスクリプトを足した時は、表も直します。
+項目やスクリプトを足した時は、`$CasesByFile` も直します。項目 `changed-selection` が、表の項目の名前と、`-Full` が要る項目の一覧を確かめます。確かめる対象でない準備のブックは、`New-EmptyBook`、`New-BookWithVba`、`New-BookWithMacros` で作ります。どれも最初の 1 回だけ Excel で作り、後は写しを渡します。
 
 ### eval
 

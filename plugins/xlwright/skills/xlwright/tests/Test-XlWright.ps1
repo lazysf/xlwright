@@ -13,6 +13,9 @@ After each case no Excel process may remain. If one does, the run stops without 
 
 -Case runs only the named cases, e.g. -Case timeout,userform.
 
+-Changed runs only the cases that cover the files of the skill changed since HEAD (staged, unstaged and untracked),
+by $CasesByFile below. It cannot be combined with -Case. The cases that need -Full are named and skipped without it.
+
 The result is written as UTF-8 JSON to -OutFile and summarized on the console.
 Exit code: 0 all passed, 1 a check failed, 2 preconditions not met or the run was stopped.
 The temporary folder is removed at the end, whether the cases passed or not, unless -KeepTemp is given.
@@ -21,6 +24,8 @@ param(
     [switch]$Full,
     # Run only these cases (names as printed). Cases that need -Full still need it.
     [string[]]$Case,
+    # Run only the cases that cover the files changed since HEAD.
+    [switch]$Changed,
     [string]$OutFile,
     [switch]$KeepTemp
 )
@@ -34,6 +39,80 @@ $module = Join-Path $scripts 'XlWright.psm1'
 $runner = Join-Path $scripts 'Invoke-ExcelScript.ps1'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $S = [IO.File]::ReadAllText((Join-Path $data 'strings.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
+
+# The cases that cover each file, by its path in the skill folder: the cases that call the script, directly or
+# through another script (Publish-Workbook.ps1 calls Import-Vba.ps1, Add-CustomUI.ps1, Lock-VbaProject.ps1 and, with
+# -ExcludeTests, Test-VbaCompile.ps1; Compare-Vba.ps1 calls Export-Vba.ps1). '*' is every case. A file of scripts\
+# that is not listed, Test-XlWright.ps1 and anything in tests\data\ also run every case; other files run none.
+# When a case or a script is added, add it here as well.
+$CasesByFile = [ordered]@{
+    'scripts/XlWright.psm1' = '*'
+    # Most cases use it to set up their workbooks.
+    'scripts/Import-Vba.ps1' = '*'
+    'scripts/Invoke-ExcelScript.ps1' = 'invoke-excelscript', 'timeout', 'range', 'userform', 'vba-prune', 'workbook-summary', 'macro-dialog'
+    'scripts/Export-Vba.ps1' = 'cells-and-vba', 'userform', 'vba-compare', 'vba-prune'
+    'scripts/Compare-Vba.ps1' = 'vba-compare', 'vba-prune'
+    'scripts/Test-VbaCompile.ps1' = 'vba-compile', 'vba-compile-error', 'publish-exclude-tests'
+    'scripts/Invoke-VbaTest.ps1' = 'vba-test', 'vba-test-fail'
+    'scripts/Add-CustomUI.ps1' = 'input-rejected', 'workbook-summary', 'ribbon', 'ribbon-layout', 'publish'
+    'scripts/Ribbon.psm1' = 'ribbon', 'ribbon-layout'
+    'scripts/Invoke-RibbonButton.ps1' = 'ribbon', 'ribbon-layout'
+    'scripts/Test-RibbonLayout.ps1' = 'ribbon-layout', 'publish'
+    'scripts/Publish-Workbook.ps1' = 'input-rejected', 'publish', 'publish-exclude-tests'
+    'scripts/Lock-VbaProject.ps1' = 'input-rejected', 'publish', 'publish-exclude-tests'
+    'scripts/Get-WorkbookSummary.ps1' = 'workbook-summary', 'publish'
+    'scripts/Find-CellError.ps1' = 'cell-error'
+    'scripts/Test-Prerequisite.ps1' = 'prerequisite'
+    'scripts/Save-WorkbookScreenshot.ps1' = 'screenshot'
+}
+$FullOnlyCases = 'vba-compile-error', 'macro-dialog', 'vba-test-fail', 'ribbon', 'ribbon-layout', 'publish', 'publish-exclude-tests', 'screenshot'
+
+# Returns the cases that cover the files (paths in the skill folder, with / or \): All when every case is needed.
+function Resolve-ChangedCase([string[]]$Files) {
+    $all = $false
+    $cases = New-Object System.Collections.Generic.List[string]
+    foreach ($file in $Files) {
+        $path = $file -replace '\\', '/'
+        $listed = $CasesByFile[$path]
+        if ($listed -eq '*' -or $path -eq 'tests/Test-XlWright.ps1' -or $path -like 'tests/data/*' -or
+            ($null -eq $listed -and $path -like 'scripts/*')) { $all = $true }
+        elseif ($null -ne $listed) { foreach ($c in $listed) { if (-not $cases.Contains($c)) { $cases.Add($c) } } }
+    }
+    [pscustomobject]@{ All = $all; Cases = $(if ($all) { @() } else { @($cases | Sort-Object) }) }
+}
+
+# The files of the skill changed since HEAD, as paths in the skill folder. Throws when Git cannot tell.
+function Get-ChangedFile {
+    $ErrorActionPreference = 'Continue'
+    $files = foreach ($arguments in @(
+            @('diff', '--name-only', '--no-renames', '--relative', 'HEAD'),
+            @('ls-files', '--others', '--exclude-standard'))) {
+        $output = @(& git -C $skill @arguments 2>&1)
+        # stderr comes as error records; a warning there (line endings, for example) is not a file name.
+        $messages = @($output | Where-Object { $_ -is [Management.Automation.ErrorRecord] })
+        if ($LASTEXITCODE -ne 0) { throw ('git ' + $arguments[0] + ' failed: ' + ($messages -join ' ')) }
+        $output | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }
+    }
+    @($files | ForEach-Object { [string]$_ } | Where-Object { $_ } | Sort-Object -Unique)
+}
+
+if ($Changed) {
+    if ($Case) { Write-Output '-Changed cannot be combined with -Case.'; exit 2 }
+    try { $files = Get-ChangedFile }
+    catch { Write-Output ('-Changed could not list the changed files: ' + $_.Exception.Message); exit 2 }
+    $selection = Resolve-ChangedCase $files
+    Write-Output ('Changed files of the skill: ' + $(if ($files) { $files -join ', ' } else { 'none' }))
+    if ($selection.All) {
+        Write-Output ('Cases: all' + $(if ($Full) { '' } else { ' (without -Full, the cases that show Excel are not run)' }))
+    }
+    else {
+        $skipped = @($selection.Cases | Where-Object { -not $Full -and $FullOnlyCases -contains $_ })
+        $Case = @($selection.Cases | Where-Object { $skipped -notcontains $_ })
+        if ($skipped) { Write-Output ('Not run, these need -Full: ' + ($skipped -join ', ')) }
+        if (-not $Case) { Write-Output 'No case to run for these changes. Nothing was run.'; exit 0 }
+        Write-Output ('Cases: ' + ($Case -join ', '))
+    }
+}
 
 if (@(Get-Process EXCEL -ErrorAction SilentlyContinue).Count -gt 0) {
     Write-Output 'Excel is running. Close it (or ask the user) before running the tests.'
@@ -573,6 +652,31 @@ Invoke-Case 'stop-own-process' {
     $flat = $output -replace '\s+', ''
     Assert 'old XlWright.Dialog in the session: the import fails with the reason' ($exit -ne 0 -and $flat -notmatch "'?imported'?$" -and
         $flat -like '*XlWright.DialogofanotherversionofXlWright.psm1*newpowershell.exe*') $output
+}
+
+# -Changed: which cases the changed files select. No Excel is started.
+Invoke-Case 'changed-selection' {
+    $show = { param($r) 'All=' + $r.All + ' Cases=' + (@($r.Cases) -join ',') }
+    $r = Resolve-ChangedCase @('scripts\Find-CellError.ps1')
+    Assert 'a listed script: its cases' ((& $show $r) -eq 'All=False Cases=cell-error') (& $show $r)
+    $r = Resolve-ChangedCase @('scripts/Ribbon.psm1', 'scripts/Test-RibbonLayout.ps1')
+    Assert 'two scripts: their cases once each, sorted' ((& $show $r) -eq 'All=False Cases=publish,ribbon,ribbon-layout') (& $show $r)
+    foreach ($file in 'scripts/XlWright.psm1', 'scripts/New-Thing.ps1', 'tests/Test-XlWright.ps1', 'tests/data/vba/standard/Util.bas') {
+        $r = Resolve-ChangedCase @('scripts/Find-CellError.ps1', $file)
+        Assert ('every case for ' + $file) ((& $show $r) -eq 'All=True Cases=') (& $show $r)
+    }
+    $r = Resolve-ChangedCase @('SKILL.md', 'references/vba.md')
+    Assert 'documents only: no case' ((& $show $r) -eq 'All=False Cases=') (& $show $r)
+
+    # The table must name only cases that exist, and the cases that need -Full must be those inside if ($Full).
+    $text = [IO.File]::ReadAllText($PSCommandPath)
+    $names = @([regex]::Matches($text, "(?m)^\s*Invoke-Case '([^']+)'") | ForEach-Object { $_.Groups[1].Value })
+    $listed = @($CasesByFile.Values | ForEach-Object { $_ } | Where-Object { $_ -ne '*' } | Sort-Object -Unique)
+    $unknown = @($listed + $FullOnlyCases | Where-Object { $names -notcontains $_ })
+    Assert 'the table names only existing cases' ($unknown.Count -eq 0) ($unknown -join ',')
+    $fullBlock = $text.Substring([regex]::Match($text, '(?m)^if \(\$Full\) \{').Index)
+    $inFull = @([regex]::Matches($fullBlock, "(?m)^\s*Invoke-Case '([^']+)'") | ForEach-Object { $_.Groups[1].Value })
+    Assert 'the cases that need -Full are those inside if ($Full)' ((($inFull | Sort-Object) -join ',') -eq (($FullOnlyCases | Sort-Object) -join ',')) ($inFull -join ',')
 }
 
 function Invoke-Prerequisite([string[]]$Arguments) {

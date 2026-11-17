@@ -17,8 +17,8 @@ The outcome is read from what the VBE does next:
 Only one compile error is reported: the one the VBE shows. The place is left null when the VBE has no
 active code pane. A locked project is not compiled and is reported as an error.
 
-If the dialog cannot be closed, the Excel instance started by this script is stopped by its PID. Other
-Excel processes are never touched.
+If the dialog cannot be closed, the Excel instance started by this script is stopped by its PID and start
+time. Other Excel processes are never touched.
 
 The result is written as UTF-8 JSON to -OutFile (stdout of powershell.exe garbles Japanese in Git Bash):
 Compiled (true / false, null when the check itself failed), CompileError (Message, Module, Line, Column)
@@ -40,6 +40,7 @@ try {
     Use-ExcelWorkbook -Path $Path -TimeoutSeconds $TimeoutSeconds -ScriptBlock {
         param($xl, $wb)
         $excelPid = Get-ExcelProcessId $xl
+        $excelStartTicks = (Get-Process -Id $excelPid).StartTime.ToUniversalTime().Ticks
         $project = $wb.VBProject
         if ($project.Protection -ne 0) { throw 'The VBA project is locked and cannot be compiled from outside.' }
         $vbe = $xl.VBE
@@ -81,7 +82,12 @@ try {
 
         [void][XlWright.Dialog]::PostMessage($dialog, [XlWright.Dialog]::WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)
         if (-not [XlWright.Dialog]::WaitClosed($dialog, 3000)) {
-            # The instance is blocked in a modal state; closing the workbook would hang. Stop only this instance.
+            # The instance is blocked in a modal state; closing the workbook would hang. Stop only this instance:
+            # same PID and start time.
+            $process = Get-Process -Id $excelPid -ErrorAction SilentlyContinue
+            if (-not $process -or $process.StartTime.ToUniversalTime().Ticks -ne $excelStartTicks) {
+                throw "The compile error dialog could not be closed, and Excel PID $excelPid is no longer the instance of this script; it was not stopped."
+            }
             Stop-Process -Id $excelPid -Force -ErrorAction SilentlyContinue
             throw "The compile error dialog could not be closed. Stopped the Excel instance of this script (PID $excelPid)."
         }

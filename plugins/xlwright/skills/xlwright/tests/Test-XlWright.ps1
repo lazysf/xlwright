@@ -727,6 +727,20 @@ Invoke-Case 'range' {
         }
         $out.Failures = $failures
         $out.Kept = Read-ExcelRange -Range $sheet.Range('A12:C13')
+
+        # Excel calculates a string that starts with "=" as soon as it gets it, so the string must already carry its
+        # apostrophe in the first write. The arrays given to Excel are recorded by wrapping Set-ComProperty in the module.
+        $module = Get-Module XlWright
+        $original = & $module { ${function:Set-ComProperty} }
+        $recorded = New-Object System.Collections.Generic.List[object]
+        $recorder = { param($Object, [string]$Name, $Value) $recorded.Add(@($Value)); & $original $Object $Name $Value }.GetNewClosure()
+        & $module { param($body) Set-Item -Path function:script:Set-ComProperty -Value $body } $recorder
+        try { Write-ExcelRange -Range $sheet.Range('A15') -Value (, @('=1+1', ([string][char]0xFF1D + '1+1'), 'plain', '001')) }
+        finally { & $module { param($body) Set-Item -Path function:script:Set-ComProperty -Value $body } $original }
+        $out.Restored = (& $module { ${function:Set-ComProperty} }).ToString() -eq $original.ToString()
+        $out.FirstWrite = @(if ($recorded.Count -gt 0) { $recorded[0] })
+        $out.HasFormula = @($sheet.Range('A15:D15').Cells | ForEach-Object { [bool]$_.HasFormula })
+        $out.Equals = Read-ExcelRange -Range $sheet.Range('A15:D15')
         $out
     }
     $mixed = $r.Mixed
@@ -755,6 +769,12 @@ Invoke-Case 'range' {
     }
     $kept = ($r.Kept | ForEach-Object { @($_) -join ',' }) -join ';'
     Assert 'rejected input wrote nothing' ($kept -eq 'keep,keep,keep;keep,keep,keep') $kept
+    $fullWidth = [string][char]0xFF1D + '1+1'
+    $first = @($r.FirstWrite) -join '|'
+    Assert 'Set-ComProperty restored after recording' ($r.Restored -eq $true) $r.Restored
+    Assert 'a string that starts with "=" has its apostrophe in the first write' ($first -eq ("'=1+1|'" + $fullWidth + '|plain|001')) $first
+    $equals = (@($r.Equals[0]) -join '|') + ' / ' + (@($r.HasFormula) -join ',')
+    Assert 'strings with "=" kept as text, no formula' ($equals -eq ('=1+1|' + $fullWidth + '|plain|001 / False,False,False,False')) $equals
 
     # Through Invoke-ExcelScript.ps1: the rows and an error value as JSON.
     $run = Invoke-Runner $book 'range-read'

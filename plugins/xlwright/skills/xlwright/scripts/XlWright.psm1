@@ -661,7 +661,8 @@ function Write-ExcelRange {
     is written. An empty string leaves the cell empty.
 
     Strings are written as text: '001', '1/2', 'TRUE' or '=A1' stay as they are. Excel would read such a string as
-    typed input, so the strings it changed are written again with a leading apostrophe (PrefixCharacter).
+    typed input, so the strings it changed are written again with a leading apostrophe (PrefixCharacter). A string that
+    starts with "=" (or the full-width U+FF1D) gets the apostrophe in the first write already, so that it is never calculated as a formula.
     With -Formula, the values go to Range.Formula2 and Excel reads them as typed input: '=A1*2' is a formula,
     '001' becomes 1.
 
@@ -722,11 +723,23 @@ function Write-ExcelRange {
         Set-ComProperty $target 'Formula2' $array
         return
     }
-    Set-ComProperty $target 'Value2' $array
-    if (-not $hasString) { return }
+    if (-not $hasString) {
+        Set-ComProperty $target 'Value2' $array
+        return
+    }
 
-    # Excel parses a string in an array as typed input. The strings it changed are written again as text.
     $intended = $array.Clone()
+    # A string that starts with "=" or the full-width U+FF1D becomes a formula and is calculated as soon as Excel gets
+    # it, so the apostrophe has to be there in the first write; writing it again afterwards would be too late.
+    for ($r = 1; $r -le $rowCount; $r++) {
+        for ($c = 1; $c -le $columnCount; $c++) {
+            $text = $intended[$r, $c]
+            if ($text -is [string] -and ($text[0] -eq [char]'=' -or $text[0] -eq [char]0xFF1D)) { $array[$r, $c] = "'" + $text }
+        }
+    }
+    Set-ComProperty $target 'Value2' $array
+
+    # Excel parses the other strings in an array as typed input too. The strings it changed are written again as text.
     $back = Get-RangeArray $target 'Value2'
     $changed = $false
     for ($r = 1; $r -le $rowCount; $r++) {

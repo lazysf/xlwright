@@ -5,7 +5,8 @@ Runs Excel through COM in a dedicated instance and always cleans up.
 .DESCRIPTION
 Use-ExcelWorkbook opens an existing workbook and invokes a script block with the Excel.Application
 and Workbook objects. New-ExcelWorkbook creates a new empty workbook file. Invoke-ExcelMacro runs a macro
-inside that script block and handles the dialogs the macro shows.
+inside that script block and handles the dialogs the macro shows. Get-VbaTestName lists the VBA tests of
+a project.
 
 Use-ExcelWorkbook disables VBA macros and workbook events by default and opens without updating
 external workbook links. Use -EnableMacros for an intentional macro test. Event handlers such as
@@ -416,4 +417,33 @@ function Invoke-ExcelMacro {
     if ($null -ne $value) { $value }
 }
 
-Export-ModuleMember -Function Use-ExcelWorkbook, New-ExcelWorkbook, Get-ExcelProcessId, Invoke-ExcelMacro
+function Get-VbaTestName {
+    <#
+    .SYNOPSIS
+    Lists the VBA tests of a project as "<module>.<Sub>", in the order of the components and of the code.
+
+    .DESCRIPTION
+    A test is a Sub in a standard module that takes no arguments, is not Private and whose name starts with
+    "Test_". Invoke-VbaTest.ps1 runs these; Publish-Workbook.ps1 -ExcludeTests reports the ones it leaves.
+    #>
+    param(
+        # The VBProject of an open workbook. It must not be locked.
+        [Parameter(Mandatory)]$Project
+    )
+    foreach ($component in $Project.VBComponents) {
+        if ($component.Type -ne 1) { continue }  # vbext_ct_StdModule
+        $module = $component.CodeModule
+        $count = $module.CountOfLines
+        if ($count -eq 0) { continue }
+        # The VBE normalizes the code, so a declaration always starts its (continued) line.
+        $code = [regex]::Replace($module.Lines(1, $count), ' _\r?\n', ' ')
+        foreach ($line in ($code -split '\r?\n')) {
+            # Private is left out on purpose: Application.Run would run a Private Sub by its qualified name.
+            if ($line -match '^\s*(?:Public\s+)?(?:Static\s+)?Sub\s+(Test_\w*)\s*\(\s*\)') {
+                $component.Name + '.' + $Matches[1]
+            }
+        }
+    }
+}
+
+Export-ModuleMember -Function Use-ExcelWorkbook, New-ExcelWorkbook, Get-ExcelProcessId, Invoke-ExcelMacro, Get-VbaTestName

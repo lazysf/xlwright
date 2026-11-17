@@ -49,20 +49,7 @@ try {
         $project = $wb.VBProject
         if ($project.Protection -ne 0) { throw 'The VBA project is locked; its tests cannot be listed.' }
 
-        $found = @(foreach ($component in $project.VBComponents) {
-            if ($component.Type -ne 1) { continue }  # vbext_ct_StdModule
-            $module = $component.CodeModule
-            $count = $module.CountOfLines
-            if ($count -eq 0) { continue }
-            # The VBE normalizes the code, so a declaration always starts its (continued) line.
-            $code = [regex]::Replace($module.Lines(1, $count), ' _\r?\n', ' ')
-            foreach ($line in ($code -split '\r?\n')) {
-                # Private is left out on purpose: Application.Run would run a Private Sub by its qualified name.
-                if ($line -match '^\s*(?:Public\s+)?(?:Static\s+)?Sub\s+(Test_\w*)\s*\(\s*\)') {
-                    $component.Name + '.' + $Matches[1]
-                }
-            }
-        })
+        $found = @(Get-VbaTestName $project)
         # Stable sort by module name; the order inside a module is the order in the code.
         $index = 0
         $found = @($found | ForEach-Object { [pscustomobject]@{ Name = $_; Module = ($_ -split '\.')[0]; Index = $index++ } } |

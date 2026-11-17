@@ -7,7 +7,6 @@
 
 ## 優先度 1: 正本との同期と、毎回の手間
 
-- [ ] テストのモジュールを配布ブックに入れない手段。`Publish-Workbook.ps1` は作業用のブックも置き換えるので、テストの正本の置き場（`vba/` の外に分けるか）と、`Import-Vba.ps1 -Prune` を使うかを先に決める。
 - [ ] 前提の確認を 1 本にまとめる（`Test-Prerequisite.ps1`）。Excel のプロセス、`AccessVBOM`、WMI、Git の状態を読み取りだけで調べ、JSON で返す。
 - [ ] ブックの概要の取得。シートの一覧、`UsedRange`、定義名、テーブル、外部リンク、データ接続、VBA のコンポーネント、customUI の有無を 1 回で JSON にする。
 - [ ] 2 次元配列を一括で読み書きする helper を `XlWright.psm1` に置く。`Cells.Item` への代入が型のキャストで落ちることがある件と、セルごとの COM 呼び出しを避ける。

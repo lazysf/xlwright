@@ -5,7 +5,7 @@ Checks the xlwright scripts against the real Excel on this machine.
 .DESCRIPTION
 Every case creates its own workbooks in a new temporary folder and checks explicit expected values.
 Nothing outside that folder is changed. The default cases keep Excel hidden. -Full adds the cases
-that show Excel and the VBE on the screen (VBA compile error, macro dialogs, failing VBA tests, ribbon click, ribbon layout, publish with VBA lock); do not touch
+that show Excel and the VBE on the screen (VBA compile error, macro dialogs, failing VBA tests, ribbon click, ribbon layout, publish with VBA lock, publish without the test modules); do not touch
 those windows while they run. These cases also check that Excel never takes the foreground.
 
 Preconditions: no Excel process is running, and AccessVBOM is 1. Otherwise nothing runs (exit 2).
@@ -812,6 +812,44 @@ if ($Full) {
         $dynPath = $S.Tab + '/' + $S.Group + '/' + $S.DynButton
         Assert 'dist: ribbon layout matches the XML' ($layout.Exit -eq 0) ($res | ConvertTo-Json -Compress -Depth 8)
         Assert 'dist: getEnabled callback ran' (@($res.Dynamic | Where-Object { $_.Path -eq $dynPath -and $_.Item -eq 'Enabled' -and $_.Actual -eq $false }).Count -eq 1) ($res.Dynamic | ConvertTo-Json -Compress)
+    }
+
+    Invoke-Case 'publish-exclude-tests' -WatchForeground {
+        $dir = New-CaseDir 'publish-exclude-tests'
+        $book = Join-Path $dir 'book.xlsm'
+        [void](New-ExcelWorkbook -Path $book)
+        Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $dir 'vba') -Recurse
+        # Test_Calc is a test module. Alpha holds tests but is not named Test_*.
+        Copy-Item -Path (Join-Path $data 'vba-test\pass\standard\*') -Destination (Join-Path $dir 'vba\standard')
+        # The published project is locked, so the modules are probed by running a Sub, not by listing them.
+        $probe = {
+            param($xl, $wb)
+            $run = { param($name) try { [void]$xl.Run($name); 'ran' } catch { 'missing' } }
+            @{
+                Protection = $wb.VBProject.Protection; Add = $xl.Run('AddNums', 4, 5)
+                TestModule = (& $run 'Test_Calc.Test_Add'); Mixed = (& $run 'Alpha.Test_First')
+            }
+        }
+        $publisher = Join-Path $scripts 'Publish-Workbook.ps1'
+
+        $dist = Join-Path $dir 'dist\book.xlsm'
+        $pub = Invoke-Script $publisher @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'), '-ExcludeTests')
+        $lines = @($pub.Output -split "\r?\n" | Where-Object { $_ })
+        Assert '-ExcludeTests: exit 0' ($pub.Exit -eq 0) $pub.Output
+        Assert '-ExcludeTests: the output names the removed module and no other' ((@($lines | Where-Object { $_ -like 'removed test module:*' }) -join ',') -eq 'removed test module: Test_Calc') $pub.Output
+        Assert '-ExcludeTests: the last line of the output is the published workbook' ($lines[-1] -eq $dist) $pub.Output
+        # The host wraps a long warning.
+        Assert '-ExcludeTests: warns about the tests left in another module' (($pub.Output -replace '\s+', ' ') -match 'Tests left in the published workbook.*: Alpha\.Test_Second, Alpha\.Test_First') $pub.Output
+        $d = Use-ExcelWorkbook -Path $dist -EnableMacros -ScriptBlock $probe
+        Assert '-ExcludeTests, dist: locked, macro runs' ($d.Protection -eq 1 -and $d.Add -eq 9) ($d | ConvertTo-Json -Compress)
+        Assert '-ExcludeTests, dist: test module removed, other modules kept' ($d.TestModule -eq 'missing' -and $d.Mixed -eq 'ran') ($d | ConvertTo-Json -Compress)
+        $w = Use-ExcelWorkbook -Path $book -EnableMacros -ScriptBlock $probe
+        Assert '-ExcludeTests, work book: not locked, test module kept' ($w.Protection -eq 0 -and $w.Add -eq 9 -and $w.TestModule -eq 'ran' -and $w.Mixed -eq 'ran') ($w | ConvertTo-Json -Compress)
+
+        $plain = Invoke-Script $publisher @('-Path', $book, '-OutDir', (Join-Path $dir 'dist-plain'))
+        Assert 'without -ExcludeTests: exit 0, only the path in the output' ($plain.Exit -eq 0 -and $plain.Output.Trim() -eq (Join-Path $dir 'dist-plain\book.xlsm')) $plain.Output
+        $p = Use-ExcelWorkbook -Path (Join-Path $dir 'dist-plain\book.xlsm') -EnableMacros -ScriptBlock $probe
+        Assert 'without -ExcludeTests, dist: locked, test module kept' ($p.Protection -eq 1 -and $p.TestModule -eq 'ran' -and $p.Mixed -eq 'ran') ($p | ConvertTo-Json -Compress)
     }
 }
 

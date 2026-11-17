@@ -600,6 +600,63 @@ Invoke-Case 'prerequisite' {
     }
 }
 
+function Invoke-Summary([string]$Book) {
+    $json = Join-Path $temp ('summary-' + [guid]::NewGuid().ToString('N') + '.json')
+    $run = Invoke-Script (Join-Path $scripts 'Get-WorkbookSummary.ps1') @('-Path', $Book, '-OutFile', $json)
+    $parsed = $null
+    $text = ''
+    if (Test-Path -LiteralPath $json) {
+        $text = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8)
+        $parsed = $text | ConvertFrom-Json
+    }
+    [pscustomobject]@{ Exit = $run.Exit; Json = $parsed; Text = $text; Output = $run.Output }
+}
+
+Invoke-Case 'workbook-summary' {
+    $dir = New-CaseDir 'workbook-summary'
+    $other = Join-Path $dir 'other.xlsx'
+    [void](New-ExcelWorkbook -Path $other)
+    [IO.File]::WriteAllText((Join-Path $dir 'data.csv'), "a,b`r`n1,2`r`n", $utf8)
+    $book = Join-Path $dir 'book.xlsm'
+    $built = Invoke-Runner $book 'summary-build' @('-Create', '-Save')
+    Assert 'workbook built' ($built.Exit -eq 0) ($built.Json | ConvertTo-Json -Compress)
+    $ribbon = Invoke-Script (Join-Path $scripts 'Add-CustomUI.ps1') @('-Path', $book, '-XmlPath', (Join-Path $data 'ribbon\base.xml'))
+    Assert 'ribbon embedded' ($ribbon.Exit -eq 0) $ribbon.Output
+    $hash = Get-FileHashText $book
+
+    $summary = Invoke-Summary $book
+    $detail = $summary.Text
+    Assert 'exit 0, no error, path' ($summary.Exit -eq 0 -and $null -eq $summary.Json.Error -and $summary.Json.Path -eq $book) $detail
+    # In the order of the workbook. An empty sheet and a chart sheet have no used range; a sheet with a
+    # value only in A1 has.
+    $sheets = @($summary.Json.Sheets | ForEach-Object { $_.Name + ':' + $_.Kind + ':' + $_.Visible + ':' + $_.UsedRange + ':' + $_.Rows + 'x' + $_.Columns }) -join ','
+    # Worksheets.Add puts a sheet before the active one, and a sheet that was hidden is not the active one.
+    $expected = 'Hidden:worksheet:hidden::0x0,VeryHidden:worksheet:veryHidden::0x0,Query:worksheet:visible:A1:B2:2x2,' + $S.SummarySingle +
+        ':worksheet:visible:A1:1x1,Chart1:chart:visible::0x0,Empty:worksheet:visible::0x0,Data:worksheet:visible:A1:E10:10x5'
+    Assert 'sheets: order, kind, visibility, used range' ($sheets -eq $expected) $sheets
+    $tables = @($summary.Json.Sheets | ForEach-Object { $sheet = $_; @($sheet.Tables) | ForEach-Object { $sheet.Name + '/' + $_.Name + '@' + $_.Range } }) -join ','
+    Assert 'tables, with their sheet' ($tables -eq 'Data/tblData@A1:B3') $tables
+    Assert 'sheets: code name and protection' (@($summary.Json.Sheets | Where-Object { -not $_.CodeName -or $_.Protected -ne $false }).Count -eq 0 -and $summary.Json.ProtectStructure -eq $false) $detail
+    $names = @($summary.Json.Names | ForEach-Object { $_.Scope + '/' + $_.Name + $_.RefersTo + '/' + $_.Visible } | Sort-Object) -join ','
+    Assert 'names: scope, name without the sheet, reference' ($names -eq 'Data/Local=Data!$A$2/True,Query/ExternalData_1=Query!$A$1:$B$2/True,workbook/Rate=Data!$B$2/True') $names
+    Assert 'external links' (@($summary.Json.ExternalLinks).Count -eq 1 -and $summary.Json.ExternalLinks[0] -eq $other) $detail
+    $connections = @($summary.Json.Connections | ForEach-Object { $_.Name + ':' + $_.Type }) -join ','
+    Assert 'connections: name and type' ($connections -eq 'data:text') $connections
+    # The connection string holds the path of the CSV file; it must not be in the result.
+    Assert 'connections: no connection string in the result' ($summary.Text -notmatch 'data\.csv' -and @($summary.Json.Connections[0].PSObject.Properties).Count -eq 2) $detail
+    $components = @($summary.Json.Vba.Components | ForEach-Object { $_.Name + ':' + $_.Kind + ':' + $_.Lines }) -join ','
+    Assert 'VBA: components with code only' ($summary.Json.Vba.HasProject -eq $true -and $summary.Json.Vba.Locked -eq $false -and $null -eq $summary.Json.Vba.Error -and $components -eq 'Mod1:standard:3') $detail
+    Assert 'customUI entries' ((@($summary.Json.CustomUI) -join ',') -eq 'customUI/customUI14.xml') $detail
+    Assert 'workbook unchanged by the summary' ((Get-FileHashText $book) -eq $hash) 'hash changed'
+
+    $plain = Invoke-Summary $other
+    Assert 'empty .xlsx: exit 0 and nothing listed' ($plain.Exit -eq 0 -and @($plain.Json.Sheets).Count -eq 1 -and $null -eq $plain.Json.Sheets[0].UsedRange -and
+        @($plain.Json.Names).Count -eq 0 -and @($plain.Json.ExternalLinks).Count -eq 0 -and @($plain.Json.Connections).Count -eq 0 -and
+        $plain.Json.Vba.HasProject -eq $false -and @($plain.Json.Vba.Components).Count -eq 0 -and @($plain.Json.CustomUI).Count -eq 0) $plain.Text
+    $missing = Invoke-Summary (Join-Path $dir 'no-such.xlsm')
+    Assert 'missing workbook: exit 1 and Error' ($missing.Exit -eq 1 -and $missing.Json.Error) $missing.Text
+}
+
 Invoke-Case 'userform' {
     $dir = New-CaseDir 'userform'
     $book = Join-Path $dir 'form.xlsm'
@@ -887,6 +944,11 @@ if ($Full) {
             Assert ($label + ': macro runs') ($r.Add -eq 9) $r.Add
             Assert ($label + ': ribbon embedded') $ui 'no customUI'
         }
+        # The summary of a workbook with a locked VBA project: everything but the components.
+        $locked = Invoke-Summary $dist
+        Assert 'dist: summary without the VBA components' ($locked.Exit -eq 0 -and $null -eq $locked.Json.Error -and @($locked.Json.Sheets).Count -eq 1 -and
+            $locked.Json.Vba.Locked -eq $true -and $null -eq $locked.Json.Vba.Components -and [string]$locked.Json.Vba.Error -like '*locked*' -and
+            (@($locked.Json.CustomUI) -join ',') -eq 'customUI/customUI14.xml') $locked.Text
         # The ribbon of the locked copy is built and its callbacks (getEnabled) still run.
         $json = Join-Path $dir 'dist-layout.json'
         $layout = Invoke-Script (Join-Path $scripts 'Test-RibbonLayout.ps1') @('-Path', $dist, '-OutFile', $json)

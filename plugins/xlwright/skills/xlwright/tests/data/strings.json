@@ -14,5 +14,6 @@
   "OffButton": "使えない",
   "DynButton": "状態次第",
   "FormCaption": "情報フォーム",
-  "FormSheetValue": "別ブックの値"
+  "FormSheetValue": "別ブックの値",
+  "SummarySingle": "単一"
 }

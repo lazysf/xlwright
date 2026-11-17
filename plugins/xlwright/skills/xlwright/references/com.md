@@ -2,6 +2,34 @@
 
 コマンド例の `<skill>` は、SKILL.md に書いたこのスキルのフォルダの絶対パスに置き換える。
 
+## ブックの概要
+
+既存のブックに何が入っているかを、編集の前に 1 回で調べる。
+
+```powershell
+powershell.exe -NoProfile -File "<skill>/scripts/Get-WorkbookSummary.ps1" -Path <workbook> -OutFile <result.json>
+```
+
+- 非表示の Excel で、マクロとイベントを無効にし、リンクを更新せずに開いて、保存せずに閉じる。ブックは変わらない。
+- 結果は UTF-8 の JSON で `-OutFile` に書く。終了コードは、読めた時に 0。
+
+  | 項目 | 中身 |
+  | --- | --- |
+  | `Sheets` | ブックの中の並びの順。`Name`、`CodeName`、`Kind`（`worksheet`、`chart`、`other`）、`Visible`（`visible`、`hidden`、`veryHidden`）、`UsedRange`、`Rows`、`Columns`、`Protected`、`Tables`（`Name`、`Range`） |
+  | `Names` | 定義名。`Name`、`Scope`（`workbook` か、シートの名前）、`RefersTo`、`Visible` |
+  | `ExternalLinks` | 数式がリンクしているブックのパス |
+  | `Connections` | データ接続。`Name` と `Type`（`oledb`、`odbc`、`xml`、`text`、`web`、`datafeed`、`model`、`worksheet`、`nosource`、`other`） |
+  | `Vba` | `HasProject`、`Locked`、`Components`（`Name`、`Kind`、`Lines`）、`Error` |
+  | `CustomUI` | zip の `customUI/` にある項目の名前。リボンが無ければ空 |
+  | `ProtectStructure` | ブックの構成が保護されているか |
+
+- `UsedRange` は、値も数式も無いシートと、ワークシート以外のシートでは `null` になる（`Rows` と `Columns` は 0）。Excel は空のシートの `UsedRange` を `A1` と返すので、`A1` にだけ値があるシートと見分けるために分けている。書式だけを付けたシートも `null` になる作りだが、確かめていない。
+- `Names` には、Excel が自動で作った名前（外部データの `ExternalData_1` など）も入る。
+- `Connections` に、接続文字列と SQL は入れない。サーバー名や認証情報が入っていることがあるため。中身が要る時は、ユーザーに確かめてから読む。
+- `Vba.Components` の `Kind` は、`standard`、`classes`、`documents`、`forms`、`other`。コードの無い文書モジュールは省く。VBA を読めない時（`AccessVBOM` が `1` でない、VBA プロジェクトがロックされている）は、`Components` が `null` になり、`Vba.Error` に理由が入る。ほかの項目は返り、終了コードは 0 のまま。
+- ブックが無い時や開けない時は、`Error` に理由が入り、終了コードは 1 になる。
+- 確かめたのは、`.xlsm` と `.xlsx`、グラフシート、非表示のシート、テーブル、CSV を読み込んだ接続、ブックへのリンク 1 つ、VBA プロジェクトをロックしたブック。OLE DB や ODBC の接続、Power Query、リンク先の無いリンク、保護されたシート、Excel 4.0 マクロシート、`AccessVBOM` が `1` でない時、`.xlsb` と `.xls` では確かめていない。
+
 ## モジュールを直接使う
 
 複数のブックを順に扱うなど、1 回の ScriptBlock に収まらない時は、スクリプトから `XlWright.psm1` を読み込む。スクリプトは一時領域に置き、`powershell.exe -NoProfile -File <script> -Path <workbook>` で実行する。

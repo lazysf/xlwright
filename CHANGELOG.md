@@ -13,6 +13,7 @@
 - `Import-Vba.ps1` の `-Prune`。付けた時だけ、正本に無い標準モジュール、クラス、UserForm をブックから消し、正本に無い文書モジュールのコードを空にする。
 - `Publish-Workbook.ps1` の `-ExcludeTests`。付けた時だけ、名前が `Test_` で始まる標準モジュールを配布用のブックから消す。作業ブックには残る。
 - 作業の前提（Excel のプロセス、`AccessVBOM`、WMI、ブックがほかで開かれていないか、Git の状態）を、Excel を起動せずに調べて返す `Test-Prerequisite.ps1`。
+- ブックのシート、定義名、テーブル、外部リンク、データ接続、VBA のコンポーネント、customUI を 1 回で返す `Get-WorkbookSummary.ps1`。
 
 ## [0.1.0] - 2026-11-13
 

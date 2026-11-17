@@ -18,6 +18,10 @@
 - 値がエラー（`#REF!`、`#NAME?` など）になったセルを、シート、番地、エラーの名前、数式とともに返す `Find-CellError.ps1`。
 - ブックを開いた Excel のウィンドウを、画面に出さずに PNG に保存する `Save-WorkbookScreenshot.ps1`。リボン、セルの書式、グラフ、ボタン、シートの見出しを、人が見るのと同じ形で確かめられる。
 
+### Changed
+
+- `Use-ExcelWorkbook` と `New-ExcelWorkbook` が、`Quit` の後に Excel の終了を待つ時間を、10 秒から 5 秒にした。`Quit` で Excel が終わらない時（測った範囲では、ほとんどの回）は、呼び出しが約 5 秒早く戻る。
+
 ### Fixed
 
 - `Invoke-RibbonButton.ps1` が、OK/キャンセル の MsgBox を × で閉じ、マクロの答えを決めていた。答えを選ぶダイアログは閉じずに、そのスクリプトが起動した Excel を止めてエラーにする。

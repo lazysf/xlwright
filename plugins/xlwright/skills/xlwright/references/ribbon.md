@@ -19,6 +19,8 @@ COM にはリボンを定義する API が無いため、閉じたブックの z
 4. アイコンは組み込みの `imageMso`（例: `HappyFace`）を使える。
 5. 表示名は、ボタン押下で探せるように付ける。同じ表示名のタブを 2 つ作らない。1 つのタブの中で、ボタンの表示名を重複させない。どちらも `Invoke-RibbonButton.ps1` が押す前に `Ambiguous` で止まる。グループの表示名は、タブと同じでも、グループどうしで同じでもよい。
 
+Backstage（`<backstage>`）と右クリックのメニュー（`<contextMenus>`）も同じ XML に書けば埋め込まれるが、下の `Test-RibbonLayout.ps1` と `Invoke-RibbonButton.ps1` はどちらも見ない。書き間違えて無視されても気づけないので、使う時はそう伝える。
+
 customUI の要素名や属性を間違えても、Excel は何も言わずにリボンを無視する。無視されたことは、`Test-RibbonLayout.ps1` でタブが `missing` になることで分かる（下の「見え方を XML と照らす」）。どの要素が誤りかを見るには、Excel のオプション「詳細設定 → 全般 → アドインのユーザー インターフェイス エラーを表示する」が要る。これはユーザーの設定なので、必要ならユーザーに頼む。
 
 ## Excel 以外で保存しない
@@ -65,6 +67,7 @@ powershell.exe -NoProfile -File "<skill>/scripts/Invoke-RibbonButton.ps1" -Path 
 
 結果は UTF-8 の JSON で書き出される。押せなかった時は終了コードが 1 で、`Error` に理由が入る。
 
+- 探すのは、UI Automation で `Button` に見える要素だけ。toggleButton、menu の中の項目、dropDown を押せるかは確かめていない。
 - `TabFound` と `ButtonFound` が `true` なら、リボンは読み込まれている。`Clicked` が `true` なら、ボタンを押す操作が成功した。
 - 同じ表示名のタブが複数ある場合や、同じタブの中でボタン名が重複する場合は、押す前に `Ambiguous` で止まる。
 - 押した後に出たダイアログ（MsgBox など）は、`Dialogs` に出た順に入る。`Names` には本文とボタン名が入る（例: `["OK", "処理が完了しました"]`）。MsgBox では本文もボタンも同じ種類の要素に見えるので、分けずに並べている。OK だけの MsgBox は、× ボタンと同じ操作で閉じる。

@@ -6,7 +6,7 @@ Runs Excel through COM in a dedicated instance and always cleans up.
 Use-ExcelWorkbook opens an existing workbook and invokes a script block with the Excel.Application
 and Workbook objects. New-ExcelWorkbook creates a new empty workbook file. Invoke-ExcelMacro runs a macro
 inside that script block and handles the dialogs the macro shows. Get-VbaTestName lists the VBA tests of
-a project.
+a project. Get-ExcelPrerequisite checks, without starting Excel, what stands in the way of opening a workbook.
 
 Use-ExcelWorkbook disables VBA macros and workbook events by default and opens without updating
 external workbook links. Use -EnableMacros for an intentional macro test. Event handlers such as
@@ -127,22 +127,21 @@ if (-not `$p.WaitForExit($($TimeoutSeconds * 1000))) {
 "@
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
     $commandLine = 'powershell.exe -NoProfile -NonInteractive -EncodedCommand ' + $encoded
-    $requirement = "This skill requires starting a process through WMI (Win32_Process.Create); without the " +
-        "watchdog it cannot be used. Stop and report this to the user; do not work around it."
-    try {
-        $startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
-        $created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
-            CommandLine = $commandLine; ProcessStartupInformation = $startup
-        }
-    }
+    try { Start-WmiProcess $commandLine }
     catch {
         throw ("Could not start the watchdog for Excel PID " + $ProcessId + ": " + $_.Exception.Message + " " +
-            $requirement)
+            "This skill requires starting a process through WMI (Win32_Process.Create); without the " +
+            "watchdog it cannot be used. Stop and report this to the user; do not work around it.")
     }
-    if ($created.ReturnValue -ne 0) {
-        throw ("Could not start the watchdog for Excel PID " + $ProcessId + " (Win32_Process.Create returned " +
-            $created.ReturnValue + "). " + $requirement)
+}
+
+# Starts a hidden process through WMI, so that it outlives the calling shell. Throws when it cannot.
+function Start-WmiProcess([string]$CommandLine) {
+    $startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
+    $created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+        CommandLine = $CommandLine; ProcessStartupInformation = $startup
     }
+    if ($created.ReturnValue -ne 0) { throw ("Win32_Process.Create returned " + $created.ReturnValue + ".") }
 }
 
 function Start-ExcelSession([bool]$Visible, [bool]$EnableEvents, [int]$TimeoutSeconds) {
@@ -446,4 +445,98 @@ function Get-VbaTestName {
     }
 }
 
-Export-ModuleMember -Function Use-ExcelWorkbook, New-ExcelWorkbook, Get-ExcelProcessId, Invoke-ExcelMacro, Get-VbaTestName
+function Get-ExcelPrerequisite {
+    <#
+    .SYNOPSIS
+    Checks what this skill needs before a workbook is opened, without starting Excel or changing anything.
+
+    .DESCRIPTION
+    Returns Ready, Problems, Excel, AccessVBOM, Wmi and Workbook. Ready is true when Problems is empty.
+    A problem is: a running Excel, a process that cannot be started through WMI (one hidden "cmd.exe /c exit"
+    is started to find out, the way the watchdog is), with -Vba an AccessVBOM that is not 1, and with -Path a
+    workbook that does not exist or has an owner file (~$<name>) next to it, i.e. is open somewhere.
+    The Git state of the workbook is reported but is never a problem.
+    #>
+    [CmdletBinding()]
+    param(
+        # The workbook that is going to be opened. Without it, Workbook is null.
+        [string]$Path,
+        # The work reads or changes VBA, which needs AccessVBOM.
+        [switch]$Vba
+    )
+    $problems = New-Object System.Collections.Generic.List[string]
+
+    $processes = @(Get-Process -Name EXCEL -ErrorAction SilentlyContinue | Sort-Object Id | ForEach-Object {
+        # StartTime of a process of another user cannot be read; the process is still reported.
+        $startTime = $null
+        try { $startTime = $_.StartTime.ToString('s') } catch { }
+        [ordered]@{ Id = $_.Id; StartTime = $startTime; WindowTitle = $_.MainWindowTitle }
+    })
+    if ($processes.Count -gt 0) {
+        $problems.Add('Excel is running (PID ' + (($processes | ForEach-Object { $_.Id }) -join ', ') +
+            '). Ask the user before going on; do not stop it.')
+    }
+
+    $key = 'HKCU:\Software\Microsoft\Office\16.0\Excel\Security'
+    $value = (Get-ItemProperty -Path $key -Name AccessVBOM -ErrorAction SilentlyContinue).AccessVBOM
+    $enabled = $value -eq 1
+    if ($Vba -and -not $enabled) {
+        $problems.Add('AccessVBOM is not 1, so VBA cannot be read or changed. Ask the user to trust access to the ' +
+            'VBA project object model; do not change the setting yourself.')
+    }
+
+    $wmiError = $null
+    try { Start-WmiProcess 'cmd.exe /c exit' } catch { $wmiError = $_.Exception.Message }
+    if ($wmiError) {
+        $problems.Add('A process cannot be started through WMI (Win32_Process.Create), so this skill cannot be ' +
+            'used: ' + $wmiError + ' Stop and report this to the user; do not work around it.')
+    }
+
+    $workbook = $null
+    if ($Path) {
+        $full = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+        $directory = Split-Path -Parent $full
+        $name = Split-Path -Leaf $full
+        $exists = Test-Path -LiteralPath $full -PathType Leaf
+        # Excel keeps this file next to a workbook it has open, also when its window is hidden.
+        $open = Test-Path -LiteralPath (Join-Path $directory ('~$' + $name)) -PathType Leaf
+        if (-not $exists) { $problems.Add('Workbook not found: ' + $full) }
+        if ($open) {
+            $problems.Add('The workbook seems to be open: ~$' + $name + ' is next to it. Ask the user to close it.')
+        }
+        $git = [ordered]@{ Available = $false; InRepository = $null; Tracked = $null; Uncommitted = $null }
+        if (Get-Command git -CommandType Application -ErrorAction SilentlyContinue) {
+            $git.Available = $true
+            # The arguments go in as one array: PowerShell would bind "--" itself when calling a script block.
+            $runGit = {
+                param([string[]]$Arguments)
+                # git writes to stderr outside a repository; that must not stop the caller.
+                $ErrorActionPreference = 'Continue'
+                $output = & git -C $directory @Arguments 2>$null
+                [pscustomobject]@{ Exit = $LASTEXITCODE; Output = @($output) }
+            }
+            $inside = if (Test-Path -LiteralPath $directory -PathType Container) {
+                & $runGit @('rev-parse', '--is-inside-work-tree')
+            }
+            $git.InRepository = ($null -ne $inside -and $inside.Exit -eq 0 -and $inside.Output[0] -eq 'true')
+            if ($git.InRepository) {
+                $git.Tracked = (& $runGit @('ls-files', '--error-unmatch', '--', $name)).Exit -eq 0
+                if ($git.Tracked) {
+                    $git.Uncommitted = (& $runGit @('status', '--porcelain=v1', '--', $name)).Output.Count -gt 0
+                }
+            }
+        }
+        $workbook = [ordered]@{ Path = $full; Exists = $exists; OpenElsewhere = $open; Git = $git }
+    }
+
+    [ordered]@{
+        Ready = ($problems.Count -eq 0); Problems = $problems.ToArray()
+        Excel = [ordered]@{ Running = ($processes.Count -gt 0); Processes = $processes }
+        AccessVBOM = [ordered]@{ Value = $value; Enabled = $enabled }
+        Wmi = [ordered]@{ Ok = (-not $wmiError); Error = $wmiError }
+        Workbook = $workbook
+    }
+}
+
+Export-ModuleMember -Function Use-ExcelWorkbook, New-ExcelWorkbook, Get-ExcelProcessId, Invoke-ExcelMacro, Get-VbaTestName,
+    Get-ExcelPrerequisite

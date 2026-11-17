@@ -26,6 +26,18 @@ PowerShell から `Excel.Application` を COM で操作してブックを編集�
 3. **バックアップ**: 編集前のブックを scratchpad などの一時領域へコピーする。段階ごと（COM 編集後、customUI 埋め込み前など）にも取ると、どこで壊れたか切り分けられる。
 4. **Git 管理**: ブックが Git で追跡されているか、未 commit の変更があるかを確かめる。未 commit の編集や追跡されないブックは、Git では戻せないのでバックアップから戻す。
 
+1、2、4 と、ブックがほかで開かれていないかは、`Test-Prerequisite.ps1` でまとめて調べられる。Excel を起動せず、設定もブックも変えない。
+
+```powershell
+powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/scripts/Test-Prerequisite.ps1" -OutFile <result.json> -Path <workbook> -Vba
+```
+
+- 結果は UTF-8 の JSON で `-OutFile` に書く。`Ready` が `true` なら進めてよい。`false` の時は、`Problems` に理由と次にすることが 1 件 1 文で入る（Excel が動いている、WMI からプロセスを作れない、ブックが無い、ブックがほかで開かれている）。終了コードは、`Ready` が `true` の時だけ 0。
+- `-Vba` は、VBA を読む・変える作業の時に付ける。付けた時だけ、`AccessVBOM` が `1` でないことを問題にする。
+- `Workbook.Git` の `Tracked` と `Uncommitted` は、問題に数えない。追跡されていないブックと、未 commit の変更があるブックは、Git では戻せないので、バックアップを先に取る。
+- バックアップ（3）は調べない。ブックを作る前など、ブックがまだ無い時は `-Path` を付けない。
+- 結果の項目と、確かめた範囲は、[実行環境と起動の失敗](references/troubleshooting.md)の「前提の確認の結果」にある。
+
 初めての端末や、Excel が更新された後は、[実行環境と起動の失敗](references/troubleshooting.md)に従い、先に「動作確認」の試験を流す。
 
 ## マクロが動くことへの注意
@@ -150,7 +162,7 @@ Invoke-ExcelMacro -Excel $xl -Name 'Util.AddNums' -ArgumentList 2, 3
 powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/tests/Test-XlWright.ps1" -OutFile <result.json>
 ```
 
-- 既定の項目は Excel を表示しない。セルと VBA、`Invoke-ExcelScript.ps1`、VBA のコンパイル、マクロの実行、VBA のテストの実行、正本との照合、正本に無いコンポーネントの削除、上限、呼び出し元が殺された時、不正な入力の拒否（VBA のソース、リボンの XML、配布の失敗）、見張りが立てられない時、UserForm を確かめる。7 分ほどかかる。
+- 既定の項目は Excel を表示しない。セルと VBA、`Invoke-ExcelScript.ps1`、VBA のコンパイル、マクロの実行、VBA のテストの実行、正本との照合、正本に無いコンポーネントの削除、上限、呼び出し元が殺された時、不正な入力の拒否（VBA のソース、リボンの XML、配布の失敗）、見張りが立てられない時、前提の確認、UserForm を確かめる。7 分ほどかかる。
 - `-Full` を付けると、コンパイルエラーの検出、マクロが出すダイアログの扱い、失敗する VBA のテスト、リボンの押下（同名の組み合わせ、閉じられないダイアログを含む）、リボンの見え方の照合、配布ブックの出力（テストのモジュールを外す出力を含む）も確かめる。Excel と VBE が画面に出るので、先に人へ伝え、出たウィンドウを操作しないよう頼む。これらの項目は、Excel が前面を取らないことも確かめる。
 - `-Case timeout,userform` のように、名前を指定した項目だけを流せる。
 - 終了コードは、0 がすべて合格、1 が不合格あり、2 が前提を満たさない・Excel が残って止まった。一時フォルダは合否によらず最後に消す。不合格の理由は出力と `-OutFile` に残る。試験のブックを調べたい時は、`-KeepTemp` を付けて流し直すと残り、場所を出力する。

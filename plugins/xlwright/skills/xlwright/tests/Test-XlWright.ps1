@@ -518,6 +518,88 @@ Invoke-Case 'watchdog-unavailable' {
     }
 }
 
+function Invoke-Prerequisite([string[]]$Arguments) {
+    $json = Join-Path $temp ('prerequisite-' + [guid]::NewGuid().ToString('N') + '.json')
+    $run = Invoke-Script (Join-Path $scripts 'Test-Prerequisite.ps1') (@('-OutFile', $json) + $Arguments)
+    $parsed = $null
+    if (Test-Path -LiteralPath $json) { $parsed = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8) | ConvertFrom-Json }
+    [pscustomobject]@{ Exit = $run.Exit; Json = $parsed; Output = $run.Output }
+}
+
+Invoke-Case 'prerequisite' {
+    $dir = New-CaseDir 'prerequisite'
+    $book = Join-Path $dir 'book.xlsm'
+    [void](New-ExcelWorkbook -Path $book)
+    $hash = Get-FileHashText $book
+
+    # This run starts only when no Excel is running and AccessVBOM is 1.
+    $ready = Invoke-Prerequisite @('-Vba')
+    $detail = $ready.Json | ConvertTo-Json -Compress -Depth 6
+    Assert 'nothing in the way: exit 0, Ready, no problem' ($ready.Exit -eq 0 -and $ready.Json.Ready -eq $true -and @($ready.Json.Problems).Count -eq 0 -and $null -eq $ready.Json.Error) $detail
+    Assert 'no Excel, AccessVBOM enabled, WMI usable, no workbook' ($ready.Json.Excel.Running -eq $false -and @($ready.Json.Excel.Processes).Count -eq 0 -and $ready.Json.AccessVBOM.Value -eq 1 -and $ready.Json.AccessVBOM.Enabled -eq $true -and $ready.Json.Wmi.Ok -eq $true -and $null -eq $ready.Json.Workbook) $detail
+
+    $closed = Invoke-Prerequisite @('-Path', $book)
+    $detail = $closed.Json | ConvertTo-Json -Compress -Depth 6
+    Assert 'closed workbook: exit 0, exists, not open' ($closed.Exit -eq 0 -and $closed.Json.Workbook.Path -eq $book -and $closed.Json.Workbook.Exists -eq $true -and $closed.Json.Workbook.OpenElsewhere -eq $false) $detail
+    $missing = Invoke-Prerequisite @('-Path', (Join-Path $dir 'no-such.xlsm'))
+    Assert 'missing workbook: exit 1 and a problem' ($missing.Exit -eq 1 -and $missing.Json.Ready -eq $false -and $missing.Json.Workbook.Exists -eq $false -and @($missing.Json.Problems).Count -eq 1 -and [string]$missing.Json.Problems[0] -like 'Workbook not found:*') ($missing.Json | ConvertTo-Json -Compress -Depth 6)
+
+    # A hidden Excel that has the workbook open is a running Excel and leaves the owner file next to it.
+    $open = Use-ExcelWorkbook -Path $book -ScriptBlock {
+        param($xl, $wb)
+        $r = Invoke-Prerequisite @('-Path', $book)
+        [pscustomobject]@{ Exit = $r.Exit; Json = $r.Json; ExcelId = (Get-ExcelProcessId $xl) }
+    }
+    $detail = $open.Json | ConvertTo-Json -Compress -Depth 6
+    Assert 'Excel running: exit 1, not Ready' ($open.Exit -eq 1 -and $open.Json.Ready -eq $false) $detail
+    Assert 'Excel running: the process is listed' ($open.Json.Excel.Running -eq $true -and @($open.Json.Excel.Processes | Where-Object { $_.Id -eq $open.ExcelId }).Count -eq 1) $detail
+    Assert 'open workbook: reported as open' ($open.Json.Workbook.OpenElsewhere -eq $true) $detail
+    $problems = @($open.Json.Problems)
+    Assert 'Excel running and open workbook: one problem each' ($problems.Count -eq 2 -and [string]$problems[0] -like 'Excel is running (PID*do not stop it.' -and [string]$problems[1] -like 'The workbook seems to be open:*') $detail
+    Assert 'workbook unchanged by the checks' ((Get-FileHashText $book) -eq $hash) 'hash changed'
+    # The process is gone a moment after Use-ExcelWorkbook returns; the checks below expect no Excel.
+    $left = Wait-NoExcel 20
+    Assert 'Excel closed before the next checks' ($left.Count -eq 0) ('PIDs ' + ($left -join ','))
+
+    # What cannot be produced on this machine is shadowed inside the module only; nothing on the system is changed.
+    $excelModule = Get-Module XlWright
+    $mocked = {
+        param([string]$Command, [scriptblock]$Mock, [scriptblock]$Body)
+        & $excelModule { param($name, $body) Set-Item -Path ('function:script:' + $name) -Value $body } $Command $Mock
+        try { & $Body }
+        finally { & $excelModule { param($name) Remove-Item -Path ('function:' + $name) -ErrorAction SilentlyContinue } $Command }
+        $restored = & $excelModule { param($name) (Get-Command $name).CommandType } $Command
+        Assert ($Command + ': mock removed') ([string]$restored -eq 'Cmdlet') $restored
+    }
+    & $mocked 'Get-ItemProperty' { [pscustomobject]@{ AccessVBOM = 0 } } {
+        $sheet = Get-ExcelPrerequisite
+        $vba = Get-ExcelPrerequisite -Vba
+        Assert 'AccessVBOM 0 without -Vba: reported, not a problem' ($sheet.Ready -eq $true -and $sheet.AccessVBOM.Value -eq 0 -and $sheet.AccessVBOM.Enabled -eq $false) ($sheet | ConvertTo-Json -Compress -Depth 6)
+        Assert 'AccessVBOM 0 with -Vba: a problem' ($vba.Ready -eq $false -and @($vba.Problems).Count -eq 1 -and [string]$vba.Problems[0] -like 'AccessVBOM is not 1*do not change the setting yourself.') ($vba | ConvertTo-Json -Compress -Depth 6)
+    }
+    & $mocked 'Invoke-CimMethod' { throw 'simulated: access denied' } {
+        $r = Get-ExcelPrerequisite
+        Assert 'WMI call throws: a problem with the reason' ($r.Ready -eq $false -and $r.Wmi.Ok -eq $false -and $r.Wmi.Error -eq 'simulated: access denied' -and [string]$r.Problems[0] -like '*cannot be used: simulated: access denied*') ($r | ConvertTo-Json -Compress -Depth 6)
+    }
+    & $mocked 'Invoke-CimMethod' { [pscustomobject]@{ ReturnValue = 2 } } {
+        $r = Get-ExcelPrerequisite
+        Assert 'WMI returns an error code: a problem with the code' ($r.Ready -eq $false -and $r.Wmi.Ok -eq $false -and $r.Wmi.Error -eq 'Win32_Process.Create returned 2.') ($r | ConvertTo-Json -Compress -Depth 6)
+    }
+
+    # Git: only where git is installed. The repository is made inside the temporary folder.
+    if (Get-Command git -CommandType Application -ErrorAction SilentlyContinue) {
+        $git = { param([string[]]$Arguments) $ErrorActionPreference = 'Continue'; & git -C $dir @Arguments 2>$null | Out-Null; $LASTEXITCODE }
+        $state = { $g = (Get-ExcelPrerequisite -Path $book).Workbook.Git; '' + $g.Available + ',' + $g.InRepository + ',' + $g.Tracked + ',' + $g.Uncommitted }
+        [void](& $git @('init', '-q'))
+        $s = & $state
+        Assert 'git: untracked workbook' ($s -eq 'True,True,False,') $s
+        [void](& $git @('add', '--', 'book.xlsm'))
+        $s = & $state
+        Assert 'git: added workbook has an uncommitted change' ($s -eq 'True,True,True,True') $s
+        Assert 'git: never a problem' ((Get-ExcelPrerequisite -Path $book).Ready -eq $true) 'not Ready'
+    }
+}
+
 Invoke-Case 'userform' {
     $dir = New-CaseDir 'userform'
     $book = Join-Path $dir 'form.xlsm'

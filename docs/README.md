@@ -10,3 +10,4 @@
   - [vba-test.md](./notes/vba-test.md): VBA のテストを列挙して実行する方法と、その実測。
   - [vba-roundtrip.md](./notes/vba-roundtrip.md): 取り込んだ VBA を書き出した時に、正本と変わる所の実測。
   - [vba-prune.md](./notes/vba-prune.md): ブックから VBA のコンポーネントを消す時に COM でできることの実測。
+  - [prerequisite.md](./notes/prerequisite.md): 作業の前提（Excel のプロセス、`AccessVBOM`、WMI、Git）を読み取りだけで調べる方法と、その実測。

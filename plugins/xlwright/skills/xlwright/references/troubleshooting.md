@@ -1,5 +1,26 @@
 # 実行環境と起動の失敗
 
+## 前提の確認の結果
+
+`Test-Prerequisite.ps1`（SKILL.md の「作業前の確認」）が `-OutFile` に書く JSON の読み方。
+
+| 項目 | 中身 | 問題になる時 |
+| --- | --- | --- |
+| `Ready` | `Problems` が空なら `true` | - |
+| `Problems` | 理由と次にすることを、1 件 1 文で | - |
+| `Excel` | `Running` と、`Processes`（`Id`、`StartTime`、`WindowTitle`） | Excel が動いている |
+| `AccessVBOM` | `Value`（レジストリの値。無ければ `null`）と `Enabled` | `-Vba` を付けていて、値が `1` でない |
+| `Wmi` | `Ok` と `Error` | WMI からプロセスを作れない |
+| `Workbook` | `Path`、`Exists`、`OpenElsewhere`、`Git`。`-Path` が無ければ `null` | ブックが無い。ブックがほかで開かれている |
+| `Workbook.Git` | `Available`（git が使える）、`InRepository`、`Tracked`、`Uncommitted`。分からない項目は `null` | 問題にしない |
+| `Error` | 確認そのものが失敗した時の理由 | - |
+
+- `OpenElsewhere` は、ブックの隣に `~$<ブック名>` があるかで決める。Excel は、非表示でも、ブックを開いている間このファイルを置く。Excel が異常終了してファイルが残った時は、開かれていなくても `true` になる。ユーザーに確かめる。
+- 非表示の Excel は `WindowTitle` が空になる。題名が空の Excel は、ほかのエージェントやスクリプトが起動したものの可能性がある。
+- WMI は、見張りと同じ方法で、すぐ終わる非表示のプロセス（`cmd.exe /c exit`）を 1 つ作って確かめる。
+- Excel を閉じた直後は、プロセスが少しの間残り、`Excel.Running` が `true` になることがある。
+- 確かめたのは、非表示の Excel でブックを開いている時、無いブック、未追跡のブックと `git add` したブック。`AccessVBOM` が `1` でない時と、WMI が失敗する時は、コマンドを差し替えた試験で確かめた。人が画面に出した Excel、ポリシーで `AccessVBOM` が決まっている端末、ネットワークや OneDrive のフォルダにあるブック、commit 済みのブックでは確かめていない。
+
 ## Excel COM の実行環境
 
 - ユーザーが操作できる Windows デスクトップのセッションで実行する。実行環境を変えたときや、そこで COM の成功実績がないときは、作業ブックを開く前に `tests/Test-XlWright.ps1` を流す（SKILL.md の「動作確認」）。

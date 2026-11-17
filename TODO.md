@@ -7,7 +7,6 @@
 
 ## 優先度 1: 正本との同期と、毎回の手間
 
-- [ ] 前提の確認を 1 本にまとめる（`Test-Prerequisite.ps1`）。Excel のプロセス、`AccessVBOM`、WMI、Git の状態を読み取りだけで調べ、JSON で返す。
 - [ ] ブックの概要の取得。シートの一覧、`UsedRange`、定義名、テーブル、外部リンク、データ接続、VBA のコンポーネント、customUI の有無を 1 回で JSON にする。
 - [ ] 2 次元配列を一括で読み書きする helper を `XlWright.psm1` に置く。`Cells.Item` への代入が型のキャストで落ちることがある件と、セルごとの COM 呼び出しを避ける。
 - [ ] エラーセルの走査。編集の後に `#REF!` や `#NAME?` を `SpecialCells` で列挙する。
@@ -28,6 +27,6 @@
 
 - [ ] `references/ribbon.md` で確かめていないとした場面を確かめる。画面の拡大率が 100% 以外での画像、簡易表示のリボンの見分け、無効なボタンを指定した時のエラー。
 - [ ] UI Automation で押していた時にだけ確かめた場面を、MSAA で押す今の形で `-Full` の試験に足す。英字のラベル、ダイアログを出さないボタン、MsgBox を 2 回続けて出すボタン、押せない要素を指定した場合、30 秒動くボタン。
-- [ ] 32-bit の Excel と、Microsoft 365 以外の版での扱い。`AccessVBOM` のレジストリのパスは、`SKILL.md` と `tests/Test-XlWright.ps1` で `16.0` に固定している。確かめるか、確かめていないと明記する。
+- [ ] 32-bit の Excel と、Microsoft 365 以外の版での扱い。`AccessVBOM` のレジストリのパスは、`SKILL.md`、`scripts/XlWright.psm1`（`Get-ExcelPrerequisite`）、`tests/Test-XlWright.ps1` で `16.0` に固定している。確かめるか、確かめていないと明記する。
 - [ ] eval の case を足す。配布ブックの出力、VBA の取り込み、既存のマクロを確認なしに動かさないこと。
 - [ ] `plugins/xlwright/evals/results/` にたまった結果を整理する（Git には入っていない）。

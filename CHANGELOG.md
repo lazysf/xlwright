@@ -17,6 +17,11 @@
 - セルの範囲を行の配列として 1 回で読み書きする `Read-ExcelRange` と `Write-ExcelRange`。文字列は既定で文字のまま書き、`-Formula` を付けると数式として書く。エラー値は名前（`#DIV/0!` など）で返す。
 - 値がエラー（`#REF!`、`#NAME?` など）になったセルを、シート、番地、エラーの名前、数式とともに返す `Find-CellError.ps1`。
 
+### Fixed
+
+- `Invoke-RibbonButton.ps1` が、OK/キャンセル の MsgBox を × で閉じ、キャンセルを選んでいた。答えを選ぶダイアログは閉じずに、そのスクリプトが起動した Excel を止めてエラーにする。
+- `Invoke-RibbonButton.ps1` と `Lock-VbaProject.ps1` が、Excel を PID だけで照合して止めていた。起動時刻も照合する。
+
 ## [0.1.0] - 2026-11-13
 
 ### Added

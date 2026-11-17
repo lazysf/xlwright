@@ -25,7 +25,7 @@ public static long Send(IntPtr window, uint message, int wParam, IntPtr lParam)
 }
 
 $setProtection = {
-    param($vbeHandle, $projectName, $excelPid, $commandReturned)
+    param($vbeHandle, $projectName, $excelPid, $excelStartTicks, $commandReturned)
     $ErrorActionPreference = 'Stop'
     $element = [System.Windows.Automation.AutomationElement]
     $scope = [System.Windows.Automation.TreeScope]
@@ -101,8 +101,8 @@ $setProtection = {
                 [void][VbaProjectLock.Native]::PostMessage($dialogHandle, 0x0010, 0, 0)  # WM_CLOSE
             }
             if (!$commandReturned.Wait(3000)) {
-                # Only the dedicated Excel process can be blocked by our modal command.
-                Stop-Process -Id $excelPid -Force -ErrorAction SilentlyContinue
+                # Only the dedicated Excel process can be blocked by our modal command: same PID and start time.
+                [void][XlWright.ExcelProcess]::StopIfSame($excelPid, $excelStartTicks)
             }
         }
     }
@@ -123,11 +123,13 @@ Use-ExcelWorkbook -Path $Path -Visible -Save -ScriptBlock {
         if (!$properties -or !$properties.Enabled) { throw 'VBE Project Properties command is unavailable.' }
 
         # Execute blocks until the modal dialog closes, so operate the controls from a second runspace.
+        $excelPid = Get-ExcelProcessId $xl
         $commandReturned = [Threading.ManualResetEventSlim]::new()
         $worker = [PowerShell]::Create()
         try {
             [void]$worker.AddScript($setProtection.ToString()).AddArgument([IntPtr]$vbeWindow.HWnd).
-                AddArgument($project.Name).AddArgument((Get-ExcelProcessId $xl)).AddArgument($commandReturned)
+                AddArgument($project.Name).AddArgument($excelPid).AddArgument([XlWright.ExcelProcess]::StartTicks($excelPid)).
+                AddArgument($commandReturned)
             $operation = $worker.BeginInvoke()
             try { $properties.Execute() }
             finally {

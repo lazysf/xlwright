@@ -40,7 +40,7 @@ try {
     Use-ExcelWorkbook -Path $Path -TimeoutSeconds $TimeoutSeconds -ScriptBlock {
         param($xl, $wb)
         $excelPid = Get-ExcelProcessId $xl
-        $excelStartTicks = (Get-Process -Id $excelPid).StartTime.ToUniversalTime().Ticks
+        $excelStartTicks = [XlWright.ExcelProcess]::StartTicks($excelPid)
         $project = $wb.VBProject
         if ($project.Protection -ne 0) { throw 'The VBA project is locked and cannot be compiled from outside.' }
         $vbe = $xl.VBE
@@ -84,11 +84,9 @@ try {
         if (-not [XlWright.Dialog]::WaitClosed($dialog, 3000)) {
             # The instance is blocked in a modal state; closing the workbook would hang. Stop only this instance:
             # same PID and start time.
-            $process = Get-Process -Id $excelPid -ErrorAction SilentlyContinue
-            if (-not $process -or $process.StartTime.ToUniversalTime().Ticks -ne $excelStartTicks) {
-                throw "The compile error dialog could not be closed, and Excel PID $excelPid is no longer the instance of this script; it was not stopped."
+            if (-not [XlWright.ExcelProcess]::StopIfSame($excelPid, $excelStartTicks)) {
+                throw "The compile error dialog could not be closed, and Excel PID $excelPid could not be stopped as the instance of this script."
             }
-            Stop-Process -Id $excelPid -Force -ErrorAction SilentlyContinue
             throw "The compile error dialog could not be closed. Stopped the Excel instance of this script (PID $excelPid)."
         }
         if (-not $vbeWasVisible) { $vbe.MainWindow.Visible = $false }

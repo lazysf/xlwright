@@ -105,6 +105,14 @@ public static int[] ButtonIds(System.IntPtr dialog) {
     return ids.ToArray();
 }
 
+// True when closing the dialog would choose an answer for the macro. WM_CLOSE and the x button answer a MsgBox
+// with IDCANCEL (2), so only a dialog whose buttons are 2 and Help (9) has a single answer: the OK button of a
+// MsgBox with only OK has id 2 (docs/notes/macro-dialog.md).
+public static bool AsksForAnswer(System.IntPtr dialog) {
+    foreach (var id in ButtonIds(dialog)) { if (id != 2 && id != 9) return true; }
+    return false;
+}
+
 // Waits until the dialog window is gone. False when it is still there after the time.
 public static bool WaitClosed(System.IntPtr dialog, int milliseconds) {
     var watch = System.Diagnostics.Stopwatch.StartNew();
@@ -113,6 +121,34 @@ public static bool WaitClosed(System.IntPtr dialog, int milliseconds) {
         System.Threading.Thread.Sleep(50);
     }
     return true;
+}
+'@
+}
+
+# Stops an Excel process only when it is still the instance that started at the given time (AGENTS.md: never stop
+# an Excel that cannot be confirmed as the own one). A type, so that the other runspaces of the scripts can use it.
+if (-not ('XlWright.ExcelProcess' -as [type])) {
+    Add-Type -Namespace XlWright -Name ExcelProcess -MemberDefinition @'
+public static long StartTicks(int processId) {
+    using (var process = System.Diagnostics.Process.GetProcessById(processId)) {
+        return process.StartTime.ToUniversalTime().Ticks;
+    }
+}
+
+// True when the process was stopped. False when it is gone, is another process now, or could not be checked or stopped.
+public static bool StopIfSame(int processId, long startTicks) {
+    System.Diagnostics.Process process;
+    try { process = System.Diagnostics.Process.GetProcessById(processId); }
+    catch (System.ArgumentException) { return false; }
+    using (process) {
+        try {
+            if (process.StartTime.ToUniversalTime().Ticks != startTicks) return false;
+            process.Kill();
+            return true;
+        }
+        catch (System.InvalidOperationException) { return false; }
+        catch (System.ComponentModel.Win32Exception) { return false; }
+    }
 }
 '@
 }
@@ -291,11 +327,8 @@ $script:MacroDialogWatcher = {
     $excelPid = [uint32]$State.ProcessId
     function Stop-OwnExcel([string]$Reason) {
         $State.Fatal = $Reason
-        $process = Get-Process -Id $State.ProcessId -ErrorAction SilentlyContinue
         # Only the instance of this call: same PID and start time.
-        if ($process -and $process.StartTime.ToUniversalTime().Ticks -eq $State.StartTicks) {
-            Stop-Process -Id $State.ProcessId -Force -ErrorAction SilentlyContinue
-        }
+        [void][XlWright.ExcelProcess]::StopIfSame($State.ProcessId, $State.StartTicks)
     }
     while (-not $State.Stop) {
         $dialog = [XlWright.Dialog]::Find($excelPid)
@@ -335,10 +368,8 @@ $script:MacroDialogWatcher = {
             return
         }
         else {
-            # WM_CLOSE answers a MsgBox with IDCANCEL (2): with OK and Cancel it would choose Cancel. Only a dialog whose
-            # buttons are 2 and Help (9) is closed; the OK button of a MsgBox with only OK has id 2.
-            $answers = @([XlWright.Dialog]::ButtonIds($dialog) | Where-Object { $_ -ne 2 -and $_ -ne 9 })
-            if ($answers.Count -gt 0) {
+            # WM_CLOSE answers a MsgBox with IDCANCEL: with OK and Cancel it would choose Cancel.
+            if ([XlWright.Dialog]::AsksForAnswer($dialog)) {
                 Stop-OwnExcel ('The macro shows a dialog that cannot be closed without choosing an answer: ' + $text)
                 return
             }
@@ -392,7 +423,7 @@ function Invoke-ExcelMacro {
         Stop = $false; ProcessId = $processId; RuntimeError = $null; CompileError = $null; Fatal = $null
         DialogMessage = $null; Excel = $Excel
         EditorWasVisible = [XlWright.Dialog]::IsEditorVisible([uint32]$processId)
-        StartTicks = (Get-Process -Id $processId -ErrorAction Stop).StartTime.ToUniversalTime().Ticks
+        StartTicks = [XlWright.ExcelProcess]::StartTicks($processId)
         Closed = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList))
     })
     $ps = [PowerShell]::Create()

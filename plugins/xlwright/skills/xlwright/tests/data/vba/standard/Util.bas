@@ -18,6 +18,10 @@ Public Sub AskYesNo(control As IRibbonControl)
     MsgBox "続けますか", vbYesNo
 End Sub
 
+Public Sub AskOkCancel(control As IRibbonControl)
+    MsgBox "続行しますか", vbOKCancel
+End Sub
+
 Public Sub GetOff(control As IRibbonControl, ByRef returnedVal)
     returnedVal = False
 End Sub

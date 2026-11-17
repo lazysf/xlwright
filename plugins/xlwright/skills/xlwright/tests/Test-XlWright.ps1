@@ -517,6 +517,22 @@ Invoke-Case 'watchdog-unavailable' {
     }
 }
 
+# The scripts stop an Excel only through this check. A hidden powershell.exe stands in for Excel here.
+Invoke-Case 'stop-own-process' {
+    $child = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 60' -WindowStyle Hidden -PassThru
+    try {
+        $ticks = [XlWright.ExcelProcess]::StartTicks($child.Id)
+        Assert 'start ticks of the process' ($ticks -eq $child.StartTime.ToUniversalTime().Ticks) $ticks
+        $other = [XlWright.ExcelProcess]::StopIfSame($child.Id, $ticks - 1)
+        Assert 'another start time: not stopped' ($other -eq $false -and -not $child.HasExited) ('returned ' + $other)
+        $same = [XlWright.ExcelProcess]::StopIfSame($child.Id, $ticks)
+        Assert 'same PID and start time: stopped' ($same -eq $true -and $child.WaitForExit(5000)) ('returned ' + $same)
+        $gone = [XlWright.ExcelProcess]::StopIfSame($child.Id, $ticks)
+        Assert 'a process that is gone: false' ($gone -eq $false) ('returned ' + $gone)
+    }
+    finally { if (-not $child.HasExited) { Stop-Process -Id $child.Id -Force -ErrorAction SilentlyContinue } }
+}
+
 function Invoke-Prerequisite([string[]]$Arguments) {
     $json = Join-Path $temp ('prerequisite-' + [guid]::NewGuid().ToString('N') + '.json')
     $run = Invoke-Script (Join-Path $scripts 'Test-Prerequisite.ps1') (@('-OutFile', $json) + $Arguments)
@@ -1068,6 +1084,15 @@ if ($Full) {
                 Assert 'Yes/No dialog: reported as not closable' ([string]$askRes.Error -like 'A dialog could not be closed*') $askRes.Error
                 $left = Wait-NoExcel 20
                 Assert 'Yes/No dialog: its Excel was stopped' ($left.Count -eq 0) ('PIDs ' + ($left -join ','))
+                # The x button would close an OK/Cancel MsgBox by choosing Cancel, so it is not closed either.
+                $okCancelJson = Join-Path $dir 'ok-cancel.json'
+                $okCancel = Invoke-Script (Join-Path $scripts 'Invoke-RibbonButton.ps1') @('-Path', $book, '-TabLabel', $S.Tab, '-ButtonLabel', $S.OkCancelButton, '-OutFile', $okCancelJson)
+                $okCancelRes = [IO.File]::ReadAllText($okCancelJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
+                $detail = $okCancelRes | ConvertTo-Json -Compress -Depth 5
+                Assert 'OK/Cancel dialog: exit 1' ($okCancel.Exit -eq 1) $detail
+                Assert 'OK/Cancel dialog: an answer to choose, its Excel stopped' ([string]$okCancelRes.Error -like 'A dialog could not be closed without choosing an answer. Stopped the Excel instance of this script*') $detail
+                $left = Wait-NoExcel 20
+                Assert 'OK/Cancel dialog: no Excel left' ($left.Count -eq 0) ('PIDs ' + ($left -join ','))
             }
         }
     }

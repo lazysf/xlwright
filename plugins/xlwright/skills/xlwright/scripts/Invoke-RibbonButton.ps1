@@ -4,8 +4,8 @@ Clicks a custom ribbon button and reports the dialogs it shows.
 
 .DESCRIPTION
 Opens the workbook in a visible, maximized Excel, selects the tab, invokes the button, and handles the dialogs
-(#32770, e.g. MsgBox) that appear afterwards: the names of each dialog's elements are recorded and the
-dialog is closed with WindowPattern.Close (the same as the x button). The tab and the button are operated
+(#32770, e.g. MsgBox) that appear afterwards: the names of each dialog's elements are recorded and a MsgBox
+with only OK is closed with WindowPattern.Close (the same as the x button). The tab and the button are operated
 through their MSAA default action, which unlike UI Automation does not bring Excel to the foreground
 (see Ribbon.psm1); a disabled button is reported as an error without clicking. Only this check has been done with
 a visible window; whether the ribbon is built for a hidden one has not been checked. The workbook is
@@ -15,9 +15,10 @@ The tab and the button must be uniquely named in their respective search scopes.
 In a MsgBox both the message and the buttons are exposed as Pane elements, so they cannot be told
 apart by control type. Each entry of Dialogs lists them all, e.g. ["OK", "<message>"].
 
-If a dialog cannot be closed (a Yes/No MsgBox has no Cancel and ignores the x button), or the click
-call does not return in time, the Excel instance started by this script is stopped by its PID and the
-result records the error. Other Excel processes are never touched.
+A dialog whose buttons ask for an answer (a MsgBox with Yes/No or OK/Cancel; the x button would choose
+Cancel) is not closed. If such a dialog appears, a dialog cannot be closed, or the click call does not return in
+time, the Excel instance started by this script is stopped by its PID and start time and the result records
+the error. Other Excel processes are never touched.
 
 The click call returns without waiting for the macro to finish. A macro that keeps running without a
 dialog (e.g. Application.Wait) is waited for when the workbook is closed; a macro that never ends
@@ -74,6 +75,7 @@ try {
     Use-ExcelWorkbook -Path $Path -Visible -EnableMacros -ScriptBlock {
         param($xl, $wb)
         $excelPid = Get-ExcelProcessId $xl
+        $excelStartTicks = [XlWright.ExcelProcess]::StartTicks($excelPid)
         Set-RibbonWindow $xl $WindowWidth
         $win = $AE::FromHandle([IntPtr]$xl.Hwnd)
 
@@ -128,6 +130,8 @@ try {
             $names = Get-DialogNames $dlg
             $result.Dialogs += , ([ordered]@{ Title = $dlg.Current.Name; Names = $names })
             $handle = $dlg.Current.NativeWindowHandle
+            # The x button answers a MsgBox with Cancel, so a dialog with an answer to choose is not closed.
+            if ([XlWright.Dialog]::AsksForAnswer([IntPtr]$handle)) { $stuck = 'A dialog could not be closed without choosing an answer'; break }
             try { $dlg.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close() } catch { }
             # The next MsgBox may reuse the same window, so "closed" means the same window with the
             # same contents is no longer there.
@@ -146,7 +150,9 @@ try {
         if ($stuck) {
             # The instance is blocked in a modal state; COM calls to it would hang. Stop only this instance.
             # The runspace is left undisposed on purpose: Dispose waits for the blocked Invoke.
-            Stop-Process -Id $excelPid -Force -ErrorAction SilentlyContinue
+            if (-not [XlWright.ExcelProcess]::StopIfSame($excelPid, $excelStartTicks)) {
+                throw "$stuck. Excel PID $excelPid could not be stopped as the instance of this script."
+            }
             throw "$stuck. Stopped the Excel instance of this script (PID $excelPid)."
         }
         try {

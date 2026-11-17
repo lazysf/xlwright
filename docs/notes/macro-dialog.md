@@ -77,6 +77,8 @@
 3. ID 2 とヘルプ（ID 9）のほかのボタンがある: 答えを選ぶダイアログ（Yes/No、OK/Cancel の MsgBox など）。`WM_CLOSE` を送らず、文言を読んでその Excel を止める。
 4. それ以外: `WM_CLOSE` を送る。3 秒で閉じれば先へ進み、文言を警告に出す。閉じなければ、文言を読んでその Excel を止める。
 
+3 の判定は `XlWright.Dialog.AsksForAnswer` にあり、`Invoke-RibbonButton.ps1` も、リボンのボタンが出したダイアログに同じ判定を使う。止める時は、どちらも `XlWright.ExcelProcess.StopIfSame` で PID と起動時刻を照合する。
+
 答えを選ぶダイアログでどれも選ばないのは、選ぶとマクロの動きをスクリプトが決めることになるため。`WM_CLOSE` は、MsgBox を ID 2（`IDCANCEL`）のボタンで閉じる。OK だけの MsgBox の OK は ID 2 なので、閉じても答えは 1 つしかない。OK/Cancel の MsgBox は、`WM_CLOSE` で Cancel を選んで閉じ、マクロは Cancel の側へ進んだ（下の、ボタンを見ない写し）。
 
 ### ボタンの ID
@@ -106,6 +108,8 @@
 - 「終了」の ID を変え、引数も渡さないようにした写しは、`macro` と `macro-dialog` の両方で落ちた。
 - リセットを実行しない写しは、3 秒後に Excel を止め、`macro-dialog` と `vba-test-fail` で落ちた。
 - VBE を隠さない写しも、同じ 2 項目で落ちた。この写しでは、後の MsgBox が 2 の扱いになった。VBE が表示されたままだと、MsgBox とコンパイルエラーを見分けられない。
+- リボンのボタンが出した OK/Cancel の MsgBox も、閉じずに Excel を止めた（`ribbon`、2026-11-17）。判定を外した `Invoke-RibbonButton.ps1` の写しでは、× で閉じて `Clicked` が `true` になり、`ribbon` で落ちた。
+- 起動時刻を照合しない `StopIfSame` の写しは、`stop-own-process` で落ちた。
 - ボタンの ID を見ない写しは、`macro-dialog` で落ちた。OK/Cancel の MsgBox が `WM_CLOSE` で閉じ、例外にならなかった（2026-11-17）。
 
 ## 未確認

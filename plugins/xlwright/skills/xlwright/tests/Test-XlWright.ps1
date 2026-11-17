@@ -985,7 +985,9 @@ if ($Full) {
         }
 
         $stops = @(
-            @{ Name = 'Yes/No MsgBox'; Book = $book; Macro = 'Macros.Ask'; Error = '*cannot be closed without choosing an answer: probe: question*' })
+            @{ Name = 'Yes/No MsgBox'; Book = $book; Macro = 'Macros.Ask'; Error = '*cannot be closed without choosing an answer: probe: question*' },
+            # WM_CLOSE would close this one by choosing Cancel.
+            @{ Name = 'OK/Cancel MsgBox'; Book = $book; Macro = 'Macros.AskOkCancel'; Error = '*cannot be closed without choosing an answer: probe: proceed*' })
         foreach ($stop in $stops) {
             $message = $null
             $watch = [Diagnostics.Stopwatch]::StartNew()

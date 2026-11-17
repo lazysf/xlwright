@@ -40,6 +40,7 @@ public delegate bool EnumProc(System.IntPtr hWnd, System.IntPtr lParam);
 [DllImport("user32.dll")] static extern bool EnumChildWindows(System.IntPtr parent, EnumProc callback, System.IntPtr lParam);
 [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(System.IntPtr hWnd, out uint processId);
 [DllImport("user32.dll")] static extern bool IsWindowVisible(System.IntPtr hWnd);
+[DllImport("user32.dll")] static extern int GetDlgCtrlID(System.IntPtr hWnd);
 [DllImport("user32.dll")] public static extern bool IsWindow(System.IntPtr hWnd);
 [DllImport("user32.dll")] public static extern System.IntPtr GetDlgItem(System.IntPtr dialog, int id);
 [DllImport("user32.dll")] public static extern bool PostMessage(System.IntPtr hWnd, uint message, System.IntPtr wParam, System.IntPtr lParam);
@@ -92,6 +93,16 @@ public static string Message(System.IntPtr dialog) {
         return true;
     }, System.IntPtr.Zero);
     return System.Text.RegularExpressions.Regex.Replace(string.Join(" ", texts.ToArray()), @"\s+", " ").Trim();
+}
+
+// The control ids of the Button children, e.g. 1 (OK) and 2 (Cancel) of a MsgBox with OK and Cancel.
+public static int[] ButtonIds(System.IntPtr dialog) {
+    var ids = new System.Collections.Generic.List<int>();
+    EnumChildWindows(dialog, (hWnd, lParam) => {
+        if (ClassOf(hWnd) == "Button") ids.Add(GetDlgCtrlID(hWnd));
+        return true;
+    }, System.IntPtr.Zero);
+    return ids.ToArray();
 }
 
 // Waits until the dialog window is gone. False when it is still there after the time.
@@ -324,6 +335,13 @@ $script:MacroDialogWatcher = {
             return
         }
         else {
+            # WM_CLOSE answers a MsgBox with IDCANCEL (2): with OK and Cancel it would choose Cancel. Only a dialog whose
+            # buttons are 2 and Help (9) is closed; the OK button of a MsgBox with only OK has id 2.
+            $answers = @([XlWright.Dialog]::ButtonIds($dialog) | Where-Object { $_ -ne 2 -and $_ -ne 9 })
+            if ($answers.Count -gt 0) {
+                Stop-OwnExcel ('The macro shows a dialog that cannot be closed without choosing an answer: ' + $text)
+                return
+            }
             [void][XlWright.Dialog]::PostMessage($dialog, [XlWright.Dialog]::WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)
         }
         if (-not [XlWright.Dialog]::WaitClosed($dialog, 3000)) {
@@ -347,9 +365,10 @@ function Invoke-ExcelMacro {
     - VBA runtime error: the dialog is ended with its End button and its text is thrown. Excel stays usable.
     - Compile error (the dialog comes with the VBE window): the dialog is closed, the VBE is reset with its
       Reset command and hidden again, and the text is thrown. Excel stays usable.
-    - A dialog that WM_CLOSE closes (a MsgBox with only OK): it is closed, the macro goes on, and the
-      title and text are written as a warning.
-    - Anything else (a Yes/No MsgBox, a compile error that the reset does not end): the text is read, this
+    - A dialog whose only button is the one WM_CLOSE presses (a MsgBox with only OK): it is closed, the macro
+      goes on, and the title and text are written as a warning.
+    - Anything else (a MsgBox with Yes/No or OK/Cancel, whose answer would decide what the macro does, a
+      compile error that the reset does not end): the text is read, this
       Excel instance is stopped by its PID and start time, and the text is thrown. Unsaved changes are lost.
 
     Returns what the macro returns, and nothing for a Sub. Use it inside the script block of

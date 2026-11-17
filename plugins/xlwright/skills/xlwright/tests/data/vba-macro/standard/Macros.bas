@@ -39,3 +39,7 @@ End Function
 Public Function Ask() As Long
     Ask = MsgBox("question", vbYesNo, "probe")
 End Function
+
+Public Function AskOkCancel() As Long
+    AskOkCancel = MsgBox("proceed", vbOKCancel, "probe")
+End Function

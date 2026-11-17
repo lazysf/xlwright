@@ -153,13 +153,38 @@ function Invoke-Case([string]$Name, [switch]$WatchForeground, [scriptblock]$Body
     foreach ($f in $failed) { Write-Output ('     - ' + $f.Check + ': ' + $f.Detail) }
 }
 
+# A workbook that only sets up a case is built once, by the first case that needs it, and copied after that:
+# every start and exit of Excel takes seconds. A build that throws leaves nothing behind, so the next case builds again.
+$fixtures = Join-Path $temp 'fixtures'
+New-Item -ItemType Directory -Path $fixtures | Out-Null
+
+function Copy-Fixture([string]$Name, [string]$Path, [scriptblock]$Build) {
+    $fixture = Join-Path $fixtures $Name
+    if (-not (Test-Path -LiteralPath $fixture)) {
+        # The extension is kept: New-ExcelWorkbook takes the format from it.
+        $building = Join-Path $fixtures ('building-' + $Name)
+        Remove-Item -LiteralPath $building -Force -ErrorAction SilentlyContinue
+        & $Build $building
+        Move-Item -LiteralPath $building -Destination $fixture
+    }
+    Copy-Item -LiteralPath $fixture -Destination $Path
+    $Path
+}
+
+function New-EmptyBook([string]$Path) {
+    Copy-Fixture ('empty' + [IO.Path]::GetExtension($Path)) $Path { param($p) [void](New-ExcelWorkbook -Path $p) }
+}
+
 function New-BookWithVba([string]$Dir) {
-    $book = Join-Path $Dir 'book.xlsm'
-    [void](New-ExcelWorkbook -Path $book)
-    Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $Dir 'vba') -Recurse
-    $import = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $book, '-SourceDir', (Join-Path $Dir 'vba'))
-    Assert 'Import-Vba exit 0' ($import.Exit -eq 0) $import.Output
-    $book
+    $source = Join-Path $Dir 'vba'
+    Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination $source -Recurse
+    Copy-Fixture 'vba.xlsm' (Join-Path $Dir 'book.xlsm') {
+        param($p)
+        [void](New-ExcelWorkbook -Path $p)
+        $import = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $p, '-SourceDir', $source)
+        Assert 'Import-Vba exit 0' ($import.Exit -eq 0) $import.Output
+        if ($import.Exit -ne 0) { throw 'The workbook with the VBA of tests\data\vba could not be built.' }
+    }
 }
 
 function Invoke-Compile([string]$Book) {
@@ -244,17 +269,20 @@ Invoke-Case 'vba-compile' {
     Assert 'valid code: compiled, no error' ($c.Json.Compiled -eq $true -and $null -eq $c.Json.CompileError -and $null -eq $c.Json.Error) ($c.Json | ConvertTo-Json -Compress)
     Assert 'workbook unchanged by the check' ((Get-FileHashText $book) -eq $hash) 'hash changed'
     $plain = Join-Path $dir 'plain.xlsx'
-    [void](New-ExcelWorkbook -Path $plain)
+    [void](New-EmptyBook $plain)
     $p = Invoke-Compile $plain
     Assert 'workbook without VBA: compiled' ($p.Exit -eq 0 -and $p.Json.Compiled -eq $true) ($p.Json | ConvertTo-Json -Compress)
 }
 
 function New-BookWithMacros([string]$Dir, [string]$Source) {
     $book = Join-Path $Dir ((Split-Path -Leaf $Source) + '.xlsm')
-    [void](New-ExcelWorkbook -Path $book)
-    $import = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $book, '-SourceDir', (Join-Path $data $Source))
-    Assert ($Source + ': import exit 0') ($import.Exit -eq 0) $import.Output
-    $book
+    Copy-Fixture ('macros-' + ($Source -replace '[\\/]', '-') + '.xlsm') $book {
+        param($p)
+        [void](New-ExcelWorkbook -Path $p)
+        $import = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $p, '-SourceDir', (Join-Path $data $Source))
+        Assert ($Source + ': import exit 0') ($import.Exit -eq 0) $import.Output
+        if ($import.Exit -ne 0) { throw ('The workbook with the VBA of ' + $Source + ' could not be built.') }
+    }
 }
 
 Invoke-Case 'macro' {
@@ -306,15 +334,16 @@ Invoke-Case 'vba-test' {
     Assert '-Name: a name that is not a test is an error' ($private.Exit -eq 1 -and $private.Json.Ok -eq $false -and [string]$private.Json.Error -like 'Test not found: Test_Calc.Test_Private*' -and @($private.Json.Tests).Count -eq 0) ($private.Json | ConvertTo-Json -Compress -Depth 5)
 
     $empty = Join-Path $dir 'empty.xlsm'
-    [void](New-ExcelWorkbook -Path $empty)
+    [void](New-EmptyBook $empty)
     $none = Invoke-VbaTest $empty
     Assert 'no test: an error, not a pass' ($none.Exit -eq 1 -and $none.Json.Ok -eq $false -and [string]$none.Json.Error -like 'No test found*') ($none.Json | ConvertTo-Json -Compress -Depth 5)
 
-    $hang = Invoke-VbaTest (New-BookWithMacros $dir 'vba-test\hang') @('-TimeoutSeconds', '20')
+    # The limit only has to be longer than starting Excel and running the first test.
+    $hang = Invoke-VbaTest (New-BookWithMacros $dir 'vba-test\hang') @('-TimeoutSeconds', '8')
     $detail = $hang.Json | ConvertTo-Json -Compress -Depth 5
     $results = @($hang.Json.Tests | ForEach-Object { $_.Result }) -join ','
     Assert 'timeout: the test that hangs failed, the rest was not run' ($hang.Exit -eq 1 -and $results -eq 'passed,failed,not_run') $detail
-    Assert 'timeout: Error says so' ([string]$hang.Json.Error -like 'Timed out after 20 s*') $detail
+    Assert 'timeout: Error says so' ([string]$hang.Json.Error -like 'Timed out after 8 s*') $detail
 }
 
 function Invoke-Compare([string]$Book, [string]$SourceDir) {
@@ -421,19 +450,20 @@ Invoke-Case 'vba-prune' {
 
 Invoke-Case 'timeout' {
     $book = Join-Path (New-CaseDir 'timeout') 'book.xlsm'
-    [void](New-ExcelWorkbook -Path $book)
+    [void](New-EmptyBook $book)
     $watch = [Diagnostics.Stopwatch]::StartNew()
-    $h = Invoke-Runner $book 'hang' @('-EnableMacros', '-TimeoutSeconds', '20')
+    # The limit only has to be longer than starting Excel and opening the workbook (about 1 s).
+    $h = Invoke-Runner $book 'hang' @('-EnableMacros', '-TimeoutSeconds', '8')
     $seconds = [int]$watch.Elapsed.TotalSeconds
     Assert 'timeout exit 1' ($h.Exit -eq 1) $h.Exit
-    Assert 'timeout message' ([string]$h.Json.Error -like 'Timed out after 20 s*') $h.Json.Error
+    Assert 'timeout message' ([string]$h.Json.Error -like 'Timed out after 8 s*') $h.Json.Error
     Assert 'stopped within 60 s' ($seconds -lt 60) $seconds
 }
 
 Invoke-Case 'caller-killed' {
     $dir = New-CaseDir 'caller-killed'
     $book = Join-Path $dir 'book.xlsm'
-    [void](New-ExcelWorkbook -Path $book)
+    [void](New-EmptyBook $book)
     $pidFile = Join-Path $dir 'excel.pid'
     $child = Start-Process powershell.exe -PassThru -WindowStyle Hidden -ArgumentList @(
         '-NoProfile', '-File', ('"' + (Join-Path $data 'scripts\orphan-child.ps1') + '"'),
@@ -454,7 +484,7 @@ Invoke-Case 'caller-killed' {
 Invoke-Case 'input-rejected' {
     $dir = New-CaseDir 'input-rejected'
     $book = Join-Path $dir 'book.xlsm'
-    [void](New-ExcelWorkbook -Path $book)
+    [void](New-EmptyBook $book)
     $hash = Get-FileHashText $book
     $ascii = New-Object System.Text.UTF8Encoding($false)
     $sources = @(
@@ -493,7 +523,7 @@ Invoke-Case 'input-rejected' {
 
 Invoke-Case 'watchdog-unavailable' {
     $book = Join-Path (New-CaseDir 'watchdog-unavailable') 'book.xlsx'
-    [void](New-ExcelWorkbook -Path $book)
+    [void](New-EmptyBook $book)
     $excelModule = Get-Module XlWright
     $mocks = @(
         @{ Name = 'WMI call throws'; Mock = { throw 'simulated: access denied' } },
@@ -556,7 +586,7 @@ function Invoke-Prerequisite([string[]]$Arguments) {
 Invoke-Case 'prerequisite' {
     $dir = New-CaseDir 'prerequisite'
     $book = Join-Path $dir 'book.xlsm'
-    [void](New-ExcelWorkbook -Path $book)
+    [void](New-EmptyBook $book)
     $hash = Get-FileHashText $book
 
     # This run starts only when no Excel is running and AccessVBOM is 1.
@@ -659,7 +689,7 @@ function Invoke-Summary([string]$Book) {
 Invoke-Case 'workbook-summary' {
     $dir = New-CaseDir 'workbook-summary'
     $other = Join-Path $dir 'other.xlsx'
-    [void](New-ExcelWorkbook -Path $other)
+    [void](New-EmptyBook $other)
     [IO.File]::WriteAllText((Join-Path $dir 'data.csv'), "a,b`r`n1,2`r`n", $utf8)
     $book = Join-Path $dir 'book.xlsm'
     $built = Invoke-Runner $book 'summary-build' @('-Create', '-Save')
@@ -711,7 +741,7 @@ Invoke-Case 'workbook-summary' {
 Invoke-Case 'range' {
     $dir = New-CaseDir 'range'
     $book = Join-Path $dir 'range.xlsx'
-    [void](New-ExcelWorkbook -Path $book)
+    [void](New-EmptyBook $book)
     $r = Use-ExcelWorkbook -Path $book -ScriptBlock {
         param($xl, $wb)
         $sheet = $wb.Worksheets.Item(1)
@@ -849,7 +879,7 @@ function Invoke-FindError([string]$Book, [string[]]$Extra = @()) {
 Invoke-Case 'cell-error' {
     $dir = New-CaseDir 'cell-error'
     $book = Join-Path $dir 'errors.xlsx'
-    [void](New-ExcelWorkbook -Path $book)
+    [void](New-EmptyBook $book)
     Use-ExcelWorkbook -Path $book -Save -ScriptBlock {
         param($xl, $wb)
         $data = $wb.Worksheets.Item(1)
@@ -920,8 +950,7 @@ Invoke-Case 'userform' {
     Assert 'export exit 0' ($export.Exit -eq 0) $export.Output
     Assert '.frm and .frx exported' ((Test-Path (Join-Path $dir 'export\forms\frmInfo.frm')) -and (Test-Path (Join-Path $dir 'export\forms\frmInfo.frx'))) 'missing'
     $copy = Join-Path $dir 'copy.xlsm'
-    $n = Invoke-Runner $copy 'noop' @('-Create', '-Save')
-    Assert 'second workbook created' ($n.Exit -eq 0) $n.Output
+    [void](New-EmptyBook $copy)
     $import = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $copy, '-SourceDir', (Join-Path $dir 'export'))
     Assert 'import exit 0' ($import.Exit -eq 0) $import.Output
     $d1 = Invoke-Runner $book 'uf-design'
@@ -949,10 +978,7 @@ if ($Full) {
             @{ Name = 'undeclared'; Column = 5 },
             @{ Name = 'syntax'; Column = 1 })
         foreach ($case in $cases) {
-            $book = Join-Path $dir ($case.Name + '.xlsm')
-            [void](New-ExcelWorkbook -Path $book)
-            $import = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $book, '-SourceDir', (Join-Path $data ('vba-broken\' + $case.Name)))
-            Assert ($case.Name + ': import exit 0') ($import.Exit -eq 0) $import.Output
+            $book = New-BookWithMacros $dir ('vba-broken\' + $case.Name)
             $hash = Get-FileHashText $book
             $c = Invoke-Compile $book
             $detail = $c.Json | ConvertTo-Json -Compress
@@ -1189,7 +1215,7 @@ if ($Full) {
     Invoke-Case 'publish' -WatchForeground {
         $dir = New-CaseDir 'publish'
         $book = Join-Path $dir 'book.xlsm'
-        [void](New-ExcelWorkbook -Path $book)
+        [void](New-EmptyBook $book)
         Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $dir 'vba') -Recurse
         New-Item -ItemType Directory -Path (Join-Path $dir 'ribbon') | Out-Null
         Copy-Item -LiteralPath (Join-Path $data 'ribbon\layout.xml') -Destination (Join-Path $dir 'ribbon\customUI14.xml')
@@ -1225,7 +1251,7 @@ if ($Full) {
     Invoke-Case 'publish-exclude-tests' -WatchForeground {
         $dir = New-CaseDir 'publish-exclude-tests'
         $book = Join-Path $dir 'book.xlsm'
-        [void](New-ExcelWorkbook -Path $book)
+        [void](New-EmptyBook $book)
         Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $dir 'vba') -Recurse
         # Test_Calc is a test module. Alpha holds tests but is not named Test_*.
         Copy-Item -Path (Join-Path $data 'vba-test\pass\standard\*') -Destination (Join-Path $dir 'vba\standard')
@@ -1263,7 +1289,7 @@ if ($Full) {
         $usesDir = Join-Path $dir 'uses'
         New-Item -ItemType Directory -Path $usesDir | Out-Null
         $usesBook = Join-Path $usesDir 'book.xlsm'
-        [void](New-ExcelWorkbook -Path $usesBook)
+        [void](New-EmptyBook $usesBook)
         Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $usesDir 'vba') -Recurse
         Copy-Item -Path (Join-Path $data 'vba-test\uses-test\standard\*') -Destination (Join-Path $usesDir 'vba\standard')
         $usesHash = Get-FileHashText $usesBook
@@ -1277,7 +1303,7 @@ if ($Full) {
     Invoke-Case 'screenshot' -WatchForeground {
         $dir = New-CaseDir 'screenshot'
         $book = Join-Path $dir 'tool.xlsx'
-        [void](New-ExcelWorkbook -Path $book)
+        [void](New-EmptyBook $book)
         Use-ExcelWorkbook -Path $book -Save -ScriptBlock {
             param($xl, $wb)
             $main = $wb.Worksheets.Item(1)

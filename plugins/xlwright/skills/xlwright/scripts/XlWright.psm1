@@ -478,8 +478,15 @@ function Get-ExcelPrerequisite {
             '). Ask the user before going on; do not stop it.')
     }
 
-    $key = 'HKCU:\Software\Microsoft\Office\16.0\Excel\Security'
-    $value = (Get-ItemProperty -Path $key -Name AccessVBOM -ErrorAction SilentlyContinue).AccessVBOM
+    # A value set by policy is taken before the one the user set in the Trust Center. The order of the two policy keys,
+    # and that a policy value wins at all, is not in the Microsoft documentation and was not checked on a machine with
+    # a policy (docs/notes/prerequisite.md).
+    $value = $null
+    foreach ($key in 'HKCU:\Software\Policies\Microsoft\Office\16.0\Excel\Security',
+        'HKLM:\Software\Policies\Microsoft\Office\16.0\Excel\Security', 'HKCU:\Software\Microsoft\Office\16.0\Excel\Security') {
+        $value = (Get-ItemProperty -Path $key -Name AccessVBOM -ErrorAction SilentlyContinue).AccessVBOM
+        if ($null -ne $value) { break }
+    }
     $enabled = $value -eq 1
     if ($Vba -and -not $enabled) {
         $problems.Add('AccessVBOM is not 1, so VBA cannot be read or changed. Ask the user to trust access to the ' +

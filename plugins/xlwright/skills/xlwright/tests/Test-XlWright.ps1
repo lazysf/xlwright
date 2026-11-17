@@ -577,6 +577,23 @@ Invoke-Case 'prerequisite' {
         Assert 'AccessVBOM 0 without -Vba: reported, not a problem' ($sheet.Ready -eq $true -and $sheet.AccessVBOM.Value -eq 0 -and $sheet.AccessVBOM.Enabled -eq $false) ($sheet | ConvertTo-Json -Compress -Depth 6)
         Assert 'AccessVBOM 0 with -Vba: a problem' ($vba.Ready -eq $false -and @($vba.Problems).Count -eq 1 -and [string]$vba.Problems[0] -like 'AccessVBOM is not 1*do not change the setting yourself.') ($vba | ConvertTo-Json -Compress -Depth 6)
     }
+    # A policy value is taken before the one of the Trust Center; the user policy before the machine policy.
+    & $mocked 'Get-ItemProperty' {
+        param($Path)
+        if ($Path -like 'HKLM:\Software\Policies\*') { [pscustomobject]@{ AccessVBOM = 0 } }
+        elseif ($Path -like 'HKCU:\Software\Microsoft\*') { [pscustomobject]@{ AccessVBOM = 1 } }
+    } {
+        $r = Get-ExcelPrerequisite -Vba
+        Assert 'AccessVBOM 0 by machine policy, 1 by the user: a problem' ($r.Ready -eq $false -and $r.AccessVBOM.Value -eq 0 -and $r.AccessVBOM.Enabled -eq $false) ($r | ConvertTo-Json -Compress -Depth 6)
+    }
+    & $mocked 'Get-ItemProperty' {
+        param($Path)
+        if ($Path -like 'HKCU:\Software\Policies\*') { [pscustomobject]@{ AccessVBOM = 1 } }
+        elseif ($Path -like 'HKLM:\Software\Policies\*') { [pscustomobject]@{ AccessVBOM = 0 } }
+    } {
+        $r = Get-ExcelPrerequisite -Vba
+        Assert 'AccessVBOM 1 by user policy, 0 by machine policy: no problem' ($r.Ready -eq $true -and $r.AccessVBOM.Value -eq 1 -and $r.AccessVBOM.Enabled -eq $true) ($r | ConvertTo-Json -Compress -Depth 6)
+    }
     & $mocked 'Invoke-CimMethod' { throw 'simulated: access denied' } {
         $r = Get-ExcelPrerequisite
         Assert 'WMI call throws: a problem with the reason' ($r.Ready -eq $false -and $r.Wmi.Ok -eq $false -and $r.Wmi.Error -eq 'simulated: access denied' -and [string]$r.Problems[0] -like '*cannot be used: simulated: access denied*') ($r | ConvertTo-Json -Compress -Depth 6)

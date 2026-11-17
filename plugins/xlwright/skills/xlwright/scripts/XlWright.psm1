@@ -7,6 +7,7 @@ Use-ExcelWorkbook opens an existing workbook and invokes a script block with the
 and Workbook objects. New-ExcelWorkbook creates a new empty workbook file. Invoke-ExcelMacro runs a macro
 inside that script block and handles the dialogs the macro shows. Get-VbaTestName lists the VBA tests of
 a project. Get-ExcelPrerequisite checks, without starting Excel, what stands in the way of opening a workbook.
+Read-ExcelRange and Write-ExcelRange read and write the cells of a range in one call.
 
 Use-ExcelWorkbook disables VBA macros and workbook events by default and opens without updating
 external workbook links. Use -EnableMacros for an intentional macro test. Event handlers such as
@@ -538,5 +539,218 @@ function Get-ExcelPrerequisite {
     }
 }
 
+# Range.Value2 and the like are set and read through InvokeMember. Setting them with PowerShell's property syntax
+# fails with InvalidCastException once the same line has seen a value of another type, or after a value from
+# ConvertFrom-Json (docs/notes/range-value.md).
+function Set-ComProperty($Object, [string]$Name, $Value) {
+    [void][System.__ComObject].InvokeMember($Name, [Reflection.BindingFlags]::SetProperty, $null, $Object, [object[]]@(, $Value))
+}
+
+function Get-ComProperty($Object, [string]$Name) {
+    $value = [System.__ComObject].InvokeMember($Name, [Reflection.BindingFlags]::GetProperty, $null, $Object, $null)
+    # Without the comma PowerShell would unroll the array into its elements.
+    if ($value -is [Array]) { return , $value }
+    $value
+}
+
+# Value2 of one cell is the value itself, not an array. This returns a 1-based [row, column] array in every case.
+function Get-RangeArray($Range, [string]$Name) {
+    $raw = Get-ComProperty $Range $Name
+    if ($raw -is [Array] -and $raw.Rank -eq 2) { return , $raw }
+    $one = [Array]::CreateInstance([object], [int[]]@(1, 1), [int[]]@(1, 1))
+    $one[1, 1] = $raw
+    , $one
+}
+
+function Assert-SingleArea($Range) {
+    if ($Range.Areas.Count -ne 1) {
+        throw (New-Object System.ArgumentException(("The range " + $Range.Address($false, $false) + " has " +
+            $Range.Areas.Count + " areas. Pass one rectangular range."), 'Range'))
+    }
+}
+
+# XlCVError in the Microsoft documentation, and 2043 and 2050, which Excel returned but the documentation does not list.
+$script:CellErrorName = @{
+    2000 = '#NULL!'; 2007 = '#DIV/0!'; 2015 = '#VALUE!'; 2023 = '#REF!'; 2029 = '#NAME?'; 2036 = '#NUM!'; 2042 = '#N/A'
+    2043 = '#GETTING_DATA'; 2045 = '#SPILL!'; 2050 = '#CALC!'
+}
+
+function Read-ExcelRange {
+    <#
+    .SYNOPSIS
+    Reads a range in one COM call and returns it as an array of rows.
+
+    .DESCRIPTION
+    $rows[0][0] is the top-left cell. A single cell and a single row come back in the same shape. The values are
+    those of Range.Value2: null for an empty cell, strings, doubles (dates are serial numbers) and booleans.
+    An error value becomes @{ Error = '#DIV/0!' }; a code that is not known becomes '#ERROR<code>'.
+    With -Formula the strings of Range.Formula2 are returned instead: the formula, the constant as text, or ''.
+    #>
+    [CmdletBinding()]
+    param(
+        # One rectangular Range, e.g. $ws.Range('A1:C10') or $ws.UsedRange.
+        [Parameter(Mandatory)]$Range,
+        [switch]$Formula
+    )
+    Assert-SingleArea $Range
+    $raw = Get-RangeArray $Range $(if ($Formula) { 'Formula2' } else { 'Value2' })
+    $firstRow = $raw.GetLowerBound(0)
+    $firstColumn = $raw.GetLowerBound(1)
+    $rowCount = $raw.GetLength(0)
+    $columnCount = $raw.GetLength(1)
+    $rows = New-Object 'object[]' $rowCount
+    for ($r = 0; $r -lt $rowCount; $r++) {
+        $row = New-Object 'object[]' $columnCount
+        for ($c = 0; $c -lt $columnCount; $c++) {
+            $value = $raw[($firstRow + $r), ($firstColumn + $c)]
+            # Value2 returns numbers as Double; an Int32 is an error value with the XlCVError code in its low 16 bits.
+            if ($value -is [int]) {
+                $code = $value -band 0xFFFF
+                $name = $script:CellErrorName[$code]
+                if (-not $name) { $name = '#ERROR' + $code }
+                $value = [ordered]@{ Error = $name }
+            }
+            $row[$c] = $value
+        }
+        $rows[$r] = $row
+    }
+    , $rows
+}
+
+function ConvertTo-CellValue($Value, [string]$Position) {
+    if ($Value -is [psobject]) { $Value = $Value.psobject.BaseObject }
+    if ($null -eq $Value -or $Value -is [DBNull]) { return $null }
+    if ($Value -is [string]) {
+        # Excel cuts longer strings without an error.
+        if ($Value.Length -gt 32767) {
+            throw (New-Object System.ArgumentException(("Value" + $Position + " is a string of " + $Value.Length +
+                " characters; a cell holds at most 32767."), 'Value'))
+        }
+        if ($Value.Length -eq 0) { return $null }
+        return $Value
+    }
+    if ($Value -is [double] -or $Value -is [single]) {
+        # NaN becomes #NUM! in the cell.
+        if ([double]::IsNaN($Value) -or [double]::IsInfinity($Value)) {
+            throw (New-Object System.ArgumentException(("Value" + $Position + " is " + $Value +
+                ", which a cell cannot hold."), 'Value'))
+        }
+        return $Value
+    }
+    if ($Value -is [bool] -or $Value -is [datetime] -or $Value -is [decimal] -or $Value -is [int] -or $Value -is [long] -or
+        $Value -is [int16] -or $Value -is [byte] -or $Value -is [sbyte] -or $Value -is [uint16] -or $Value -is [uint32] -or
+        $Value -is [uint64]) {
+        return $Value
+    }
+    # A char is written as its character code, an array as an empty cell; others fail inside Excel.
+    throw (New-Object System.ArgumentException(("Value" + $Position + " is a " + $Value.GetType().FullName +
+        ". Use null, a string, a number, a boolean or a DateTime."), 'Value'))
+}
+
+function Write-ExcelRange {
+    <#
+    .SYNOPSIS
+    Writes an array of rows to a range in one COM call.
+
+    .DESCRIPTION
+    -Value is an array of rows of the same length, the shape Read-ExcelRange returns; write one row as ,@(1, 2, 3).
+    -Range is the top-left cell, or a range of exactly the size of -Value.
+
+    A cell gets null (empty), a string, a number, a boolean or a DateTime (written as its serial number; the number
+    format is left as it is). Other values, and strings longer than 32767 characters, are rejected before anything
+    is written. An empty string leaves the cell empty.
+
+    Strings are written as text: '001', '1/2', 'TRUE' or '=A1' stay as they are. Excel would read such a string as
+    typed input, so the strings it changed are written again with a leading apostrophe (PrefixCharacter).
+    With -Formula, the values go to Range.Formula2 and Excel reads them as typed input: '=A1*2' is a formula,
+    '001' becomes 1.
+
+    Nothing is returned. If Excel fails after the writing has started (e.g. on a protected sheet), the exception is
+    passed on and the range may be partly written.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Range,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Value,
+        [switch]$Formula
+    )
+    Assert-SingleArea $Range
+    $rowCount = $Value.Count
+    if ($rowCount -eq 0) { throw (New-Object System.ArgumentException('Value has no rows.', 'Value')) }
+    $rows = New-Object 'object[]' $rowCount
+    for ($r = 0; $r -lt $rowCount; $r++) {
+        $row = $Value[$r]
+        if ($row -is [psobject]) { $row = $row.psobject.BaseObject }
+        if ($row -is [string] -or $row -isnot [Collections.IList]) {
+            throw (New-Object System.ArgumentException(("Value[" + $r + "] is not an array. Each row must be an " +
+                "array; write one row as ,@(1, 2, 3)."), 'Value'))
+        }
+        $rows[$r] = $row
+    }
+    $columnCount = $rows[0].Count
+    for ($r = 0; $r -lt $rowCount; $r++) {
+        if ($rows[$r].Count -ne $columnCount -or $columnCount -eq 0) {
+            throw (New-Object System.ArgumentException(("Value[" + $r + "] has " + $rows[$r].Count + " values and " +
+                "Value[0] has " + $columnCount + ". All rows must have the same number of values, at least one."), 'Value'))
+        }
+    }
+
+    $given = $Range.Rows.Count.ToString() + 'x' + $Range.Columns.Count
+    if ($given -ne '1x1' -and $given -ne ($rowCount.ToString() + 'x' + $columnCount)) {
+        throw (New-Object System.ArgumentException(("The range " + $Range.Address($false, $false) + " is " + $given +
+            " but Value is " + $rowCount + "x" + $columnCount + ". Pass the top-left cell or a range of that size."), 'Range'))
+    }
+    $anchor = $Range.Cells.Item(1, 1)
+    $sheet = $Range.Worksheet
+    if ($anchor.Row + $rowCount - 1 -gt $sheet.Rows.Count -or $anchor.Column + $columnCount - 1 -gt $sheet.Columns.Count) {
+        throw (New-Object System.ArgumentException(("Value is " + $rowCount + "x" + $columnCount + " and does not fit " +
+            "on the sheet from " + $anchor.Address($false, $false) + "."), 'Value'))
+    }
+
+    $array = [Array]::CreateInstance([object], [int[]]@($rowCount, $columnCount), [int[]]@(1, 1))
+    $hasString = $false
+    for ($r = 0; $r -lt $rowCount; $r++) {
+        $row = $rows[$r]
+        for ($c = 0; $c -lt $columnCount; $c++) {
+            $cell = ConvertTo-CellValue $row[$c] ('[' + $r + '][' + $c + ']')
+            if ($cell -is [string]) { $hasString = $true }
+            $array[($r + 1), ($c + 1)] = $cell
+        }
+    }
+    $target = $anchor.Resize($rowCount, $columnCount)
+    if ($Formula) {
+        Set-ComProperty $target 'Formula2' $array
+        return
+    }
+    Set-ComProperty $target 'Value2' $array
+    if (-not $hasString) { return }
+
+    # Excel parses a string in an array as typed input. The strings it changed are written again as text.
+    $intended = $array.Clone()
+    $back = Get-RangeArray $target 'Value2'
+    $changed = $false
+    for ($r = 1; $r -le $rowCount; $r++) {
+        for ($c = 1; $c -le $columnCount; $c++) {
+            $text = $intended[$r, $c]
+            if ($text -is [string] -and -not ($back[$r, $c] -is [string] -and $back[$r, $c] -ceq $text)) {
+                $array[$r, $c] = "'" + $text
+                $changed = $true
+            }
+        }
+    }
+    if (-not $changed) { return }
+    Set-ComProperty $target 'Value2' $array
+    $back = Get-RangeArray $target 'Value2'
+    for ($r = 1; $r -le $rowCount; $r++) {
+        for ($c = 1; $c -le $columnCount; $c++) {
+            $text = $intended[$r, $c]
+            if ($text -is [string] -and -not ($back[$r, $c] -is [string] -and $back[$r, $c] -ceq $text)) {
+                throw ("Value[" + ($r - 1) + "][" + ($c - 1) + "] was not kept as text in " +
+                    $target.Cells.Item($r, $c).Address($false, $false) + ". The range has been written.")
+            }
+        }
+    }
+}
+
 Export-ModuleMember -Function Use-ExcelWorkbook, New-ExcelWorkbook, Get-ExcelProcessId, Invoke-ExcelMacro, Get-VbaTestName,
-    Get-ExcelPrerequisite
+    Get-ExcelPrerequisite, Read-ExcelRange, Write-ExcelRange

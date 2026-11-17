@@ -657,6 +657,112 @@ Invoke-Case 'workbook-summary' {
     Assert 'missing workbook: exit 1 and Error' ($missing.Exit -eq 1 -and $missing.Json.Error) $missing.Text
 }
 
+Invoke-Case 'range' {
+    $dir = New-CaseDir 'range'
+    $book = Join-Path $dir 'range.xlsx'
+    [void](New-ExcelWorkbook -Path $book)
+    $r = Use-ExcelWorkbook -Path $book -ScriptBlock {
+        param($xl, $wb)
+        $sheet = $wb.Worksheets.Item(1)
+        $out = [ordered]@{}
+        function Get-Failure([scriptblock]$Block) {
+            try { & $Block; 'no error' } catch { $_.Exception.GetType().Name + ': ' + $_.Exception.Message }
+        }
+        # The column offsets of the cells with an apostrophe.
+        function Get-Prefix([string]$Address) {
+            $cells = @($sheet.Range($Address).Cells)
+            @(for ($i = 0; $i -lt $cells.Count; $i++) { if ($cells[$i].PrefixCharacter -eq "'") { $i } }) -join ','
+        }
+
+        # Strings that Excel would parse stay text; the others keep their type.
+        $json = '{"n":9,"s":"t"}' | ConvertFrom-Json
+        # After this, an array set through PowerShell's property syntax fails with InvalidCastException
+        # (docs/notes/range-value.md). Write-ExcelRange must still work.
+        $sheet.Range('N1').Value2 = $json.n
+        $date = [datetime]'2026-11-17 06:00'
+        $row1 = @($null, '', [int]7, [long]8, [decimal]1.25, [double]2.5, $true, $date, [psobject]5, $json.n)
+        $row2 = @('001', '1/2', '=A1', 'TRUE', "'abc", $S.Text, ' 12 ', '#N/A', 'plain', $json.s)
+        $sheet.Range('A1:J2').Value2 = 'old'
+        Write-ExcelRange -Range $sheet.Range('A1') -Value @($row1, $row2)
+        $out.Mixed = Read-ExcelRange -Range $sheet.Range('A1:J2')
+        $out.Prefix = Get-Prefix 'A2:J2'
+        $out.DateFormat = [string]$sheet.Range('H1').NumberFormat
+        $out.GeneralFormat = [string]$sheet.Range('Z1').NumberFormat
+
+        # The values that make PowerShell's property syntax fail with InvalidCastException.
+        foreach ($v in @('a', 1, $true, 2.5)) { Write-ExcelRange -Range $sheet.Range('L1') -Value (, @($v)) }
+        Write-ExcelRange -Range $sheet.Range('L2') -Value (, @($json.n))
+        Write-ExcelRange -Range $sheet.Range('L3:M3') -Value (, @('x', [double]3))
+        $out.Repeated = Read-ExcelRange -Range $sheet.Range('L1:M3')
+
+        # Shapes: one row, one column, one cell, a range of the exact size.
+        Write-ExcelRange -Range $sheet.Range('A5') -Value (, @(1, 2, 3))
+        Write-ExcelRange -Range $sheet.Range('A6') -Value @(@(4), @(5))
+        Write-ExcelRange -Range $sheet.Range('C6:D7') -Value @(@(6, 7), @(8, 9))
+        $out.OneRow = Read-ExcelRange -Range $sheet.Range('A5:C5')
+        $out.OneColumn = Read-ExcelRange -Range $sheet.Range('A6:A7')
+        $out.OneCell = Read-ExcelRange -Range $sheet.Range('A5')
+        $out.EmptyCell = Read-ExcelRange -Range $sheet.Range('Z99')
+        $out.Exact = Read-ExcelRange -Range $sheet.Range('C6:D7')
+
+        # Formulas as typed input, read back as formulas; error values by name.
+        Write-ExcelRange -Range $sheet.Range('A9') -Formula -Value (, @('=SEQUENCE(2)', '=A5*2', '001', '=1/0', '=NA()', '=NOSUCHFN()'))
+        $out.Formulas = Read-ExcelRange -Range $sheet.Range('A9:F9') -Formula
+        $out.FormulaValues = Read-ExcelRange -Range $sheet.Range('A9:F10')
+
+        # Rejected input leaves the range as it was.
+        $sheet.Range('A12:C13').Value2 = 'keep'
+        $failures = [ordered]@{
+            Ragged = Get-Failure { Write-ExcelRange -Range $sheet.Range('A12') -Value @(@(1, 2), @(3)) }
+            NotRows = Get-Failure { Write-ExcelRange -Range $sheet.Range('A12') -Value @(1, 2, 3) }
+            Size = Get-Failure { Write-ExcelRange -Range $sheet.Range('A12:C13') -Value (, @(1, 2)) }
+            Char = Get-Failure { Write-ExcelRange -Range $sheet.Range('A12') -Value @(@(1, 2), @(3, [char]'q')) }
+            Guid = Get-Failure { Write-ExcelRange -Range $sheet.Range('A12') -Value (, @([guid]::Empty)) }
+            NaN = Get-Failure { Write-ExcelRange -Range $sheet.Range('A12') -Value (, @([double]::NaN)) }
+            Nested = Get-Failure { Write-ExcelRange -Range $sheet.Range('A12') -Value (, @(, @(1, 2))) }
+            Long = Get-Failure { Write-ExcelRange -Range $sheet.Range('A12') -Value (, @('x' * 32768)) }
+            Edge = Get-Failure { Write-ExcelRange -Range $sheet.Range('A1048576') -Value @(@(1), @(2)) }
+            Areas = Get-Failure { Write-ExcelRange -Range $sheet.Range('A12,C12') -Value (, @(1)) }
+            ReadAreas = Get-Failure { [void](Read-ExcelRange -Range $sheet.Range('A12,C12')) }
+        }
+        $out.Failures = $failures
+        $out.Kept = Read-ExcelRange -Range $sheet.Range('A12:C13')
+        $out
+    }
+    $mixed = $r.Mixed
+    $row1 = @($mixed[0] | ForEach-Object { if ($null -eq $_) { 'null' } else { $_.GetType().Name + ':' + $_ } }) -join ','
+    Assert 'values keep their type; null and empty string clear the cell' ($row1 -eq 'null,null,Double:7,Double:8,Double:1.25,Double:2.5,Boolean:True,Double:46343.25,Double:5,Double:9') $row1
+    $row2 = @($mixed[1] | ForEach-Object { if ($null -eq $_) { 'null' } else { $_.GetType().Name + ':' + $_ } }) -join '|'
+    $expected = (@('001', '1/2', '=A1', 'TRUE', "'abc", $S.Text, ' 12 ', '#N/A', 'plain', 't') | ForEach-Object { 'String:' + $_ }) -join '|'
+    Assert 'strings stay text' ($row2 -eq $expected) $row2
+    Assert 'apostrophe only where Excel changed the string' ($r.Prefix -eq '0,1,2,3,4,6,7') $r.Prefix
+    Assert 'number format of a date left as it is' ($r.DateFormat -eq $r.GeneralFormat) ($r.DateFormat + ' <> ' + $r.GeneralFormat)
+    $repeated = ($r.Repeated | ForEach-Object { @($_) -join ',' }) -join ';'
+    Assert 'values of other types and from JSON in a row' ($repeated -eq '2.5,;9,;x,3') $repeated
+    Assert 'one row' ((@($r.OneRow).Count -eq 1) -and ((@($r.OneRow[0]) -join ',') -eq '1,2,3')) ($r.OneRow | ConvertTo-Json -Compress)
+    Assert 'one column' ((@($r.OneColumn).Count -eq 2) -and $r.OneColumn[0][0] -eq 4 -and $r.OneColumn[1][0] -eq 5) ($r.OneColumn | ConvertTo-Json -Compress)
+    Assert 'one cell as one row of one value' ((@($r.OneCell).Count -eq 1) -and (@($r.OneCell[0]).Count -eq 1) -and $r.OneCell[0][0] -eq 1) ($r.OneCell | ConvertTo-Json -Compress)
+    Assert 'empty cell as null' ((@($r.EmptyCell).Count -eq 1) -and $null -eq $r.EmptyCell[0][0]) ($r.EmptyCell | ConvertTo-Json -Compress)
+    Assert 'range of the exact size' (($r.Exact | ForEach-Object { @($_) -join ',' }) -join ';' -eq '6,7;8,9') ($r.Exact | ConvertTo-Json -Compress)
+    $formulas = @($r.Formulas[0]) -join '|'
+    Assert 'formulas written as typed input and read back' ($formulas -eq '=SEQUENCE(2)|=A5*2|1|=1/0|=NA()|=NOSUCHFN()') $formulas
+    $values = $r.FormulaValues
+    $errors = @($values[0][3].Error, $values[0][4].Error, $values[0][5].Error) -join ','
+    Assert 'formula spills (Formula2)' ($values[0][0] -eq 1 -and $values[1][0] -eq 2 -and $values[0][1] -eq 2) ($values | ConvertTo-Json -Compress)
+    Assert 'error values by name' ($errors -eq '#DIV/0!,#N/A,#NAME?') $errors
+    foreach ($name in $r.Failures.Keys) {
+        Assert ('rejected: ' + $name) ($r.Failures[$name] -like 'ArgumentException:*') $r.Failures[$name]
+    }
+    $kept = ($r.Kept | ForEach-Object { @($_) -join ',' }) -join ';'
+    Assert 'rejected input wrote nothing' ($kept -eq 'keep,keep,keep;keep,keep,keep') $kept
+
+    # Through Invoke-ExcelScript.ps1: the rows and an error value as JSON.
+    $run = Invoke-Runner $book 'range-read'
+    $j = $run.Json.Result
+    Assert 'Invoke-ExcelScript: exit 0' ($run.Exit -eq 0) $run.Output
+    Assert 'Invoke-ExcelScript: rows and error value in JSON' ($j[0].Rows[0][0] -eq $S.Text -and $j[0].Rows[0][1].Error -eq '#DIV/0!' -and $null -eq $j[0].Rows[1][0]) ($j | ConvertTo-Json -Depth 6 -Compress)
+}
+
 Invoke-Case 'userform' {
     $dir = New-CaseDir 'userform'
     $book = Join-Path $dir 'form.xlsm'

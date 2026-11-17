@@ -107,7 +107,7 @@ Excel を `New-Object -ComObject` で直接起動しない。起動、ブック�
 # read.ps1（UTF-8。日本語を書いてよい）
 param($xl, $wb)
 $ws = $wb.Worksheets.Item('集計表')
-@{ A1 = $ws.Range('A1').Value2; B1 = $ws.Range('B1').Formula; Rows = $ws.Range('A1:B2').Value2 }
+@{ Rows = (Read-ExcelRange -Range $ws.Range('A1:B2')); Formulas = (Read-ExcelRange -Range $ws.Range('A1:B2') -Formula) }
 ```
 
 ```powershell
@@ -116,7 +116,7 @@ powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/scripts/Invoke-ExcelScript.
 
 - スクリプトのファイルは UTF-8 として読む（BOM の有無を問わない）。日本語のシート名や文字列を直接書いてよい。
 - 結果は UTF-8 の JSON で `-OutFile` に書く。`Ok`、`Result`（ScriptBlock が出力した値の配列）、`Error`、`Warnings` を持つ。失敗した時は終了コードが 1。`powershell.exe` の標準出力は Git Bash から見ると日本語が化けるので、結果は JSON で読む。
-- 返す値は文字列・数値・真偽値・hashtable・配列にする。COM オブジェクトは `"[COM object]"` に置き換わる。複数セルの `Value2`（2 次元配列）は行の配列になる。COM メソッドの戻り値（`Worksheets.Add()` など）も結果に混ざるので、要らないものは `[void]` で捨てる。
+- 返す値は文字列・数値・真偽値・hashtable・配列にする。COM オブジェクトは `"[COM object]"` に置き換わる。複数セルの `Value2`（2 次元配列）は行の配列になるが、エラー値は数値（`-2146826281` など）のまま出るので、セルは `Read-ExcelRange` で読む。COM メソッドの戻り値（`Worksheets.Add()` など）も結果に混ざるので、要らないものは `[void]` で捨てる。
 - `-Create` を付けると、先に新しいブックを作る（既にあれば失敗する）。拡張子が `.xlsm` ならマクロ有効ブック、`.xlsx` なら通常のブックになる。
 - `-Save` は、ScriptBlock が例外なしで終わった時だけ保存する。例外が出たら、保存せずに閉じる。
 - `-Visible` はウィンドウを表示する。ユーザーの画面に Excel が出るので、先に一言伝える。
@@ -144,7 +144,8 @@ Invoke-ExcelMacro -Excel $xl -Name 'Util.AddNums' -ArgumentList 2, 3
 
 ### PowerShell + COM の癖
 
-- **セルへの代入は `Range('B2')` 形式で、型を明示する。** `$ws.Cells.Item(r, c).Value2 = 3` は `System.Int32` を `System.String` にキャストできないという `InvalidCastException` で落ちることがある。`$ws.Range("B$r").Value2 = [double]$v` なら通る。
+- **複数のセルは `Read-ExcelRange` と `Write-ExcelRange` で読み書きする。** 1 セルずつの代入は遅く、同じ行の代入に型の違う値を渡した時や、`ConvertFrom-Json` の数値を代入した後の代入が `InvalidCastException` で落ちる。一度落ちると、同じプロセスでは配列の代入も落ち続ける。2 つの関数はこれを避け、`001` や `1/2` のような文字列も文字のまま書く。使い方は [COM 編集の詳細](references/com.md)の「セルの範囲を読み書きする」。
+- **1 セルに書く時も、`Write-ExcelRange -Range $ws.Range('B2') -Value (, @($v))` を使う。** `$ws.Range('B2').Value2 = $v` の形は、上の `InvalidCastException` に当たることがあり、文字列は Excel が解釈して変える。
 - **`-File` で直接実行するスクリプトは ASCII だけで書く。** `powershell.exe`（5.1）は BOM なしの `.ps1` を UTF-8 として読まない。`Invoke-ExcelScript.ps1` に渡すファイルには、この制限はない。
 
 ## 検証
@@ -163,7 +164,7 @@ Invoke-ExcelMacro -Excel $xl -Name 'Util.AddNums' -ArgumentList 2, 3
 powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/tests/Test-XlWright.ps1" -OutFile <result.json>
 ```
 
-- 既定の項目は Excel を表示しない。セルと VBA、`Invoke-ExcelScript.ps1`、VBA のコンパイル、マクロの実行、VBA のテストの実行、正本との照合、正本に無いコンポーネントの削除、上限、呼び出し元が殺された時、不正な入力の拒否（VBA のソース、リボンの XML、配布の失敗）、見張りが立てられない時、前提の確認、ブックの概要、UserForm を確かめる。7〜9 分ほどかかる。
+- 既定の項目は Excel を表示しない。セルと VBA、`Invoke-ExcelScript.ps1`、範囲の読み書き、VBA のコンパイル、マクロの実行、VBA のテストの実行、正本との照合、正本に無いコンポーネントの削除、上限、呼び出し元が殺された時、不正な入力の拒否（VBA のソース、リボンの XML、配布の失敗）、見張りが立てられない時、前提の確認、ブックの概要、UserForm を確かめる。7〜9 分ほどかかる。
 - `-Full` を付けると、コンパイルエラーの検出、マクロが出すダイアログの扱い、失敗する VBA のテスト、リボンの押下（同名の組み合わせ、閉じられないダイアログを含む）、リボンの見え方の照合、配布ブックの出力（テストのモジュールを外す出力を含む）も確かめる。Excel と VBE が画面に出るので、先に人へ伝え、出たウィンドウを操作しないよう頼む。これらの項目は、Excel が前面を取らないことも確かめる。
 - `-Case timeout,userform` のように、名前を指定した項目だけを流せる。
 - 終了コードは、0 がすべて合格、1 が不合格あり、2 が前提を満たさない・Excel が残って止まった。一時フォルダは合否によらず最後に消す。不合格の理由は出力と `-OutFile` に残る。試験のブックを調べたい時は、`-KeepTemp` を付けて流し直すと残り、場所を出力する。

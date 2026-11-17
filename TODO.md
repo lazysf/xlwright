@@ -7,7 +7,6 @@
 
 ## 優先度 2: 見た目の確認と、扱える範囲
 
-- [ ] シートの見た目の確認。範囲を PNG にして、書式、条件付き書式、グラフ、列幅を画像で見る。`PrintWindow` と `Range.CopyPicture` のどちらが使えるかを実験する。
 - [ ] UserForm の実行時の画像。表示したフォームを撮り、レイアウトを確かめる。
 - [ ] リボンの画像の埋め込み。`Add-CustomUI.ps1` で `image` 属性と `customUI/images` を扱う。
 - [ ] リボンの押下の対象を広げる。toggleButton、menu の項目、dropDown。

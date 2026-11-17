@@ -16,6 +16,7 @@
 - ブックのシート、定義名、テーブル、外部リンク、データ接続、VBA のコンポーネント、customUI を 1 回で返す `Get-WorkbookSummary.ps1`。
 - セルの範囲を行の配列として 1 回で読み書きする `Read-ExcelRange` と `Write-ExcelRange`。文字列は既定で文字のまま書き、`-Formula` を付けると数式として書く。エラー値は名前（`#DIV/0!` など）で返す。
 - 値がエラー（`#REF!`、`#NAME?` など）になったセルを、シート、番地、エラーの名前、数式とともに返す `Find-CellError.ps1`。
+- ブックを開いた Excel のウィンドウを、画面に出さずに PNG に保存する `Save-WorkbookScreenshot.ps1`。リボン、セルの書式、グラフ、ボタン、シートの見出しを、人が見るのと同じ形で確かめられる。
 
 ### Fixed
 

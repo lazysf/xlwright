@@ -6,6 +6,7 @@ Windows 版 Excel を PowerShell の COM で操作して、Excel のブックと
 できること:
 
 - シートの値・数式・書式の確認と編集
+- ブックが人にどう見えるか（リボン、書式、グラフ、ボタン）を画像で確かめること
 - VBA（標準・クラス・文書モジュール）と UserForm の書き出し・編集・取り込み
 - 正本の VBA とブックの中の VBA の照合
 - VBA のコンパイルと、コンパイルエラーの文言と場所の取得
@@ -43,7 +44,7 @@ Claude Code のプラグインとして入れます。この repo を marketplac
 powershell.exe -NoProfile -File "$env:USERPROFILE\.claude\plugins\cache\xlwright\xlwright\<版>\skills\xlwright\tests\Test-XlWright.ps1"
 ```
 
-`<版>` は、入れた版の番号（`0.1.0` など）を名前に持つフォルダです。`-Full` を付けると、Excel と VBE を画面に出す試験（コンパイルエラーの検出、マクロが出すダイアログの扱い、失敗する VBA のテスト、リボンの押下と見え方の照合、配布ブックの出力）も行います。
+`<版>` は、入れた版の番号（`0.1.0` など）を名前に持つフォルダです。`-Full` を付けると、Excel と VBE を画面に出す試験（コンパイルエラーの検出、マクロが出すダイアログの扱い、失敗する VBA のテスト、リボンの押下と見え方の照合、配布ブックの出力、ブックの見た目の画像）も行います。
 
 ## 開発
 

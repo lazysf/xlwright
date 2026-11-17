@@ -59,6 +59,32 @@ powershell.exe -NoProfile -File "<skill>/scripts/Find-CellError.ps1" -Path <work
 - 定義名、条件付き書式、入力規則の中の `#REF!` は、セルの値に出ないので見つからない。定義名の参照先は `Get-WorkbookSummary.ps1` の `Names` で読める。
 - 確かめたのは、`.xlsx` の数式と定数のエラー、こぼれた先のエラー、`#SPILL!`、非表示と保護のシート、使っている範囲が `A1` から始まらないシート、20001 行のシート。数式を非表示にした保護シート、手動の計算で保存されたブック、16384 列に近い広いシート、`.xlsb` と `.xls` では確かめていない。
 
+## 見た目を画像にする
+
+作ったブックが人にどう見えるかを、Excel のウィンドウの画像で確かめる。リボン、数式バー、セルの書式と条件付き書式、列幅、グラフ、図形とボタン、シートの見出し、状態バーが写る。
+
+```powershell
+powershell.exe -NoProfile -File "<skill>/scripts/Save-WorkbookScreenshot.ps1" -Path <workbook> -OutFile <result.json> -ImageFile <image.png>
+```
+
+- 新しい Excel で、マクロとイベントを無効にし、リンクを更新せずに開いて、保存せずに閉じる。ブックは変わらない。
+- ウィンドウは、どの画面にも入らない位置に置いてから表示する。画面には出ず、前面も取らない。クリップボードは使わない。非表示の Excel のウィンドウは黒く写るので、表示はする。
+- `-Sheet` でシートを、`-Range` で左上に置くセルを選ぶ。省略すると、開いた時のシートを、保存された表示位置のまま写す。非表示のシートは失敗になる。
+- `-Width` と `-Height`（既定 1280 × 800）は、ウィンドウの大きさを px で決める。画像も同じ大きさになる。
+- `Workbook_Open` やリボンの `onLoad` が作る見た目を写す時だけ、`-EnableMacros` を付ける。マクロとイベントが動くので、「マクロが動くことへの注意」（SKILL.md）に従う。
+- 画像には、ユーザーの Office のテーマとアカウントの表示が写る。画像をブックや Git に入れない。
+- 結果は UTF-8 の JSON で `-OutFile` に書く。終了コードは、画像を保存できた時に 0、それ以外は 1。
+
+  | 項目 | 中身 |
+  | --- | --- |
+  | `Sheet` | 写したシート |
+  | `VisibleRange` | ウィンドウに見えていたセルの範囲（`A1:Q20` の形） |
+  | `ImageFile`、`Width`、`Height` | 画像のパスと、px での大きさ |
+  | `Error`、`Warnings` | 失敗の理由と警告。画面の拡大率が 100% でない時は、確かめていないと警告する |
+
+- 画像は、Read で開いて目で見る。値や色を正確に確かめたい時は、値を `Read-ExcelRange` で、書式を COM のプロパティ（`Interior.Color` など）で読む方が確か。
+- 確かめたのは、`.xlsx` のワークシート、塗り、条件付き書式、グラフ、フォームのボタン、別のシートの離れたセルへの移動、画面の拡大率 100%。100% 以外の拡大率、複数の画面、UserForm、グラフシート、ウィンドウ枠の固定、改ページプレビュー、`-EnableMacros` では確かめていない。
+
 ## セルの範囲を読み書きする
 
 `XlWright.psm1` の `Read-ExcelRange` と `Write-ExcelRange` は、範囲を 1 回の COM の呼び出しで読み書きする。`Use-ExcelWorkbook` の ScriptBlock の中と、`Invoke-ExcelScript.ps1` に渡すスクリプトの中で使える。

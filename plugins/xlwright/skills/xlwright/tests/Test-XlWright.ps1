@@ -5,7 +5,7 @@ Checks the xlwright scripts against the real Excel on this machine.
 .DESCRIPTION
 Every case creates its own workbooks in a new temporary folder and checks explicit expected values.
 Nothing outside that folder is changed. The default cases keep Excel hidden. -Full adds the cases
-that show Excel and the VBE on the screen (VBA compile error, macro dialogs, failing VBA tests, ribbon click, ribbon layout, publish with VBA lock, publish without the test modules); do not touch
+that show Excel and the VBE on the screen (VBA compile error, macro dialogs, failing VBA tests, ribbon click, ribbon layout, publish with VBA lock, publish without the test modules, screenshot); do not touch
 those windows while they run. These cases also check that Excel never takes the foreground.
 
 Preconditions: no Excel process is running, and AccessVBOM is 1. Otherwise nothing runs (exit 2).
@@ -1272,6 +1272,87 @@ if ($Full) {
         Assert '-ExcludeTests, a module uses a test module: exit 1 and the compile error' ($uses.Exit -ne 0 -and $usesOutput -like '*does not compile without the test modules*module Uses*') $uses.Output
         Assert '-ExcludeTests, a module uses a test module: nothing published' (-not (Test-Path -LiteralPath (Join-Path $usesDir 'dist\book.xlsm'))) 'published'
         Assert '-ExcludeTests, a module uses a test module: work book unchanged' ((Get-FileHashText $usesBook) -eq $usesHash) 'hash changed'
+    }
+
+    Invoke-Case 'screenshot' -WatchForeground {
+        $dir = New-CaseDir 'screenshot'
+        $book = Join-Path $dir 'tool.xlsx'
+        [void](New-ExcelWorkbook -Path $book)
+        Use-ExcelWorkbook -Path $book -Save -ScriptBlock {
+            param($xl, $wb)
+            $main = $wb.Worksheets.Item(1)
+            $main.Name = 'Main'
+            $main.Range('A1:B2').Interior.Color = 16711935  # magenta
+            $far = $wb.Worksheets.Add([Type]::Missing, $main)
+            $far.Name = 'Far'
+            $far.Range('AA200:AB201').Interior.Color = 65280  # green
+            $hidden = $wb.Worksheets.Add([Type]::Missing, $far)
+            $hidden.Name = 'Hidden'
+            $hidden.Visible = 0  # xlSheetHidden
+            $main.Activate()
+        }
+        $hash = Get-FileHashText $book
+        if (-not ('XlWrightTest.Pixels' -as [type])) {
+            Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
+namespace XlWrightTest {
+    public static class Pixels {
+        // Pixels close to pure magenta and pure green: the fills of the test sheets. The ribbon icons use red,
+        // so red is not used.
+        public static int[] MagentaGreen(string file) {
+            using (var bmp = new System.Drawing.Bitmap(file)) {
+                int magenta = 0, green = 0;
+                for (int y = 0; y < bmp.Height; y += 2) for (int x = 0; x < bmp.Width; x += 2) {
+                    var c = bmp.GetPixel(x, y);
+                    if (c.R > 200 && c.G < 60 && c.B > 200) magenta++;
+                    if (c.G > 200 && c.R < 60 && c.B < 60) green++;
+                }
+                return new int[] { magenta, green };
+            }
+        }
+    }
+}
+'@
+        }
+        $shooter = Join-Path $scripts 'Save-WorkbookScreenshot.ps1'
+        $shoot = {
+            param([string]$Name, [string[]]$Extra)
+            $json = Join-Path $dir "$Name.json"
+            $png = Join-Path $dir "$Name.png"
+            $run = Invoke-Script $shooter (@('-Path', $book, '-OutFile', $json, '-ImageFile', $png) + $Extra)
+            $text = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8)
+            $colors = $null
+            if (Test-Path -LiteralPath $png) { $colors = [XlWrightTest.Pixels]::MagentaGreen($png) }
+            [pscustomobject]@{ Exit = $run.Exit; Json = ($text | ConvertFrom-Json); Text = $text; Png = $png; Colors = $colors }
+        }
+        # The script does not use the clipboard; whatever text it holds stays.
+        $clipboard = Get-Clipboard -Format Text -Raw
+
+        $default = & $shoot 'default' @()
+        Assert 'default: exit 0, no error, the active sheet from A1' ($default.Exit -eq 0 -and $null -eq $default.Json.Error -and
+            $default.Json.Path -eq $book -and $default.Json.Sheet -eq 'Main' -and [string]$default.Json.VisibleRange -like 'A1:*') $default.Text
+        Assert 'default: 1280 x 800 PNG' ($default.Json.Width -eq 1280 -and $default.Json.Height -eq 800 -and $default.Json.ImageFile -eq $default.Png -and
+            (Test-Path -LiteralPath $default.Png)) $default.Text
+        # A hidden Excel window is drawn black: the fill shows only if the window was really shown.
+        Assert 'default: the magenta fill of Main drawn, not the green of Far' ($default.Colors -and $default.Colors[0] -gt 500 -and $default.Colors[1] -eq 0) ($default.Colors -join ',')
+
+        $far = & $shoot 'far' @('-Sheet', 'Far', '-Range', 'AA200', '-Width', '900', '-Height', '600')
+        Assert '-Sheet, -Range: that sheet, scrolled to the range' ($far.Exit -eq 0 -and $far.Json.Sheet -eq 'Far' -and [string]$far.Json.VisibleRange -like 'AA200:*') $far.Text
+        Assert '-Width, -Height: 900 x 600' ($far.Json.Width -eq 900 -and $far.Json.Height -eq 600) $far.Text
+        Assert '-Range: the green fill drawn, not the magenta' ($far.Colors -and $far.Colors[1] -gt 500 -and $far.Colors[0] -eq 0) ($far.Colors -join ',')
+        # Goto also activates the sheet of the range, so -Sheet is checked without -Range.
+        $sheetOnly = & $shoot 'sheet-only' @('-Sheet', 'Far')
+        Assert '-Sheet without -Range: Far from A1, the magenta of Main not drawn' ($sheetOnly.Exit -eq 0 -and $sheetOnly.Json.Sheet -eq 'Far' -and
+            [string]$sheetOnly.Json.VisibleRange -like 'A1:*' -and $sheetOnly.Colors -and $sheetOnly.Colors[0] -eq 0) ($sheetOnly.Text + ' ' + ($sheetOnly.Colors -join ','))
+
+        foreach ($bad in @(
+            @{ Name = 'hidden sheet'; Extra = @('-Sheet', 'Hidden'); Error = '*hidden*Hidden*' },
+            @{ Name = 'missing sheet'; Extra = @('-Sheet', 'NoSuch'); Error = '*Not a sheet*NoSuch*Main, Far, Hidden*' },
+            @{ Name = 'bad range'; Extra = @('-Range', 'notarange!!'); Error = '*Not a range*notarange!!*' })) {
+            $r = & $shoot ($bad.Name -replace ' ', '-') $bad.Extra
+            Assert ($bad.Name + ': exit 1 and Error, no image') ($r.Exit -eq 1 -and [string]$r.Json.Error -like $bad.Error -and -not (Test-Path -LiteralPath $r.Png)) $r.Text
+        }
+        Assert 'clipboard text unchanged' ((Get-Clipboard -Format Text -Raw) -eq $clipboard) 'changed'
+        Assert 'workbook unchanged' ((Get-FileHashText $book) -eq $hash) 'hash changed'
     }
 }
 

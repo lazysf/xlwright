@@ -1220,6 +1220,20 @@ if ($Full) {
         Assert 'without -ExcludeTests: exit 0, only the path in the output' ($plain.Exit -eq 0 -and $plain.Output.Trim() -eq (Join-Path $dir 'dist-plain\book.xlsm')) $plain.Output
         $p = Use-ExcelWorkbook -Path (Join-Path $dir 'dist-plain\book.xlsm') -EnableMacros -ScriptBlock $probe
         Assert 'without -ExcludeTests, dist: locked, test module kept' ($p.Protection -eq 1 -and $p.TestModule -eq 'ran' -and $p.Mixed -eq 'ran') ($p | ConvertTo-Json -Compress)
+
+        # Uses calls a function of Test_Helper: without the test module the copy does not compile and is not published.
+        $usesDir = Join-Path $dir 'uses'
+        New-Item -ItemType Directory -Path $usesDir | Out-Null
+        $usesBook = Join-Path $usesDir 'book.xlsm'
+        [void](New-ExcelWorkbook -Path $usesBook)
+        Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $usesDir 'vba') -Recurse
+        Copy-Item -Path (Join-Path $data 'vba-test\uses-test\standard\*') -Destination (Join-Path $usesDir 'vba\standard')
+        $usesHash = Get-FileHashText $usesBook
+        $uses = Invoke-Script $publisher @('-Path', $usesBook, '-OutDir', (Join-Path $usesDir 'dist'), '-ExcludeTests')
+        $usesOutput = $uses.Output -replace '\s+', ' '
+        Assert '-ExcludeTests, a module uses a test module: exit 1 and the compile error' ($uses.Exit -ne 0 -and $usesOutput -like '*does not compile without the test modules*module Uses*') $uses.Output
+        Assert '-ExcludeTests, a module uses a test module: nothing published' (-not (Test-Path -LiteralPath (Join-Path $usesDir 'dist\book.xlsm'))) 'published'
+        Assert '-ExcludeTests, a module uses a test module: work book unchanged' ((Get-FileHashText $usesBook) -eq $usesHash) 'hash changed'
     }
 }
 

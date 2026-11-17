@@ -9,7 +9,8 @@ name + .xlsm when the work book is named workbook.xlsm.
 
 -ExcludeTests removes the standard modules whose name starts with "Test_" from the published copy before it
 is locked. The work book keeps them. Tests that are still in the published copy (a Sub named Test_* in
-another standard module) are listed in a warning.
+another standard module) are listed in a warning. The copy is then compiled with Test-VbaCompile.ps1; if a module that
+is left uses a removed one, nothing is published and the compile error is thrown.
 
 Output: the path of the published workbook, as the last line. With -ExcludeTests, one line
 "removed test module: <name>" per removed module comes before it.
@@ -89,6 +90,18 @@ try {
             if ($left.Count -gt 0) {
                 Write-Warning ("Tests left in the published workbook (not in a module named Test_*): " + ($left -join ', '))
             }
+        }
+        # A module that is left can use a removed one. In the locked copy that fails only when it runs on the user's machine.
+        $compileJson = Join-Path ([IO.Path]::GetTempPath()) ($publishId + '-compile.json')
+        try {
+            & (Join-Path $PSScriptRoot 'Test-VbaCompile.ps1') -Path $pendingOutput -OutFile $compileJson
+            $compiled = [IO.File]::ReadAllText($compileJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        }
+        finally { Remove-Item -LiteralPath $compileJson -Force -ErrorAction SilentlyContinue }
+        if ($compiled.Compiled -ne $true) {
+            $place = $compiled.CompileError
+            throw ("The published copy does not compile without the test modules: " + $place.Message + " (module " +
+                $place.Module + ", line " + $place.Line + "). Move what the other modules use out of the Test_* modules.")
         }
     }
     & (Join-Path $PSScriptRoot 'Lock-VbaProject.ps1') -Path $pendingOutput

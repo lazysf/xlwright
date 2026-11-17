@@ -13,3 +13,4 @@
   - [prerequisite.md](./notes/prerequisite.md): 作業の前提（Excel のプロセス、`AccessVBOM`、WMI、Git）を読み取りだけで調べる方法と、その実測。
   - [workbook-summary.md](./notes/workbook-summary.md): シート、定義名、外部リンク、データ接続、VBA、customUI を COM と zip から読む方法と、その実測。
   - [range-value.md](./notes/range-value.md): セルの範囲を 2 次元配列で読み書きする時の型と形の実測と、`Read-ExcelRange` と `Write-ExcelRange` の形にした理由。
+  - [cell-error.md](./notes/cell-error.md): エラー値のセルを `SpecialCells` と `Value2` で列挙する方法の比較と、`Find-CellError.ps1` の形にした理由。

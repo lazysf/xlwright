@@ -763,6 +763,82 @@ Invoke-Case 'range' {
     Assert 'Invoke-ExcelScript: rows and error value in JSON' ($j[0].Rows[0][0] -eq $S.Text -and $j[0].Rows[0][1].Error -eq '#DIV/0!' -and $null -eq $j[0].Rows[1][0]) ($j | ConvertTo-Json -Depth 6 -Compress)
 }
 
+function Invoke-FindError([string]$Book, [string[]]$Extra = @()) {
+    $json = Join-Path $temp ('cell-error-' + [guid]::NewGuid().ToString('N') + '.json')
+    $run = Invoke-Script (Join-Path $scripts 'Find-CellError.ps1') (@('-Path', $Book, '-OutFile', $json) + $Extra)
+    $parsed = $null
+    $text = ''
+    if (Test-Path -LiteralPath $json) {
+        $text = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8)
+        $parsed = $text | ConvertFrom-Json
+    }
+    [pscustomobject]@{ Exit = $run.Exit; Json = $parsed; Text = $text; Output = $run.Output }
+}
+
+Invoke-Case 'cell-error' {
+    $dir = New-CaseDir 'cell-error'
+    $book = Join-Path $dir 'errors.xlsx'
+    [void](New-ExcelWorkbook -Path $book)
+    Use-ExcelWorkbook -Path $book -Save -ScriptBlock {
+        param($xl, $wb)
+        $data = $wb.Worksheets.Item(1)
+        $data.Name = 'Data'
+        # Row 1: formula errors, a formula that spills errors (E1:E2), a blocked spill (G1). Row 2: a constant error.
+        Write-ExcelRange -Range $data.Range('A1') -Formula -Value @(
+            @('=1/0', '=1+1', '=IFERROR(1/0,0)', $null, '=SEQUENCE(2)/0', $null, '=SEQUENCE(2)'),
+            @('#N/A', '=NOSUCHFN()', '=#REF!+1', $null, $null, $null, 'block'))
+        $clean = $wb.Worksheets.Add([Type]::Missing, $data)
+        $clean.Name = 'Clean'
+        Write-ExcelRange -Range $clean.Range('A1') -Formula -Value (, @('=1+1', 'x', '3'))
+        $hidden = $wb.Worksheets.Add([Type]::Missing, $clean)
+        $hidden.Name = 'Hidden'
+        Write-ExcelRange -Range $hidden.Range('B2') -Formula -Value (, @('=NA()'))
+        $hidden.Visible = 2  # xlSheetVeryHidden
+        $protected = $wb.Worksheets.Add([Type]::Missing, $hidden)
+        $protected.Name = 'Protected'
+        Write-ExcelRange -Range $protected.Range('A1') -Formula -Value (, @('=1/0'))
+        $protected.Protect()
+        $offset = $wb.Worksheets.Add([Type]::Missing, $protected)
+        $offset.Name = 'Offset'
+        # The used range starts at C5; the addresses must still be those of the sheet.
+        Write-ExcelRange -Range $offset.Range('C5') -Formula -Value @(@('=1/0', $null), @($null, 'x'))
+        # Errors on both sides of the 10000-row blocks that the script reads.
+        $long = $wb.Worksheets.Add([Type]::Missing, $offset)
+        $long.Name = 'Long'
+        foreach ($address in 'A1', 'A10000', 'A10001', 'A20001') {
+            Write-ExcelRange -Range $long.Range($address) -Formula -Value (, @('=NA()'))
+        }
+        $chart = $wb.Charts.Add()
+        $chart.Name = 'Chart1'
+    }
+    $hash = Get-FileHashText $book
+
+    $all = Invoke-FindError $book
+    $detail = $all.Text
+    Assert 'exit 0, no error, path' ($all.Exit -eq 0 -and $null -eq $all.Json.Error -and $all.Json.Path -eq $book) $detail
+    $counts = @($all.Json.Sheets | ForEach-Object { $_.Name + ':' + $_.Count }) -join ','
+    Assert 'worksheets in order, chart sheet left out, hidden and protected read' ($counts -eq 'Data:7,Clean:0,Hidden:1,Protected:1,Offset:1,Long:4') $counts
+    Assert 'total, not truncated, calculation' ($all.Json.Count -eq 14 -and $all.Json.Truncated -eq $false -and $all.Json.Calculation -eq 'automatic') $detail
+    $errors = @($all.Json.Sheets[0].Errors | ForEach-Object { $_.Address + ':' + $_.Error + ':' + $_.Kind + ':' + $_.Formula + ':' + $_.SpillParent }) -join '|'
+    $expected = 'A1:#DIV/0!:formula:=1/0:|E1:#DIV/0!:formula:=SEQUENCE(2)/0:|G1:#SPILL!:formula:=SEQUENCE(2):|' +
+        'A2:#N/A:constant::|B2:#NAME?:formula:=NOSUCHFN():|C2:#REF!:formula:=#REF!+1:|E2:#DIV/0!:spill::E1'
+    Assert 'errors: address, name, kind, formula, spill parent' ($errors -eq $expected) $errors
+    $others = @($all.Json.Sheets | Select-Object -Skip 2 | ForEach-Object { $_.Name + '!' + (@($_.Errors | ForEach-Object { $_.Address + ':' + $_.Error }) -join ';') }) -join ','
+    Assert 'errors on hidden, protected, offset and long sheets' ($others -eq 'Hidden!B2:#N/A,Protected!A1:#DIV/0!,Offset!C5:#DIV/0!,Long!A1:#N/A;A10000:#N/A;A10001:#N/A;A20001:#N/A') $others
+
+    $few = Invoke-FindError $book @('-MaxErrors', '2')
+    $listed = @($few.Json.Sheets | ForEach-Object { @($_.Errors).Count } | Measure-Object -Sum).Sum
+    Assert '-MaxErrors: listed, total and Truncated' ($few.Exit -eq 0 -and $listed -eq 2 -and $few.Json.Count -eq 14 -and $few.Json.Truncated -eq $true) $few.Text
+    $some = Invoke-FindError $book @('-Sheet', 'Offset,Clean')
+    $names = @($some.Json.Sheets | ForEach-Object { $_.Name + ':' + $_.Count }) -join ','
+    Assert '-Sheet: only those, in the order of the workbook' ($some.Exit -eq 0 -and $names -eq 'Clean:0,Offset:1' -and $some.Json.Count -eq 1) $some.Text
+    $wrong = Invoke-FindError $book @('-Sheet', 'Chart1')
+    Assert '-Sheet with a chart sheet: exit 1 and Error' ($wrong.Exit -eq 1 -and $wrong.Json.Error -like '*Chart1*') $wrong.Text
+    Assert 'workbook unchanged' ((Get-FileHashText $book) -eq $hash) 'hash changed'
+    $missing = Invoke-FindError (Join-Path $dir 'no-such.xlsx')
+    Assert 'missing workbook: exit 1 and Error' ($missing.Exit -eq 1 -and $missing.Json.Error) $missing.Text
+}
+
 Invoke-Case 'userform' {
     $dir = New-CaseDir 'userform'
     $book = Join-Path $dir 'form.xlsm'

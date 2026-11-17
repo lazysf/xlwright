@@ -30,6 +30,35 @@ powershell.exe -NoProfile -File "<skill>/scripts/Get-WorkbookSummary.ps1" -Path 
 - ブックが無い時や開けない時は、`Error` に理由が入り、終了コードは 1 になる。
 - 確かめたのは、`.xlsm` と `.xlsx`、グラフシート、非表示のシート、テーブル、CSV を読み込んだ接続、ブックへのリンク 1 つ、VBA プロジェクトをロックしたブック。OLE DB や ODBC の接続、Power Query、リンク先の無いリンク、保護されたシート、Excel 4.0 マクロシート、`AccessVBOM` が `1` でない時、`.xlsb` と `.xls` では確かめていない。
 
+## エラー値のセルを探す
+
+編集の後に、値がエラー（`#REF!`、`#NAME?`、`#DIV/0!` など）になったセルを、ブック全体から 1 回で列挙する。
+
+```powershell
+powershell.exe -NoProfile -File "<skill>/scripts/Find-CellError.ps1" -Path <workbook> -OutFile <result.json>
+```
+
+- 非表示の Excel で、マクロとイベントを無効にし、リンクを更新せずに開いて、保存せずに閉じる。ブックは変わらない。計算はやり直さない。
+- ワークシートの使っている範囲を全部読む。非表示のシートと保護したシートも読む。グラフシートは読まない。
+- `-Sheet Data,Summary` のように名前を渡すと、そのワークシートだけを読む。ワークシートでない名前や無い名前は、失敗になる。
+- `-MaxErrors`（既定 1000）を超えた分は `Errors` に入れず、数だけを `Count` に足す。
+- 結果は UTF-8 の JSON で `-OutFile` に書く。終了コードは、読めた時に 0（エラーのセルがあっても 0）、ブックが無い時や開けない時に 1。
+
+  | 項目 | 中身 |
+  | --- | --- |
+  | `Count` | 見つかったエラーのセルの数 |
+  | `Truncated` | `Errors` が `-MaxErrors` で打ち切られたか |
+  | `Calculation` | Excel の計算方法（`automatic`、`manual`、`semiautomatic`、`other`） |
+  | `Sheets` | ブックの中の並びの順。`Name`、`Count`、`Errors` |
+  | `Errors` の各項目 | `Address`（`B3` の形）、`Error`（`#REF!` など）、`Kind`、`Formula`、`SpillParent` |
+  | `Error`、`Warnings` | 失敗の理由と、閉じる時の警告 |
+
+- `Kind` は、数式のセルが `formula`、エラーを打ち込んだセルが `constant`、ほかのセルの数式がこぼした先が `spill`。`Formula` は `formula` のセルだけに `Formula2` が入る。`SpillParent` は `spill` のセルだけに、こぼした数式の番地が入る。
+- こぼれる先がふさがった数式は、そのセルが `#SPILL!` の `formula` になる。こぼれた先のエラーは、こぼした数式と別に 1 セルずつ数える。
+- `Calculation` が `manual` の時は、保存された値が古いことがある。直したはずのエラーが残って見えたり、新しいエラーが見えなかったりする。その時は、結果が古いかもしれないことをユーザーに伝える。
+- 定義名、条件付き書式、入力規則の中の `#REF!` は、セルの値に出ないので見つからない。定義名の参照先は `Get-WorkbookSummary.ps1` の `Names` で読める。
+- 確かめたのは、`.xlsx` の数式と定数のエラー、こぼれた先のエラー、`#SPILL!`、非表示と保護のシート、使っている範囲が `A1` から始まらないシート、20001 行のシート。数式を非表示にした保護シート、手動の計算で保存されたブック、16384 列に近い広いシート、`.xlsb` と `.xls` では確かめていない。
+
 ## セルの範囲を読み書きする
 
 `XlWright.psm1` の `Read-ExcelRange` と `Write-ExcelRange` は、範囲を 1 回の COM の呼び出しで読み書きする。`Use-ExcelWorkbook` の ScriptBlock の中と、`Invoke-ExcelScript.ps1` に渡すスクリプトの中で使える。

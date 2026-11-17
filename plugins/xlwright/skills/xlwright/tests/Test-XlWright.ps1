@@ -39,14 +39,13 @@ if (@(Get-Process EXCEL -ErrorAction SilentlyContinue).Count -gt 0) {
     Write-Output 'Excel is running. Close it (or ask the user) before running the tests.'
     exit 2
 }
-$vbom = (Get-ItemProperty 'HKCU:\Software\Microsoft\Office\16.0\Excel\Security' -Name AccessVBOM `
-    -ErrorAction SilentlyContinue).AccessVBOM
-if ($vbom -ne 1) {
+Import-Module $module -Force
+# The same reading of AccessVBOM as Test-Prerequisite.ps1, policy keys included.
+if (-not (Get-ExcelPrerequisite).AccessVBOM.Enabled) {
     Write-Output 'AccessVBOM is not 1. Ask the user to trust access to the VBA project object model.'
     exit 2
 }
 
-Import-Module $module -Force
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('xlwright-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp | Out-Null

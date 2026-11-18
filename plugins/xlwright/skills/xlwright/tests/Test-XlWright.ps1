@@ -1100,6 +1100,36 @@ if ($Full) {
                 Assert 'OK/Cancel dialog: an answer to choose, its Excel stopped' ([string]$okCancelRes.Error -like 'A dialog could not be closed without choosing an answer. Stopped the Excel instance of this script*') $detail
                 $left = Wait-NoExcel 20
                 Assert 'OK/Cancel dialog: no Excel left' ($left.Count -eq 0) ('PIDs ' + ($left -join ','))
+
+                $press = {
+                    param([string]$Label, [string]$Name)
+                    $pressJson = Join-Path $dir ($Name + '.json')
+                    $run = Invoke-Script (Join-Path $scripts 'Invoke-RibbonButton.ps1') @('-Path', $book, '-TabLabel', $S.Tab, '-ButtonLabel', $Label, '-OutFile', $pressJson)
+                    $parsed = [IO.File]::ReadAllText($pressJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
+                    [pscustomobject]@{ Exit = $run.Exit; Json = $parsed; Detail = ($parsed | ConvertTo-Json -Compress -Depth 5) }
+                }
+                $quietWatch = [Diagnostics.Stopwatch]::StartNew()
+                $quiet = & $press 'Quiet' 'quiet'
+                $quietWatch.Stop()
+                Assert 'English label, no dialog: clicked, no dialog' ($quiet.Exit -eq 0 -and $quiet.Json.Clicked -and @($quiet.Json.Dialogs).Count -eq 0) $quiet.Detail
+                $twice = & $press $S.TwiceButton 'twice'
+                Assert 'two MsgBoxes in a row: both read, in order' ($twice.Exit -eq 0 -and $twice.Json.Clicked -and @($twice.Json.Dialogs).Count -eq 2 -and
+                    (@($twice.Json.Dialogs[0].Names) -contains $S.FirstMessage) -and (@($twice.Json.Dialogs[1].Names) -contains $S.SecondMessage)) $twice.Detail
+                $off = & $press $S.OffButton 'off'
+                Assert 'disabled button: exit 1, not clicked' ($off.Exit -eq 1 -and -not $off.Json.Clicked -and [string]$off.Json.Error -like "Button '*' is disabled") $off.Detail
+                $group = & $press $S.Group 'group'
+                Assert 'a group named as the button: exit 1, not found, not clicked' ($group.Exit -eq 1 -and -not $group.Json.Clicked -and [string]$group.Json.Error -like 'Not found:*') $group.Detail
+                # The click returns at once; closing the workbook waits for the macro, which runs for 10 seconds.
+                # Compared with the press of Quiet, so that the start of Excel is not counted. Both wait 5 seconds
+                # (DialogTimeoutSeconds) for a dialog, so a macro that is waited for adds about 5 seconds.
+                # A macro that is cut off when the workbook closes adds none (docs/notes/ribbon-long-macro.md).
+                $watch = [Diagnostics.Stopwatch]::StartNew()
+                $long = & $press $S.LongButton 'long'
+                $watch.Stop()
+                $extra = $watch.Elapsed.TotalSeconds - $quietWatch.Elapsed.TotalSeconds
+                Assert 'a macro that runs for 10 seconds: clicked, waited for' ($long.Exit -eq 0 -and $long.Json.Clicked -and @($long.Json.Dialogs).Count -eq 0 -and $extra -ge 3)($long.Detail + ' ' + [int]$extra + ' s more than Quiet')
+                $left = Wait-NoExcel 20
+                Assert 'after the presses: no Excel left' ($left.Count -eq 0) ('PIDs ' + ($left -join ','))
             }
         }
     }

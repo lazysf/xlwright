@@ -22,7 +22,8 @@ the error. Other Excel processes are never touched.
 
 The click call returns without waiting for the macro to finish. A macro that keeps running without a
 dialog (e.g. Application.Wait) is waited for when the workbook is closed; a macro that never ends
-makes this script hang there.
+makes this script hang there. A macro that calls DoEvents is not waited for: the workbook closes and the
+macro stops halfway, with Clicked true and no error (docs/notes/ribbon-long-macro.md in the repository).
 
 The result is written as UTF-8 JSON to -OutFile (stdout of powershell.exe garbles Japanese in Git Bash).
 Exit code is non-zero when the click failed.

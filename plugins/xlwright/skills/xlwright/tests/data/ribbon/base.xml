@@ -6,6 +6,10 @@
           <button id="doneButton" label="完了通知" imageMso="HappyFace" size="large" onAction="Done"/>
           <button id="askButton" label="確認" imageMso="HappyFace" size="large" onAction="AskYesNo"/>
           <button id="okCancelButton" label="続行確認" imageMso="HappyFace" size="large" onAction="AskOkCancel"/>
+          <button id="quietButton" label="Quiet" imageMso="HappyFace" size="large" onAction="Quiet"/>
+          <button id="twiceButton" label="二回通知" imageMso="HappyFace" size="large" onAction="DoneTwice"/>
+          <button id="longButton" label="長い処理" imageMso="HappyFace" size="large" onAction="RunLong"/>
+          <button id="offButton" label="使えない" imageMso="HappyFace" size="large" enabled="false" onAction="Done"/>
         </group>
       </tab>
     </tabs>

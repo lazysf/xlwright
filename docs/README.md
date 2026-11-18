@@ -5,6 +5,7 @@
 - `docs/notes/`: 実測と調査の記録と、今の設計の理由。
   - [plugin-install.md](./notes/plugin-install.md): プラグインとして入れた時の振る舞いと、README の入れ方と版の決め方を今の形にしている理由。
   - [foreground.md](./notes/foreground.md): リボンの操作で Excel を前面に出さない方法と、その実測。
+  - [ribbon-long-macro.md](./notes/ribbon-long-macro.md): リボンのボタンで長く動くマクロを、`Invoke-RibbonButton.ps1` が待つかの実測。
   - [vba-compile.md](./notes/vba-compile.md): VBA のコンパイルを COM から起こしてエラーを読む方法と、その実測。
   - [macro-dialog.md](./notes/macro-dialog.md): マクロの実行中に出たダイアログを見つけて閉じる方法と、その実測。
   - [vba-roundtrip.md](./notes/vba-roundtrip.md): 取り込んだ VBA を書き出した時に、正本と変わる所と、`git diff --no-index` で比べた時の出力の実測。

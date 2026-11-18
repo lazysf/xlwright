@@ -22,6 +22,19 @@ Public Sub AskOkCancel(control As IRibbonControl)
     MsgBox "続行しますか", vbOKCancel
 End Sub
 
+Public Sub Quiet(control As IRibbonControl)
+End Sub
+
+Public Sub DoneTwice(control As IRibbonControl)
+    MsgBox "1 つ目の通知"
+    MsgBox "2 つ目の通知"
+End Sub
+
+' 10 秒動いてから終わる。ブックを閉じる時に待つかを見る
+Public Sub RunLong(control As IRibbonControl)
+    Application.Wait Now + TimeSerial(0, 0, 10)
+End Sub
+
 Public Sub GetOff(control As IRibbonControl, ByRef returnedVal)
     returnedVal = False
 End Sub

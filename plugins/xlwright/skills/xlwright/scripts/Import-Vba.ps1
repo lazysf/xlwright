@@ -14,6 +14,9 @@ Imports UTF-8 (no BOM), LF .bas / .cls / .frm files and saves the workbook.
 - Every existing component must match the source type before any code is changed.
 - After import, each module's name and type are checked against the file.
 - Components that are not in the sources stay in the workbook.
+- references.json in SourceDir (written by Export-Vba.ps1), if present, is checked before opening the
+  workbook. Each listed reference that the workbook does not have (matched by Guid, the version is not
+  compared) is reported as a warning after the import; no reference is added or removed.
 
 Output: one line per component: "imported: <name>" or "replaced document module: <name>".
 On an error the workbook is not saved.
@@ -88,6 +91,20 @@ $sources = foreach ($f in $files) {
 $duplicate = $sources | Group-Object Name | Where-Object Count -gt 1
 if ($duplicate) { throw ("Duplicate VB_Name: " + ($duplicate.Name -join ', ')) }
 
+$expectedReferences = @()
+$referencesFile = Join-Path $SourceDir 'references.json'
+if (Test-Path -LiteralPath $referencesFile -PathType Leaf) {
+    try { $parsed = $strictUtf8.GetString([IO.File]::ReadAllBytes($referencesFile)) | ConvertFrom-Json }
+    catch { throw ("Invalid references.json: " + $referencesFile + ": " + $_.Exception.Message) }
+    $expectedReferences = @(foreach ($entry in @($parsed.References)) {
+        if ($null -eq $entry -or $entry.Name -isnot [string] -or $entry.Guid -isnot [string] -or
+            $entry.Guid -notmatch '^\{[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}$') {
+            throw ("Expected References with a Name and a Guid for each entry in " + $referencesFile)
+        }
+        $entry
+    })
+}
+
 $tmpDir = Join-Path ([IO.Path]::GetTempPath()) ('vba-import-' + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $tmpDir | Out-Null
 try {
@@ -135,6 +152,15 @@ try {
                     $s.Name + " (type " + $s.Type + ")")
             }
             "imported: " + $s.Name
+        }
+        # The keys of this hashtable are not case-sensitive, and neither are GUIDs.
+        $present = @{}
+        foreach ($r in $wb.VBProject.References) { $present[[string]$r.Guid] = $true }
+        foreach ($e in $expectedReferences) {
+            if (-not $present.ContainsKey($e.Guid)) {
+                Write-Warning ("Reference not in the workbook: " + $e.Name + " " + $e.Guid +
+                    "; code that uses it does not compile until it is added")
+            }
         }
     }
 }

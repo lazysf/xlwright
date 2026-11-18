@@ -312,13 +312,21 @@ Invoke-Case 'cells-and-vba' {
         $b = if (Test-Path -LiteralPath $exported) { Get-FileHashText $exported } else { 'missing' }
         Assert ('export round trip identical: ' + $rel) ($a -eq $b) $b
     }
+    $referencesFile = Join-Path $dir 'export\references.json'
+    $exportedReferences = if (Test-Path -LiteralPath $referencesFile) { [IO.File]::ReadAllText($referencesFile, $utf8) | ConvertFrom-Json } else { $null }
+    $referenceNames = @($exportedReferences.References | ForEach-Object { $_.Name + ' ' + $_.Guid }) -join ','
+    Assert 'references.json: the references of a new workbook, without the built-in ones' ($referenceNames -eq 'stdole {00020430-0000-0000-C000-000000000046},Office {2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}') $referenceNames
 
     # Components that are not in the sources stay; Publish-Workbook.ps1 relies on it.
+    # A reference in references.json that the workbook lacks is a warning, and only that one.
     $partial = Join-Path $dir 'partial'
     New-Item -ItemType Directory -Path (Join-Path $partial 'standard') | Out-Null
     [IO.File]::WriteAllText((Join-Path $partial 'standard\Extra.bas'), "Attribute VB_Name = ""Extra""`nOption Explicit`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $partial 'references.json'), '{"References": [{"Name": "stdole", "Guid": "{00020430-0000-0000-C000-000000000046}", "Major": 2, "Minor": 0}, {"Name": "Scripting", "Guid": "{420b2830-e718-11cf-893d-00a0c9054228}", "Major": 1, "Minor": 0}]}', $utf8)
     $import = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $book, '-SourceDir', $partial)
     Assert 'partial import: exit 0' ($import.Exit -eq 0) $import.Output
+    $missing = @([regex]::Matches($import.Output, 'Reference not in the workbook: (\S+)') | ForEach-Object { $_.Groups[1].Value }) -join ','
+    Assert 'partial import: a warning for the missing reference only' ($missing -eq 'Scripting') $import.Output
     $names = Use-ExcelWorkbook -Path $book -ScriptBlock {
         param($xl, $wb)
         @($wb.VBProject.VBComponents | ForEach-Object { $_.Name + ':' + $_.Type } | Sort-Object) -join ','
@@ -450,6 +458,12 @@ Invoke-Case 'input-rejected' {
     [IO.File]::WriteAllBytes((Join-Path $src 'documents\NoSuchSheet.cls'), $ascii.GetBytes("Attribute VB_Name = ""NoSuchSheet""`nOption Explicit`n"))
     $r = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $book, '-SourceDir', $src)
     Assert 'Import-Vba rejects a document module the workbook does not have' ($r.Exit -ne 0 -and $r.Output -like '*No document module named NoSuchSheet*') $r.Output
+    $src = Join-Path $dir 'src-bad-references'
+    New-Item -ItemType Directory -Path (Join-Path $src 'standard') -Force | Out-Null
+    [IO.File]::WriteAllBytes((Join-Path $src 'standard\Good.bas'), $ascii.GetBytes("Attribute VB_Name = ""Good""`nOption Explicit`n"))
+    [IO.File]::WriteAllBytes((Join-Path $src 'references.json'), $ascii.GetBytes('{"References": [{"Name": "Scripting"}]}'))
+    $r = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $book, '-SourceDir', $src)
+    Assert 'Import-Vba rejects a reference without a Guid' ($r.Exit -ne 0 -and $r.Output -like '*Expected References with a Name and a Guid*') $r.Output
     Assert 'workbook unchanged by rejected imports' ((Get-FileHashText $book) -eq $hash) 'hash changed'
 
     $badXml = Join-Path $dir 'bad.xml'

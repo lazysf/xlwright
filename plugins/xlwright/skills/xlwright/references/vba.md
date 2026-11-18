@@ -31,8 +31,13 @@ powershell.exe -NoProfile -File "<skill>/scripts/Export-Vba.ps1" -Path <workbook
 powershell.exe -NoProfile -File "<skill>/scripts/Import-Vba.ps1" -Path <workbook> -SourceDir <dir>
 ```
 
-- **Export**: 標準モジュールは `standard/<名前>.bas`、クラスは `classes/<名前>.cls`、文書モジュールは `documents/<名前>.cls`、UserForm は `forms/` に `.frm` と付随する `.frx` で書き出す。コードの無い文書モジュールは省く。今回書き出さなかったファイルが出力先に残っていれば警告する。Excel が一時出力した CP932・CRLF のファイルを UTF-8（BOM なし）・LF に変換する。
+- **Export**: 標準モジュールは `standard/<名前>.bas`、クラスは `classes/<名前>.cls`、文書モジュールは `documents/<名前>.cls`、UserForm は `forms/` に `.frm` と付随する `.frx` で書き出す。コードの無い文書モジュールは省く。今回書き出さなかったファイルが出力先に残っていれば警告する。Excel が一時出力した CP932・CRLF のファイルを UTF-8（BOM なし）・LF に変換する。参照設定（VBE の「ツール」→「参照設定」）は、出力先の `references.json` に書く（下の「参照設定」）。
 - **Import**: `-SourceDir` の `standard/`、`classes/`、`documents/`、`forms/` から種別を決める。ブックを開く前に、すべてのファイルが UTF-8（BOM なし）・LF で、CP932 に文字を失わず変換できることを確認する。VBE へは CP932・CRLF の一時ファイルを渡す（LF の `.cls` を VBE へ直接渡すと、標準モジュールとして認識された実測がある）。同名・同種別の標準モジュール、クラス、UserForm は削除してから取り込む。文書モジュールは既存のコードを差し替え、対象ブックに同名の文書モジュールが無い場合は止まる。取り込み元に含まれないコンポーネントはブックに残る。最後に Excel で保存する。途中で失敗した時は、保存せずに閉じる。
+- **参照設定**: 書き出しのファイルには参照設定が出ず、取り込みでも足されない。参照設定の要るコード（`Dim d As Scripting.Dictionary` など）は、正本から作り直したブックではコンパイルが通らない。そこで、`references.json` に参照設定を残し、取り込みで照らす。
+  - `references.json` は `{"References": [{"Name", "Description", "Guid", "Major", "Minor"}, ...]}` の形で、`VBProject.References` の順に並ぶ。外せない VBA と Excel は書かない。新しいブックにも最初からある `stdole` と `Office` は書く。端末で変わる `FullPath` は書かない。ほかのブックやアドインへの参照は書かずに警告する（この場合は確かめていない）。
+  - 取り込みは、ブックを開く前に `references.json` の形を確かめ、各項目に `Name` と `Guid` が無ければ止まる。取り込んだ後に、ブックに無い参照設定（`Guid` で照らし、版は比べない）を `Reference not in the workbook: <Name> <Guid>` と警告する。参照設定は足しも外しもしない。`references.json` が無い正本は照らさない。
+  - 警告が出たら、ユーザーに参照設定の名前を示して確認を取ってから足す。足すのは、`Invoke-ExcelScript.ps1 -Save` に渡す ScriptBlock で `[void]$wb.VBProject.References.AddFromGuid('<Guid>', <Major>, <Minor>)` を呼ぶ形でよい。Scripting Runtime では、確認のダイアログを出さずに足せた。参照先が端末に無い時、版が違う時の振る舞いは確かめていない。足した後に `Test-VbaCompile.ps1` を流す。
+  - 新しく書くコードで参照設定を避けたい時は、`CreateObject("Scripting.Dictionary")` と `As Object` の遅延バインディングで書けば、参照設定なしでコンパイルが通る。
 - 文書モジュールの差し替えは、先頭のヘッダーと `Attribute` 行だけを除く。プロシージャの中の `Attribute` 行（`VB_Description` など）は扱わない。
 - 変更したコンポーネントだけを反映する場合は、対象ファイルを種別ごとの配置を保って別の作業先へコピーし、そのルートを `-SourceDir` に渡す。UserForm は付随する `.frx` もコピーする。
 - シートとブックのモジュールを直接編集する場合は、`Worksheet.CodeName` または `Workbook.CodeName` で既存の `VBComponent` を取得し、その `CodeModule` に書く。
@@ -82,7 +87,8 @@ git diff --no-index --ignore-blank-lines <vba> <new temp dir>
 - VBE は取り込む時に、キーワードの大文字と小文字、演算子の前後の空白、行末の空白を書き換え、ファイルの末尾に改行を足す。VBE の形で書いていない正本は差になる。一度書き出して、正本を書き出しの形にすると、この差は消える。
 - 大文字と小文字だけの差は、VBE が識別子の大文字と小文字をプロジェクトの全体でそろえた結果のことが多い。あるモジュールを取り込むと、触っていないモジュールの識別子が変わることがある。文字列の中身を変えた差と見分けがつかないので、行を読んで判断する。
 - モジュール名の大文字と小文字だけが違うと（`Util.bas` と `util.bas`）、同じモジュールが削除と追加として出る。
-- `vba/` に VBA 以外のファイルがあると、それも削除として出る。
+- 書き出しには `references.json` も入るので、参照設定の違いもこのファイルの差として出る。
+- `vba/` に、VBA と `references.json` のほかのファイルがあると、それも削除として出る。
 - 確かめたのは、標準モジュール、クラス、文書モジュール、コントロールとコードを持つ UserForm（git 2.56）。この手順は試験に無い。
 
 ## コンパイルの検査

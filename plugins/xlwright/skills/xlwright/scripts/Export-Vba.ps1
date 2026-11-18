@@ -10,6 +10,11 @@ Document modules without code are skipped.
 
 Text exports are converted from CP932/CRLF to UTF-8 without BOM and LF. Binary .frx files are copied unchanged.
 
+The references of the project (Tools > References) go into references.json in OutDir, in the order of VBProject.References:
+{"References": [{Name, Description, Guid, Major, Minor}, ...]}. VBA and Excel (BuiltIn, they cannot be
+removed) are left out. A reference to another project (Type 1) is not recorded and is listed as a warning.
+FullPath is not recorded; it depends on the machine.
+
 Files in OutDir that were not written by this run are listed as a warning (a module removed from the
 workbook, or a document module whose code is now empty), because importing them again would bring
 the old code back.
@@ -73,6 +78,21 @@ try {
             [IO.File]::WriteAllText($outputFile, $text, $utf8)
             $outputFile
         }
+        $references = @(foreach ($r in $wb.VBProject.References) {
+            if ($r.BuiltIn) { continue }
+            if ($r.Type -ne 0) {
+                Write-Warning ("Not recorded in references.json: " + $r.Name + " (a reference to another project)")
+                continue
+            }
+            [ordered]@{
+                Name = [string]$r.Name; Description = [string]$r.Description; Guid = [string]$r.Guid
+                Major = [int]$r.Major; Minor = [int]$r.Minor
+            }
+        })
+        $json = (ConvertTo-Json -InputObject ([ordered]@{ References = $references }) -Depth 3) -replace "`r`n", "`n"
+        $referencesFile = Join-Path $OutDir 'references.json'
+        [IO.File]::WriteAllText($referencesFile, $json + "`n", $utf8)
+        $referencesFile
     }
 }
 finally {

@@ -69,7 +69,8 @@ Excel は既定で、VBA とブックイベントを無効にし、外部ブッ�
 │   ├── standard/
 │   ├── classes/
 │   ├── documents/
-│   └── forms/
+│   ├── forms/
+│   └── references.json
 └── ribbon/
     └── customUI14.xml
 ```

@@ -32,7 +32,9 @@ AGENTS.md に書いた目的（Excel を土台にしたツールの開発）に�
 | `Find-CellError.ps1` | シートの構成を変えた後に、ツールの数式が壊れていないかを見る |
 | 別ブックからシートをコピーする手順 | ひな形のシートを、ツールに取り込む |
 
-外れていたのは、機能を説明する言い回しと eval の 1 件だった。どちらも、`description` の範囲を絞る TODO の項目で直す。
+外れていたのは、機能を説明する言い回しと eval の 1 件だった。同じ日に、機能を変えずに直した。
 
-- `SKILL.md` の `description` と本文、`references/com.md` の言い回し（「シートの確認・編集」「複数のブックを順に扱う」など）が、受け取ったブックの分析や、多数のブックをまとめて処理する作業にも読める。
-- eval の `sheet-check` が、受け取ったブックの集計の確認でスキルが選ばれることを期待している。
+- `SKILL.md` の `description` と本文、`references/com.md` の言い回し（「シートの確認・編集」「複数のブックを順に扱う」など）が、受け取ったブックの分析や、多数のブックをまとめて処理する作業にも読めた。ツールの開発の文脈に直し、`description` には使わない場面（受け取ったブックの分析、集計の確認、データの整形や変換）も書いた。`plugin.json` と `marketplace.json` の説明も同じ範囲にそろえた。
+- eval の `sheet-check` が、受け取ったブックの集計の確認でスキルが選ばれることを期待していた。依頼文をツールのシートの編集に替え、元の依頼文は、スキルが選ばれないことを見る `not-tool` に移した。結果は DEVELOPMENT.md の「eval」にある。
+- やらないと決めたこと: `xlsx` スキルなど、ほかの表計算のスキルの側を直すこと。範囲外の依頼を断る手順を `SKILL.md` に書くこと。
+- `description` を書く時の制約（公式 docs で確かめた、2026-11-18）: Claude Code はスキルの一覧で `description` と `when_to_use` を合わせて 1,536 文字で切るので、主な用途を先に書く（[skills](https://code.claude.com/docs/en/skills)）。`<` と `>` は `&lt;` と `&gt;` で表示される。Agent Skills の決まりでは、`description` は 1,024 文字まで、XML のタグを含めず、何をするかといつ使うかを書く（[best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)）。

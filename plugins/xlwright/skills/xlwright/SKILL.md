@@ -1,11 +1,11 @@
 ---
 name: xlwright
-description: Excel ブックを Windows 版 Excel と PowerShell COM で確認・編集する。シートの値・数式・書式、VBA と UserForm の作成・編集と入出力、カスタムリボンの埋め込みと、見え方・ボタンの動作の確認、VBA をロックした配布ブックの出力に使う。
+description: Windows 版 Excel を PowerShell COM で動かし、Excel を土台にしたツール（マクロ、UserForm、カスタムリボンを持ち、人が操作して使うブック）を作って確かめる。VBA と UserForm の作成・編集と入出力、カスタムリボンの埋め込みと見え方・ボタンの動作の確認、ツールのシートの編集、VBA をロックした配布ブックの出力に使う。受け取ったブックの分析、集計の確認、データの整形や変換には使わない。
 ---
 
 # xlwright
 
-PowerShell から `Excel.Application` を COM で操作してブックを編集する。リボンだけは COM で定義できないため、閉じたブックの zip を直接書き換える。
+PowerShell から `Excel.Application` を COM で操作して、Excel を土台にしたツールのブックを作り、直す。リボンだけは COM で定義できないため、閉じたブックの zip を直接書き換える。
 
 このスキルのフォルダは `${CLAUDE_SKILL_DIR}` で、スクリプトはその `scripts/` にある。`references/` のコマンド例にある `<skill>` は、このフォルダの絶対パスに置き換えて実行する。Git Bash からは `powershell.exe -NoProfile -File "<script>"` で実行し、引数のパスは `/` 区切りのまま渡してよい。
 
@@ -77,14 +77,14 @@ Excel は既定で、VBA とブックイベントを無効にし、外部ブッ�
 
 | 作業 | 読むもの |
 | --- | --- |
-| 既存のブックに何があるかを調べる（シート、定義名、テーブル、外部リンク、データ接続、VBA、リボン） | `Get-WorkbookSummary.ps1`。[COM 編集の詳細](references/com.md)の「ブックの概要」 |
-| シートの確認・編集 | 下の「COM 編集」。確認だけなら `-Save` を付けない |
+| 手を入れる前に、既存のツールのブックに何があるかを調べる（シート、定義名、テーブル、外部リンク、データ接続、VBA、リボン） | `Get-WorkbookSummary.ps1`。[COM 編集の詳細](references/com.md)の「ブックの概要」 |
+| ツールのシート（入力欄、設定、数式）の確認・編集 | 下の「COM 編集」。確認だけなら `-Save` を付けない |
 | ブックが人にどう見えるかを画像で確かめる（書式、グラフ、ボタン、リボンを含む画面） | `Save-WorkbookScreenshot.ps1`。[COM 編集の詳細](references/com.md)の「見た目を画像にする」 |
 | VBA の変更（`vba/` の正本を編集して取り込む） | [VBA の編集ルールと入出力](references/vba.md) |
 | UserForm の作成・変更 | [UserForm の作成と編集](references/userform.md) |
 | リボンの変更、見え方とボタンの動作確認 | [リボン](references/ribbon.md) |
 | VBA をロックした配布ブックの出力 | [配布ブックの出力](references/publish.md) |
-| 複数のブックを順に扱う、別ブックからシートをコピーする | [COM 編集の詳細](references/com.md) |
+| ツールの作業で複数のブックを順に扱う、ひな形のシートを別ブックからコピーする | [COM 編集の詳細](references/com.md) |
 | Excel が起動しない、実行が拒否される | [実行環境と起動の失敗](references/troubleshooting.md) |
 
 編集後はブックを開き直し、「検証」で変更した箇所を確認する。

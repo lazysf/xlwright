@@ -132,7 +132,7 @@ Write-ExcelRange -Range $ws.Range('C2') -Formula -Value @(@('=B2*2'), @('=B3*2')
 
 ## モジュールを直接使う
 
-複数のブックを順に扱うなど、1 回の ScriptBlock に収まらない時は、スクリプトから `XlWright.psm1` を読み込む。スクリプトは一時領域に置き、`powershell.exe -NoProfile -File <script> -Path <workbook>` で実行する。
+ツールの作業で複数のブックを順に扱うなど、1 回の ScriptBlock に収まらない時は、スクリプトから `XlWright.psm1` を読み込む。スクリプトは一時領域に置き、`powershell.exe -NoProfile -File <script> -Path <workbook>` で実行する。
 
 ```powershell
 param([string]$Path)

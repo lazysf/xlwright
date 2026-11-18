@@ -12,7 +12,7 @@ Text exports are converted from CP932/CRLF to UTF-8 without BOM and LF. Binary .
 
 The references of the project (Tools > References) go into references.json in OutDir, in the order of VBProject.References:
 {"References": [{Name, Description, Guid, Major, Minor}, ...]}. VBA and Excel (BuiltIn, they cannot be
-removed) are left out. A reference to another project (Type 1) is not recorded and is listed as a warning.
+removed) are left out. A reference to another project (Type 1) is not recorded and its FullPath is listed as a warning.
 FullPath is not recorded; it depends on the machine.
 
 Files in OutDir that were not written by this run are listed as a warning (a module removed from the
@@ -81,7 +81,8 @@ try {
         $references = @(foreach ($r in $wb.VBProject.References) {
             if ($r.BuiltIn) { continue }
             if ($r.Type -ne 0) {
-                Write-Warning ("Not recorded in references.json: " + $r.Name + " (a reference to another project)")
+                # The workbook is open with macros disabled, so the referenced project is not loaded and only FullPath can be read.
+                Write-Warning ("Not recorded in references.json: " + $r.FullPath + " (a reference to another project)")
                 continue
             }
             [ordered]@{

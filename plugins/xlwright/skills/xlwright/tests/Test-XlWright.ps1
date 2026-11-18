@@ -332,6 +332,27 @@ Invoke-Case 'cells-and-vba' {
         @($wb.VBProject.VBComponents | ForEach-Object { $_.Name + ':' + $_.Type } | Sort-Object) -join ','
     }
     Assert 'partial import: the components that are not in the sources stay' ($names -eq 'CalcOptions:2,Extra:1,Sheet1:100,ThisWorkbook:100,Util:1') $names
+
+    # A reference to another project has no Guid, and Import-Vba.ps1 rejects an entry without one,
+    # so recording it would make the export impossible to import again.
+    $lib = New-EmptyBook (Join-Path $dir 'lib.xlsm')
+    # Both projects are named VBAProject by default; the library is renamed so that the names differ
+    # (a reference to a project of the same name was not tried). AddFromFile fails with a DLL load error on a workbook without a module, or with macros disabled.
+    Use-ExcelWorkbook -Path $lib -Save -ScriptBlock {
+        param($xl, $wb)
+        $wb.VBProject.Name = 'XlWrightLib'
+        [void]$wb.VBProject.VBComponents.Add(1)
+    }
+    Use-ExcelWorkbook -Path $book -Save -EnableMacros -ScriptBlock { param($xl, $wb) [void]$wb.VBProject.References.AddFromFile($lib) }
+    $projectExport = Invoke-Script (Join-Path $scripts 'Export-Vba.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'export-project'))
+    Assert 'project reference: Export-Vba exit 0' ($projectExport.Exit -eq 0) $projectExport.Output
+    # The console of powershell.exe wraps a long warning, so the line breaks are removed before matching.
+    $projectWarning = $projectExport.Output -replace '\r?\n', ''
+    Assert 'project reference: listed as a warning with its path' ($projectWarning.Contains("Not recorded in references.json: $lib (a reference to another project)")) $projectExport.Output
+    $projectFile = Join-Path $dir 'export-project\references.json'
+    $projectReferences = if (Test-Path -LiteralPath $projectFile) { [IO.File]::ReadAllText($projectFile, $utf8) | ConvertFrom-Json } else { $null }
+    $projectNames = @($projectReferences.References | ForEach-Object { $_.Name + ' ' + $_.Guid }) -join ','
+    Assert 'project reference: not in references.json' ($projectNames -eq 'stdole {00020430-0000-0000-C000-000000000046},Office {2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}') $projectNames
 }
 
 Invoke-Case 'invoke-excelscript' {

@@ -21,7 +21,11 @@
 
 理由が今の機能の穴に当たり、範囲が小さいものです。上の見直しの後に、上から順に進めます。
 
-今は、この節に残っている項目はありません。
+- [ ] `SKILL.md` の `description` を、ツールの開発に絞る。`plugin.json` と `marketplace.json` の `description` もそろえる。
+  - 理由: 今の `description` は「シートの値・数式・書式」を先に挙げていて、`xlsx` スキルなど通常の表計算のスキルと範囲が重なる。受け取ったブックの確認の依頼でも、スキルが選ばれることがある（2026-11-18 に試した `existing-macro` の case で、選ばれ方が揺れた）。
+  - 足りる形: `description` に、目的（ツールの開発）と、使わない場面（受け取ったブックの分析、集計の確認、データの整形）を書く。`sheet-check` の依頼文を、ツールを作る途中の確認に替える。範囲外の Excel の依頼でスキルが選ばれないことを見る case を足し、eval を全件流す。着手する前に、使用量の見積もりを出す。
+  - 公式 docs で確かめた制約（2026-11-18）: Claude Code はスキルの一覧で `description` と `when_to_use` を合わせて 1,536 文字で切るので、主な用途を先に書く（[skills](https://code.claude.com/docs/en/skills)）。`<` と `>` は `&lt;` と `&gt;` で表示される。Agent Skills の決まりでは、`description` は 1,024 文字まで、XML のタグを含めず、三人称で、何をするかといつ使うかを書く（[best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)）。今の `description` は 311 文字。
+  - やらないこと: `xlsx` スキルの側を直すこと。範囲外の依頼を断る手順を `SKILL.md` に書くこと。
 
 ## 依頼が来るまで保留
 

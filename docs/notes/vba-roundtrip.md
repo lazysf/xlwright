@@ -1,7 +1,7 @@
 # 取り込んだ VBA を書き出すと、正本と何が変わるか
 
-- Date: 2026-11-16
-- 出典: 一時フォルダで `Import-Vba.ps1` と `Export-Vba.ps1` を流した実測。Microsoft 365 Excel 64-bit 16.0.20527.20196、Windows 11、Windows PowerShell 5.1.26100.9818。
+- Date: 2026-11-18
+- 出典: 一時フォルダで `Import-Vba.ps1` と `Export-Vba.ps1` を流した実測（2026-11-16）と、git 2.56.0.windows.4 の `git diff --no-index` を、合成したファイルと実際の書き出しに流した実測（2026-11-18）。Microsoft 365 Excel 64-bit 16.0.20527.20196、Windows 11、Windows PowerShell 5.1.26100.9818。
 
 正本（`vba/`）をブックへ取り込み、そのブックから書き出して、正本と比べた。VBE が整えた形で書かれた標準モジュール、クラス、文書モジュールは、1 バイトも変わらなかった。変わったのは、VBE が整える前の書き方、UserForm の `.frm` の空行、`.frx` のバイト列だった。
 
@@ -42,16 +42,13 @@
 - `.frm` の空行は、取り込んで書き出すたびに 1 つずつ増えた。3 巡で 3 つになった。
 - `.frx` は、同じブックからの 2 回の書き出しの間でも 9 バイト違った。大きさは、どの回も 2584 バイトだった。
 
-取り込んで書き出しても変わらないことは、`tests/Test-XlWright.ps1` の `cells-and-vba` が、試験のデータの標準モジュール、クラス、文書モジュールで確かめる。
+取り込んで書き出しても変わらないことは、`plugins/xlwright/skills/xlwright/tests/Test-XlWright.ps1` の `cells-and-vba` が、試験のデータの標準モジュール、クラス、文書モジュールで確かめる。
 
 ## git diff --no-index で比べた時
 
-- Date: 2026-11-18
-- 出典: git 2.56.0.windows.4 の `git diff --no-index` を、合成したファイルと、実際の書き出しに流した実測。Excel 16.0.20527（Microsoft 365 64-bit）、Windows PowerShell 5.1.26100.9818。
-
 実際の書き出しは、次の 2 つ。
 
-- 試験のデータ（`tests/data/vba`）を新しいブックへ取り込み、正本に無い標準モジュール 1 つとシートのコードを足して書き出したもの。
+- 試験のデータ（`plugins/xlwright/skills/xlwright/tests/data/vba`）を新しいブックへ取り込み、正本に無い標準モジュール 1 つとシートのコードを足して書き出したもの。
 - 試験の `uf-create` で UserForm（`frmInfo`）を作り、書き出して取り込み、もう一度書き出したもの。
 
 | 場面 | `git diff --no-index --ignore-blank-lines` の出力 | 終了コード |
@@ -65,7 +62,7 @@
 | `Util.bas` と `util.bas`（合成） | 削除と追加 | 1 |
 
 - `--ignore-blank-lines` は差の本文から空行を隠すだけで、終了コードは、ファイルのバイト列が違えば 1 のまま。`--stat` と `--name-status` には `.frm` が出る。
-- そのため、UserForm のあるブックでは、終了コードで一致を判定できない。出力を読む。
+- そのため、UserForm のあるブックでは、終了コードで一致を判定できない（照合の手順は `references/vba.md` の「正本との照合」）。
 - 正本に無いものを足したブックで、足した標準モジュールを `Remove` で消し、シートのコードを `DeleteLines` で空にして書き出すと、正本との差は無くなり、終了コードは 0 になった（`references/vba.md` の「正本から消したモジュール」の ScriptBlock）。
 - その ScriptBlock に、1 つ目にある名前、2 つ目に無い名前を渡すと、2 つ目の `Item` で「インデックスが有効範囲にありません。」になり、ブックのファイルは変わらなかった。
 

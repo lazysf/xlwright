@@ -9,7 +9,7 @@
 
 ### `Cells.Item` への代入が落ちる条件
 
-以前の `SKILL.md` は、`$ws.Cells.Item(r, c).Value2 = 3` が `InvalidCastException` で落ちることがあり、`Range('B2')` の形なら通るとしていた。実際には、`Cells.Item` か `Range` かではなく、PowerShell の書き方で起きた。
+`$ws.Cells.Item(r, c).Value2 = 3` が `InvalidCastException` で落ちるかは、`Cells.Item` か `Range('B2')` かでは決まらなかった。PowerShell の書き方で決まった。
 
 | 書き方 | 結果 |
 | --- | --- |
@@ -20,7 +20,6 @@
 | 一度落ちた後の同じプロセスの、別の行での配列の代入 | 続けて `InvalidCastException`。スカラーの代入と `Formula`、`Value` への代入は通った |
 | 上の 3 つを `[System.__ComObject].InvokeMember('Value2', SetProperty, ...)` で代入 | どれも通った |
 
-- 型の違う値を同じ行で代入すると落ちること、前の代入の型が後の別の行に響くことから、PowerShell が COM のプロパティの代入を束縛した結果を使い回していると推測する。仕組みは確かめていない。
 - `InvokeMember` で代入すると、PowerShell の束縛を通らず、どの順でも通った。
 
 ### 書き込む配列の形
@@ -147,19 +146,15 @@
 - **`DateTime` の表示形式は変えない。** `Value` に書くと表示形式が付くが、helper が書式を変えると、ほかの書式を設定した後に呼んだ時に上書きする。
 - **代入と読み出しは `InvokeMember` で行う。** helper は常に `object[,]` を代入するので、helper の中だけなら型は変わらない。それでも、利用者のスクリプトが先に `ConvertFrom-Json` の数値をプロパティの構文で代入すると、helper の中の配列の代入が落ちた（下の試験）。
 
-`tests/Test-XlWright.ps1` の `range` が、これを確かめる（2026-11-17）。
+`plugins/xlwright/skills/xlwright/tests/Test-XlWright.ps1` の `range` が、これを確かめる（2026-11-17）。何を確かめるかは、試験のファイルを正本とする。
 
-- 型の混ざった 2 行 × 10 列、日本語、PSObject、`ConvertFrom-Json` の値を書いて読み戻した。`'` が付いたのは、Excel が変えた文字列のセルだけだった。
-- `Set-ComProperty` を module の中で包んで、Excel に渡した配列を記録した。最初の代入で、`=1+1` と `＝1+1` には `'` が付いていた。`plain` と `001` には付いていなかった。書いた後のセルは、どれも数式でなかった。
-- 先に `ConvertFrom-Json` の数値を `$sheet.Range('N1').Value2 = $json.n` で代入した後でも、書き込みは通った。
-- 拒む入力（行の長さの違い、行が配列でない、範囲の大きさの違い、`char`、`Guid`、`NaN`、配列の要素、32768 字の文字列、シートの端、離れた範囲）は `ArgumentException` になり、範囲は変わらなかった。
-- `Invoke-ExcelScript.ps1` から呼ぶと、エラー値は JSON で `{"Error":"#DIV/0!"}` になった。
-- 次の写しは、どれも `range` で落ちた。`=` で始まる文字列に最初の代入で `'` を付けない写し、`'` を付けて書き直さない写し、`Formula2` の代わりに `Formula` に書く写し、エラー値を名前に直さない写し、行の長さを見ない写し、PSObject を外さない写し、1 セルを 1 行 1 列に直さない写し、シートの端を見ない写し、`char` を受け付ける写し、代入を `$Object.Value2 = $Value` にした写し。
-- 代入を `$Object.Value2 = $Value` にした写しは、先に JSON の数値を代入する手順を試験に足す前は、合格した。代入を `$Object.$Name = $Value`（プロパティ名を変数にした形）にした写しも、その手順を足す前に合格した。足した後には流していない。
+- スクリプトをわざと壊した次の写しは、どれも `range` で落ちた。`=` で始まる文字列に最初の代入で `'` を付けない写し、`'` を付けて書き直さない写し、`Formula2` の代わりに `Formula` に書く写し、エラー値を名前に直さない写し、行の長さを見ない写し、PSObject を外さない写し、1 セルを 1 行 1 列に直さない写し、シートの端を見ない写し、`char` を受け付ける写し、代入を `$Object.Value2 = $Value` にした写し。
+- 代入を `$Object.Value2 = $Value` にした写しと、`$Object.$Name = $Value`（プロパティ名を変数にした形）にした写しは、先に JSON の数値を代入する手順が試験に無いと、合格した。この手順が無いと、`InvokeMember` を外しても気づけない。
 
 ## 未確認
 
-- `PowerShell` が COM のプロパティの代入を使い回す仕組み。PowerShell 7 での振る舞い。
+- `PowerShell` が COM のプロパティの代入を使い回す仕組み。型の違う値を同じ行で代入すると落ちること、前の代入の型が後の別の行に響くことから、束縛した結果を使い回していると推測している。PowerShell 7 での振る舞い。
+- `$Object.$Name = $Value` にした写しが、今の試験で落ちるか。
 - 表示の言語が日本語でない Excel、日付の書き方が違う地域の設定での文字列の解釈（`1/2` など）。
 - `Currency`（`VT_CY`）の値。
 - 結合したセルへの書き込みで、結合の範囲の一部だけを指定した場合。

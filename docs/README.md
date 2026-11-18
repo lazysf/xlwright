@@ -17,4 +17,6 @@
   - [cell-error.md](./notes/cell-error.md): エラー値のセルを `SpecialCells` と `Value2` で列挙する方法の比較と、`Find-CellError.ps1` の形にした理由。
   - [screenshot.md](./notes/screenshot.md): ブックの見た目を画像にする方法（ウィンドウの `PrintWindow` と `Range.CopyPicture`）の比較と、その実測。
   - [userform-screenshot.md](./notes/userform-screenshot.md): 表示した UserForm を、画面に出さずに画像にする方法の実測。
-  - [feature-review.md](./notes/feature-review.md): 0.1.0 の後に足した機能を見直して、残したものと消したもの、その理由。スキルの機能を目的に照らした見直しの結果。
+  - [feature-review.md](./notes/feature-review.md): スキルが持つ機能と持たない機能を、目的に照らして今の形にしている理由。
+  - [skill-description.md](./notes/skill-description.md): スキルの `description` を今の形にしている理由と、選ばれる範囲の実測。
+  - [eval.md](./notes/eval.md): この repo で `claude plugin eval` がどう振る舞うかと、case を今の形にしている理由。

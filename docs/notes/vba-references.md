@@ -42,18 +42,16 @@
 
 - **`BuiltIn` だけを除き、`stdole` と `Office` は書く。** VBA と Excel は外せないので、書いても照らす意味が無い。`stdole` と `Office` は新しいブックに最初からあるが、書いておけば、外したブックには取り込みの警告で、版の違いには書き出しの差で気づける。
 - **`Guid` で照らし、版は比べない。** 版の違う参照設定の差し替えは、しないと決めた。
-- **取り込みは、足さずに警告する。** 参照先のファイルがその端末に無い時、`AddFromGuid` がどう振る舞うかを確かめていない。足りない参照設定は、後の `Test-VbaCompile.ps1` でも見える。
+- **取り込みは、足さずに警告する。** 参照先のファイルがその端末に無い時の `AddFromGuid` の振る舞いが分からない（「未確認」）。足りない参照設定は、後の `Test-VbaCompile.ps1` でも見える。
 - **`FullPath` は書かない。** 端末で変わる値で、正本に入れると、書き出した端末ごとに差になりうる。
 
-`tests/Test-XlWright.ps1` が、次を確かめる（2026-11-18）。
+`plugins/xlwright/skills/xlwright/tests/Test-XlWright.ps1` の `cells-and-vba` と `input-rejected` が、これを確かめる（2026-11-18）。何を確かめるかは、試験のファイルを正本とする。
 
-- `cells-and-vba`: 新しいブックの書き出しの `references.json` が、`stdole` と `Office` を順に持ち、VBA と Excel を持たないこと。`stdole` と Scripting Runtime を持つ `references.json` で取り込むと、Scripting Runtime の警告だけが出ること（`Guid` は小文字で書き、大文字と小文字を区別しないことも見る）。
-- `input-rejected`: `Guid` の無い項目を持つ `references.json` は、ブックを開く前に断られ、ブックが変わらないこと。
-- `BuiltIn` を除かない写し、警告を出さない写し、`Guid` の無い項目を断らない写しは、どれもこれらの項目で落ちた。
+- スクリプトをわざと壊した次の写しは、どれもこれらの項目で落ちた。`BuiltIn` を除かない写し、警告を出さない写し、`Guid` の無い項目を断らない写し。
 
 ## 未確認
 
 - ほかのブックやアドインへの参照（`Type` が 1 のプロジェクト参照）。`Guid` を持たない見込み。
-- 参照先が端末に無い参照設定（`IsBroken` が true）の読み方と、その時のコンパイルのエラー。
+- 参照先が端末に無い参照設定（`IsBroken` が true）の読み方と、その時のコンパイルのエラー。参照先のファイルが無い時の `AddFromGuid` の振る舞い。
 - 版の違う参照設定（`Office` の 2.8 以外など）が、どう読めて、どう振る舞うか。
 - VBA プロジェクトがロックされたブックでの `References` の読み取り。

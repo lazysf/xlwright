@@ -1,7 +1,7 @@
 # リボンの操作で Excel を前面に出さない
 
 - Date: 2026-11-12
-- 出典: 前面のウィンドウ（`GetForegroundWindow`）を 50〜100 ms ごとに記録しながら、`tests/Test-XlWright.ps1` と一時フォルダの実験用スクリプトを流した実測。Excel 16（Microsoft 365）、Windows 11、Windows PowerShell 5.1、画面の拡大率 100%。特に書かない限り、Claude のウィンドウを前面にして、人は何も触らない状態で測った。
+- 出典: 前面のウィンドウ（`GetForegroundWindow`）を 50〜100 ms ごとに記録しながら、`plugins/xlwright/skills/xlwright/tests/Test-XlWright.ps1` と一時フォルダの実験用スクリプトを流した実測。Excel 16（Microsoft 365）、Windows 11、Windows PowerShell 5.1、画面の拡大率 100%。特に書かない限り、Claude のウィンドウを前面にして、人は何も触らない状態で測った。
 
 人がスキルの作業中に Excel 以外のアプリを使えるように、リボンのタブの切り替えとボタンの押下を MSAA の既定の動作（`IAccessible.accDoDefaultAction`）で行っている。実装は `plugins/xlwright/skills/xlwright/scripts/Ribbon.psm1` の `Select-RibbonTab` と `XlWright.RibbonMsaa` を正本とする。
 
@@ -22,7 +22,7 @@ MSAA で押しても、ボタンのマクロは動き、MsgBox の文言も UI A
 
 人が Windows Terminal で文字を打ち続けている間に `-Full -Case ribbon,ribbon-layout` を流した時も、前面は最後まで Windows Terminal のままで、試験は合格した。打った文字に欠けは無かった（人の目視）。
 
-`tests/Test-XlWright.ps1` の `ribbon`、`ribbon-layout`、`publish` は、前面を 50 ms ごとに見て、Excel が一度も前面に来ないことを確かめる。タブの切り替えを `Select()` に戻した写しは `ribbon-layout` で、ボタンの押下を `Invoke()` に戻した写しは `ribbon` で、この確認に落ちた。
+`plugins/xlwright/skills/xlwright/tests/Test-XlWright.ps1` の `ribbon`、`ribbon-layout`、`publish` は、前面を 50 ms ごとに見て、Excel が一度も前面に来ないことを確かめる。タブの切り替えを `Select()` に戻した写しは `ribbon-layout` で、ボタンの押下を `Invoke()` に戻した写しは `ribbon` で、この確認に落ちた。
 
 ## 効かなかった方法
 

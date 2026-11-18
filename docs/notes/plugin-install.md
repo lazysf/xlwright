@@ -1,7 +1,7 @@
 # プラグインとして入れた時の振る舞い
 
 - Date: 2026-11-13
-- 出典: Claude Desktop の Code タブの設定の「プラグイン」の画面と `/plugin` の操作、同梱の Claude Code 2.1.321 の `claude plugin list`、`claude plugin marketplace add --help`、`claude plugin update`、`installed_plugins.json` とキャッシュのフォルダ、導入先での `tests/Test-XlWright.ps1` の実行（commit `9cf0254`）、Claude Code の docs（<https://code.claude.com/docs/en/plugins>、<https://code.claude.com/docs/en/skills>、<https://code.claude.com/docs/en/discover-plugins>、<https://code.claude.com/docs/en/plugins/loading>、<https://code.claude.com/docs/en/plugins-reference>）、主要なプラグインの repo の manifest と workflow（2026-11-13 の main）、release-please-action の README（<https://github.com/googleapis/release-please-action>）と GitHub の docs（<https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes>）（2026-11-16）
+- 出典: Claude Desktop の Code タブの設定の「プラグイン」の画面と `/plugin` の操作、同梱の Claude Code 2.1.321 の `claude plugin list`、`claude plugin marketplace add --help`、`claude plugin update`、`installed_plugins.json` とキャッシュのフォルダ、導入先での `skills/xlwright/tests/Test-XlWright.ps1` の実行（commit `9cf0254`）、Claude Code の docs（<https://code.claude.com/docs/en/plugins>、<https://code.claude.com/docs/en/skills>、<https://code.claude.com/docs/en/discover-plugins>、<https://code.claude.com/docs/en/plugins/loading>、<https://code.claude.com/docs/en/plugins-reference>）、主要なプラグインの repo の manifest と workflow（2026-11-13 の main）、release-please-action の README（<https://github.com/googleapis/release-please-action>）と GitHub の docs（<https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes>）（2026-11-16）
 
 利用者と同じ手順で入れて確かめた事実と、README の入れ方と版を今の形にしている理由を書く。入れ方そのものは [README](../../README.md) を正本とする。
 
@@ -10,15 +10,15 @@
 ## 確かめた事実
 
 - Code タブで `/plugin marketplace add owner/repo` を送ると、「ディレクトリ」の画面に「マーケットプレイスを追加」のダイアログが開き、URL の欄に `owner/repo` が入っていた。コマンドとしては実行されない。「同期」を押すと、「Code」の一覧に Xlwright が出た。
-- ダイアログの URL の欄は「GitHub の `owner/repo` または Git リポジトリの URL」を求め、手元に clone したフォルダのパスを受け付けなかった。CLI の help には、パスも受け付けると書かれている。CLI でパスを渡す形は試していない。
+- ダイアログの URL の欄は「GitHub の `owner/repo` または Git リポジトリの URL」を求め、手元に clone したフォルダのパスを受け付けなかった。CLI の help には、パスも受け付けると書かれている。
 - Xlwright の「+」（インストール）を押すと、user scope で有効になった。版は commit のハッシュ（`689ca7f5a64a`）になった。詳細の画面の「インストール ∨」には、「インストールする」（`~/.claude/`）、「プロジェクト用にインストール（共有）」（`.claude/`）、「プロジェクト用にインストール（個人）」（`.claude.local/`）がある。
-- 入れた後に `/plugin install xlwright@xlwright` を送ると、Xlwright の詳細の画面（「削除」と「管理」のボタン）が開いた。入れる前に送る形は試していない。
+- 入れた後に `/plugin install xlwright@xlwright` を送ると、Xlwright の詳細の画面（「削除」と「管理」のボタン）が開いた。
 - スキルは `/xlwright:xlwright` として読み込まれた。docs では、プラグインのスキルは常に `/<プラグイン名>:<スキル名>` になる。
 - この repo の外のフォルダでは、短い `/xlwright` でもプラグイン版が読み込まれた。Code タブの入力の候補には、`xlwright:xlwright (xlwright)` と出る。この repo の中では、手直し中のスキルも `/xlwright` なので区別できない。
 - `${CLAUDE_SKILL_DIR}` は、`~/.claude/plugins/cache/xlwright/xlwright/<版>/skills/xlwright` に展開された。
 - 導入先のファイルは、`HEAD` の `plugins/xlwright/` と一覧も中身も一致した。違いは、Claude Code が置く `.in_use/` だけだった。
-- 導入先の `tests/Test-XlWright.ps1` は、既定の 7 項目も、`-Full` の 10 項目も、すべて合格した。
-- Code タブで `/plugin marketplace update xlwright` を送ると、更新せずに設定の「プラグイン」の画面が開いた。ほかの `/plugin` のサブコマンドを Code タブで送る形は試していない。
+- 導入先の `skills/xlwright/tests/Test-XlWright.ps1` は、既定の 7 項目も、`-Full` の 10 項目も、すべて合格した。
+- Code タブで `/plugin marketplace update xlwright` を送ると、更新せずに設定の「プラグイン」の画面が開いた。
 - 設定の「プラグイン」の画面で xlwright の行を押すと詳細が開き、「更新」のボタンと、有効と無効を切り替えるスイッチがある。行の「…」には「無効にする」と「削除」だけがある。スイッチを切ると、`~/.claude/settings.json` の `enabledPlugins` の `xlwright@xlwright` が `false` になった。
 - `version` を書いていない時、版は、marketplace の repo の先頭の commit のハッシュ（12 文字）になった。`plugins/xlwright/` を変えていない commit（`d3a2067`、doc だけの変更）でも、キャッシュに版 `cb12836fb035` のフォルダができた（中身は前の版と同じ）。docs の「相対パスのプラグインは、そのディレクトリの commit のハッシュ」（<https://code.claude.com/docs/en/plugins/loading>）とは合わない。
 - 新しい commit を push しても、手元の marketplace の写し（`~/.claude/plugins/marketplaces/xlwright`）を取り直すまで、アプリは気づかない。詳細の画面の「更新」は押せず、ツールチップに「最新です」と出る。
@@ -28,18 +28,23 @@
 
 ## 入れ方と版を今の形にしている理由
 
-- スキル名はプラグイン名と同じ `xlwright` のままにした。重複は見た目だけで、スキルが選ばれるかは `description` で決まる。名前を変えると、呼び出し名と開発の手順（手直し中の `/xlwright`）が変わる。
+- スキル名はプラグイン名と同じ `xlwright` にしている。重複は見た目だけで、スキルが選ばれるかは `description` で決まる。名前を変えると、呼び出し名と開発の手順（手直し中の `/xlwright`）が変わる。
 - 入れ方は `/plugin marketplace add` と `/plugin install` の 2 段だけを書く。Code タブの画面の操作、更新の手順、自動更新の既定は、Claude Code の使い方の話で xlwright に固有でないので、README に書かない。広く使われているプラグイン（`obra/superpowers`、`anthropics/claude-plugins-official`、`anthropics/skills`、`wshobson/agents`）の README も、`/plugin` のコマンドだけを案内し、scope やチームでの設定に触れていない。
 - `claude plugin ...` の CLI のコマンドを入れ方に書かない。Desktop アプリは CLI を同梱するが、PATH に `claude` が無い。
 - scope（user、project、local）で入れ方を分けない。`claude plugin install` と `claude plugin marketplace add` は `--scope` を持ち、local にすれば `~/.claude/settings.json` に書かずに repo ごとに入れられる。ただし、どの scope でも `~/.claude/plugins/` には書き込む。
 - `plugin.json` に `version` を書き、上げた時だけ新しい版が利用者に届くようにする。書かないと、`plugins/xlwright/` を変えていない commit でも新しい版ができる（上の事実）。docs（plugins/loading）は、manifest で版を固定すると、その文字列を変えるまで何度 push しても利用者はキャッシュの写しのままと書いている。
 - marketplace の項目には `version` を書かない。docs（plugins-reference）では manifest の `version` が項目の `version` より優先されるので、項目に書いても使われず、食い違いの元になるだけになる。
 - 版の上げ忘れは、pre-push の hook（`tools/Test-PluginVersion.ps1`）で止める。commit ごとには確かめず、作業中は何度 commit してもよく、配る直前に 1 回だけ版を上げる。`wshobson/agents` も、変えたプラグインの版が上がっているかを確かめるが、場所は PR の CI になっている。この repo は main へ直接 push するので、push の時に確かめる。
-- 版を CI で自動で付ける形（release-please など）は採らない。調べた主要な repo（`obra/superpowers`、`wshobson/agents`、`anthropics/claude-plugins-official`、`anthropics/claude-code`、`anthropics/skills`）は、どれも版を手で書くか、書かずにハッシュに任せていた。自動にすると、新しい依存と、Actions に PR を作らせる権限の設定が要る。docs の版の決め方（manifest の `version`、項目の `version`、commit のハッシュの順）に git のタグは出てこないので、CI でタグを付けるだけでは利用者の版は変わらないと見ている。
+- 版を CI で自動で付ける形（release-please など）は採らない。調べた主要な repo（`obra/superpowers`、`wshobson/agents`、`anthropics/claude-plugins-official`、`anthropics/claude-code`、`anthropics/skills`）は、どれも版を手で書くか、書かずにハッシュに任せていた。自動にすると、新しい依存と、Actions に PR を作らせる権限の設定が要る。docs の版の決め方（manifest の `version`、項目の `version`、commit のハッシュの順）に git のタグは出てこない。
 - release-please を採らない理由は、ほかに 2 つある。release-please は版を上げる PR を自分で作るので、版を上げていない push を止める pre-push の hook と両立しない。CHANGELOG は commit message から作られるので、利用者に向けて日本語でまとめて書く今の形にならない。
-- tag は、版を上げた push の後に手で付ける。版と commit の対応を残すためで、利用者の版には関わらない。GitHub の Release と CI は足さない。Release の中身は CHANGELOG.md の写しになる。GitHub が自動で作る Release のノートは、merge した PR の一覧なので、main へ直接 push するこの repo では使えないと見ている（docs は PR だけを挙げていて、PR を通さない commit が載るかは書いていない。試していない）。lint は commit の時の hook で流れているので、CI で流し直さない。
+- tag は、版を上げた push の後に手で付ける。版と commit の対応を残すためで、利用者の版には関わらない。GitHub の Release と CI は足さない。Release の中身は CHANGELOG.md の写しになる。lint は commit の時の hook で流れているので、CI で流し直さない。
 
 ## 未確認
 
+- CLI の `claude plugin marketplace add` に、手元に clone したフォルダのパスを渡す形。
+- 入れる前に、Code タブで `/plugin install xlwright@xlwright` を送る形。
+- `marketplace add`、`install`、`marketplace update` のほかの `/plugin` のサブコマンドを、Code タブで送る形。
 - 詳細の画面の「更新」が押せるようになる条件。marketplace を取り直した後も、再起動した後も押せなかった。`version` を上げた時に押せるようになるかは見ていない（`0.1.0` への切り替えは CLI で行った）。
 - Code タブで、marketplace の自動更新を有効にする操作があるか。docs は `/plugin` の Marketplaces の画面の「Enable auto-update」を挙げるが、Desktop の画面では見ていない。
+- CI でタグを付けるだけで、利用者の版が変わらないか。docs の版の決め方にタグが出てこないことからの推測で、試していない。
+- GitHub が自動で作る Release のノートに、PR を通さずに main へ push した commit が載るか。docs は merge した PR だけを挙げている。載らなければ、main へ直接 push するこの repo では使えない。

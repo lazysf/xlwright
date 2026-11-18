@@ -40,7 +40,7 @@ VBA のコンパイルには、COM の直接の API が無い。VBE のメニュ
 - `WM_CLOSE` でダイアログは閉じた（測った 1 回では 59 ms と 72 ms）。`MainWindow.Visible` を偽にすると、VBE は隠れた。
 - ダイアログを見つけた時（正しいコードでは 5 秒の後）の前面のウィンドウは、9 回とも Claude のままだった。見たのはその 1 点だけで、間は見ていない。
 - 各回の後に Excel のプロセスは残らず、`Use-ExcelWorkbook` の警告も無かった。
-- 構文エラーの場合の `Use-ExcelWorkbook` の全体は、測った 2 回で 11.6 秒と 3.5 秒だった。10 秒を超えた回は、`Quit` で Excel が終わらず、`Stop-ExcelSession` が自分の Excel を止めたと推測する（確かめていない）。
+- 構文エラーの場合の `Use-ExcelWorkbook` の全体は、測った 2 回で 11.6 秒と 3.5 秒だった。
 
 ## スクリプトで確かめたこと
 
@@ -50,11 +50,11 @@ VBA のコンパイルには、COM の直接の API が無い。VBE のメニュ
 - VBA の無い `.xlsx` と、モジュールを足していない `.xlsm` は、コンパイルの済んだ状態になった。
 - `GetSelection` の行は、コードウィンドウの行だった。`.bas` の 6 行目（先頭が `Attribute VB_Name` の行）のエラーは、5 行目と読めた。
 - スクリプトの全体は、1 回で 4〜12 秒だった。エラーの有無によらず、12 秒かかる回があった。
-- `tests/Test-XlWright.ps1` の `vba-compile-error` は、前面のウィンドウを 50 ms ごとに見る。宣言の無い変数と構文エラーの検査の間、Excel は一度も前面に来なかった。
+- `plugins/xlwright/skills/xlwright/tests/Test-XlWright.ps1` の `vba-compile-error` は、前面のウィンドウを 50 ms ごとに見る。宣言の無い変数と構文エラーの検査の間、Excel は一度も前面に来なかった。
 
 合格をコントロールの `Enabled` で見分けるのは、ダイアログが出ないことだけでは、コンパイルが起きなかった場合と区別できないため。どちらも確かめられない時は、合格にせず失敗にしている。
 
-`tests/Test-XlWright.ps1` の `vba-compile` と `vba-compile-error` が、これを確かめる。ダイアログを見つけられなくした写しは `vba-compile-error` で、済んだ状態を見ないようにした写しは `vba-compile` で落ちた。
+`plugins/xlwright/skills/xlwright/tests/Test-XlWright.ps1` の `vba-compile` と `vba-compile-error` が、これを確かめる。ダイアログを見つけられなくした写しは `vba-compile-error` で、済んだ状態を見ないようにした写しは `vba-compile` で落ちた。
 
 ## mcp ブランチの記録との違い
 
@@ -66,6 +66,7 @@ VBA のコンパイルには、COM の直接の API が無い。VBE のメニュ
 - モジュールが複数ある時、文書モジュールや UserForm にエラーがある時の `ActiveCodePane`。
 - VBA プロジェクトがロックされたブック。スクリプトは `VBProject.Protection` を見て、コンパイルせずに失敗にするが、その動きは確かめていない。
 - VBE のウィンドウが先に表示されている時。
+- 構文エラーの時に `Use-ExcelWorkbook` の全体が 10 秒を超えた理由。`Quit` で Excel が終わらず、`Stop-ExcelSession` が自分の Excel を止めたと推測している。
 - 大きなプロジェクトで、ダイアログが出るまでの時間が 5 秒を超えるか。
 - 32-bit の Excel、日本語以外の表示言語（ダイアログの文言と `Caption` が変わる）。
 - コンパイルエラーのダイアログが 3 秒で閉じない時に、Excel を止める分岐。試験ではダイアログが閉じるので、この分岐は流れていない。照合して止める `XlWright.ExcelProcess.StopIfSame` そのものは、`stop-own-process` が確かめる。

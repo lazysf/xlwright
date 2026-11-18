@@ -1,40 +1,20 @@
-# 0.1.0 の後に足した機能の見直し
+# スキルが持つ機能と持たない機能の理由
 
-- Date: 2026-11-17、2026-11-18
-- 出典: 人と決めた判断
+- Date: 2026-11-18
+- 出典: 人と決めた判断（2026-11-17、2026-11-18）、commit `9c9d647`、`e93d79f`、`98358d0`
 
-0.1.0 の後に足した機能のうち、ほかの機能を呼んで膨らんだものを、新しい機能より先に見直した。どれも未リリース（CHANGELOG の `[Unreleased]`）だったので、消しても利用者は困らず、その時が一番安く済んだ。
+機能を置くかは、目的（Excel を土台にしたツールの開発、AGENTS.md）に当たるかと、ほかの機能を呼んで膨らまないかで決める。機能の一覧と使い方は、`plugins/xlwright/skills/xlwright/SKILL.md` と `references/` を正本とする。2026-11-18 に、その時のすべての機能が目的に当たることを確かめた。
 
-## 残すと決めたもの（2026-11-17）
+## 置いている機能のうち、理由の要るもの
 
 - `Test-VbaCompile.ps1`、`Invoke-ExcelMacro`、`Read-ExcelRange` と `Write-ExcelRange`、`Save-WorkbookScreenshot.ps1`、`Get-WorkbookSummary.ps1` は、代わりの手段が無いか、無いと誤りが出る。
 - `Find-CellError.ps1` と `Test-Prerequisite.ps1` は、無くても困らないが、ほかの機能を複雑にしていない。
-- 試験の `-Changed` は、手で項目を選ぶ遅さと誤りという、実際の作業から出た理由がある。
+- `Get-WorkbookSummary.ps1` と `Find-CellError.ps1` は、受け取ったブックの分析にも使える形をしている。置いているのは、手を入れる前に既存のツールのブックを知るためと、シートの構成を変えた後にツールの数式が壊れていないかを見るためである。
+- 試験の `-Changed` は、手で項目を選ぶと遅く、選び誤るという、実際の作業から出た理由がある。
 
-## 消したもの（2026-11-18）
+## 置いていない機能
 
-- VBA のテストの実行（`Invoke-VbaTest.ps1`）と、配布ブックからテストを外す `Publish-Workbook.ps1 -ExcludeTests`。ScriptBlock の中で `Invoke-ExcelMacro` を並べれば足り、テストをブックに置くと配布ブックから外す仕組みが要るようになるため。既定ではブックの `Test_` の `Sub` をすべて実行し、自分で書いていないマクロも動かすことにもなっていた。
-- 正本との照合（`Compare-Vba.ps1`）と、正本に無いコンポーネントを消す `Import-Vba.ps1 -Prune`。VBE が整えた正本は往復しても変わらないので、照合は `Export-Vba.ps1` の書き出しと `git diff --no-index` で足りる（[vba-roundtrip.md](./vba-roundtrip.md)）。消すのは正本からモジュールを消した時だけで、名前を指定した `VBComponents.Remove` で足りる。一括で消すスイッチは、人が足したコードまで消すおそれと、それを防ぐために照合で対象を調べる手順を呼び込んでいた。手順と注意は [references/vba.md](../../plugins/xlwright/skills/xlwright/references/vba.md) の「正本との照合」と「正本から消したモジュール」にある。
+- **ブックに置いた VBA のテストをまとめて動かすスクリプトと、配布ブックからテストを外すスイッチ。** 確かめるマクロは、ScriptBlock の中で `Invoke-ExcelMacro` を並べれば動かせる。テストをブックに置くと、配布ブックから外す仕組みが要るようになる。ブックの `Test_` の `Sub` をすべて動かす作りでは、自分で書いていないマクロも動く。
+- **正本とブックを照合するスクリプトと、正本に無いコンポーネントを一括で消すスイッチ。** VBE が整えた正本は往復しても変わらないので、照合は `Export-Vba.ps1` の書き出しと `git diff --no-index` で足りる（[vba-roundtrip.md](./vba-roundtrip.md)）。消すのは正本からモジュールを消した時だけで、名前を指定した `VBComponents.Remove` で足りる。一括で消すと、人がブックに足したコードまで消すおそれがある。それを防ぐには照合で対象を調べる手順が要り、機能が膨らむ。手順と注意は [references/vba.md](../../plugins/xlwright/skills/xlwright/references/vba.md) の「正本との照合」と「正本から消したモジュール」にある。
 
-## 目的に照らした見直し（2026-11-18）
-
-AGENTS.md に書いた目的（Excel を土台にしたツールの開発）に照らして、その時点のスキルの機能を見直した。0.1.0 の後に足して、まだ push していなかったものも含めた。目的から外れた機能は無く、消したものも無い。
-
-| 機能 | ツールの開発での役目 |
-| --- | --- |
-| `Use-ExcelWorkbook`、`New-ExcelWorkbook`、`Invoke-ExcelScript.ps1` | ブックを作り、直す土台。Excel の起動と停止の安全も担う |
-| `Read-ExcelRange`、`Write-ExcelRange` | ツールのシート（入力欄、設定、数式）を、型を崩さずに書く |
-| `Export-Vba.ps1`、`Import-Vba.ps1`、`references.json`、`Test-VbaCompile.ps1`、`Invoke-ExcelMacro` | マクロの正本を管理し、自分が書いたマクロを確かめる |
-| UserForm の手順、`Save-WorkbookScreenshot.ps1`（`-UserForm` を含む） | ツールの入力画面と、人にどう見えるかを確かめる |
-| `Add-CustomUI.ps1`、`Test-RibbonLayout.ps1`、`Invoke-RibbonButton.ps1` | ツールの操作の入り口を作り、確かめる |
-| `Lock-VbaProject.ps1`、`Publish-Workbook.ps1` | ツールを配る |
-| `Test-Prerequisite.ps1`、`Get-WorkbookSummary.ps1` | 手を入れる前に、作業の前提と既存のツールのブックの中身を確かめる |
-| `Find-CellError.ps1` | シートの構成を変えた後に、ツールの数式が壊れていないかを見る |
-| 別ブックからシートをコピーする手順 | ひな形のシートを、ツールに取り込む |
-
-外れていたのは、機能を説明する言い回しと eval の 1 件だった。同じ日に、機能を変えずに直した。
-
-- `SKILL.md` の `description` と本文、`references/com.md` の言い回し（「シートの確認・編集」「複数のブックを順に扱う」など）が、受け取ったブックの分析や、多数のブックをまとめて処理する作業にも読めた。ツールの開発の文脈に直し、`description` には使わない場面（受け取ったブックの分析、集計の確認、データの整形や変換）も書いた。`plugin.json` と `marketplace.json` の説明も同じ範囲にそろえた。
-- eval の `sheet-check` が、受け取ったブックの集計の確認でスキルが選ばれることを期待していた。依頼文をツールのシートの編集に替え、元の依頼文は、スキルが選ばれないことを見る `not-tool` に移した。結果は DEVELOPMENT.md の「eval」にある。
-- やらないと決めたこと: `xlsx` スキルなど、ほかの表計算のスキルの側を直すこと。範囲外の依頼を断る手順を `SKILL.md` に書くこと。
-- `description` を書く時の制約（公式 docs で確かめた、2026-11-18）: Claude Code はスキルの一覧で `description` と `when_to_use` を合わせて 1,536 文字で切るので、主な用途を先に書く（[skills](https://code.claude.com/docs/en/skills)）。`<` と `>` は `&lt;` と `&gt;` で表示される。Agent Skills の決まりでは、`description` は 1,024 文字まで、XML のタグを含めず、何をするかといつ使うかを書く（[best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)）。
+`description` を今の形にしている理由は、[skill-description.md](./skill-description.md) にある。

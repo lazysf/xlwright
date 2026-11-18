@@ -14,14 +14,6 @@
 
 見直して残すと決めたもの（2026-11-17）: `Test-VbaCompile.ps1`、`Invoke-ExcelMacro`、`Read-ExcelRange` と `Write-ExcelRange`、`Save-WorkbookScreenshot.ps1`、`Get-WorkbookSummary.ps1` は、代わりの手段が無いか、無いと誤りが出る。`Find-CellError.ps1` と `Test-Prerequisite.ps1` は、無くても困らないが、ほかの機能を複雑にしていない。試験の `-Changed` は、手で項目を選ぶ遅さと誤りという、実際の作業から出た理由がある。
 
-- [ ] VBA のテストのつながりを見直す。`Invoke-VbaTest.ps1` → テストのモジュールをブックの中に置く → `Publish-Workbook.ps1 -ExcludeTests` → 外した後のコンパイル、と膨らんだ。
-  - 理由: `Invoke-VbaTest.ps1` は、「確かめる場合が多い時に便利」として Claude が出した案。`Test_` の Sub を順に `Invoke-ExcelMacro` で呼ぶだけなら、`Invoke-ExcelScript.ps1` に渡す ScriptBlock の数行で書ける。テストをブックに置いたので、配布ブックから外す `-ExcludeTests` と、外した後に残りがコンパイルできるかの確認が要るようになった。
-  - 量: スクリプトと関数が約 180 行（`Invoke-VbaTest.ps1`、`XlWright.psm1` の `Get-VbaTestName`、`Publish-Workbook.ps1` の `-ExcludeTests`）、試験の項目が 3 つで約 115 行（`vba-test`、`vba-test-fail`、`publish-exclude-tests`）。
-  - 決めること: 次のどれにするかを人に確かめる。
-    1. 3 つとも消す。マクロを確かめる手順は、`SKILL.md` の「マクロを動かす」で足りる。
-    2. `Invoke-VbaTest.ps1` だけ残し、テストはブックの外（写し）に置く形に変える。`-ExcludeTests` は消す。
-    3. 今のまま残す。
-  - 消す時に直すもの: `SKILL.md`（前提、注意、検証、動作確認）、`references/vba.md` の「テストの実行」、`references/publish.md`、`docs/notes/vba-test.md`、README の「できること」、`DEVELOPMENT.md` の `-Full` の項目の一覧、試験の `$CasesByFile` と `$FullOnlyCases`、CHANGELOG の `[Unreleased]`。
 - [ ] 正本との照合のつながりを見直す。`Compare-Vba.ps1` → `Import-Vba.ps1 -Prune` → 「`-Prune` の前に `Compare-Vba.ps1` で消える対象を調べる」という手順、と膨らんだ。
   - 理由: VBE が整えた形の正本は、取り込んで書き出しても 1 バイトも変わらない（`docs/notes/vba-roundtrip.md`）。`Export-Vba.ps1` で一時フォルダに書き出し、`git diff --no-index` で比べれば、ほぼ足りる。足りないのは、UserForm の `.frm` の空行と、大文字小文字だけの差の見分け。`-Prune` が要るのは、正本からモジュールを消した時だけで、`VBComponents.Remove` の 1 行で代わりになる（`docs/notes/vba-prune.md`）。
   - 量: スクリプトとスイッチが約 190 行（`Compare-Vba.ps1`、`Import-Vba.ps1` の `-Prune`）、試験の項目が 2 つで約 95 行（`vba-compare`、`vba-prune`）。

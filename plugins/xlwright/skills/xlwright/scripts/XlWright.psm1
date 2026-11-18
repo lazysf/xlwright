@@ -5,8 +5,8 @@ Runs Excel through COM in a dedicated instance and always cleans up.
 .DESCRIPTION
 Use-ExcelWorkbook opens an existing workbook and invokes a script block with the Excel.Application
 and Workbook objects. New-ExcelWorkbook creates a new empty workbook file. Invoke-ExcelMacro runs a macro
-inside that script block and handles the dialogs the macro shows. Get-VbaTestName lists the VBA tests of
-a project. Get-ExcelPrerequisite checks, without starting Excel, what stands in the way of opening a workbook.
+inside that script block and handles the dialogs the macro shows. Get-ExcelPrerequisite checks, without
+starting Excel, what stands in the way of opening a workbook.
 Read-ExcelRange and Write-ExcelRange read and write the cells of a range in one call.
 
 Use-ExcelWorkbook disables VBA macros and workbook events by default and opens without updating
@@ -371,8 +371,7 @@ $script:MacroDialogWatcher = {
     while (-not $State.Stop) {
         $dialog = [XlWright.Dialog]::Find($excelPid)
         if ($dialog -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 100; continue }
-        $State.DialogMessage = [XlWright.Dialog]::Message($dialog)
-        $text = [XlWright.Dialog]::Title($dialog) + ': ' + $State.DialogMessage
+        $text = [XlWright.Dialog]::Title($dialog) + ': ' + [XlWright.Dialog]::Message($dialog)
 
         # 4800 is the End button of the VBA runtime error dialog. The button texts depend on the display
         # language, the control id does not. WM_CLOSE does not close this dialog.
@@ -442,10 +441,6 @@ function Invoke-ExcelMacro {
 
     Returns what the macro returns, and nothing for a Sub. Use it inside the script block of
     Use-ExcelWorkbook with -EnableMacros.
-
-    The exception of every case but the MsgBox with only OK carries Data['XlWrightFailure'] ('RuntimeError',
-    'CompileError' or 'ExcelStopped') and Data['XlWrightDialogMessage'] (the text of the dialog without its
-    title), so that a caller such as Invoke-VbaTest.ps1 does not have to parse the message.
     #>
     [CmdletBinding()]
     param(
@@ -459,7 +454,7 @@ function Invoke-ExcelMacro {
     $processId = Get-ExcelProcessId $Excel
     $state = [hashtable]::Synchronized(@{
         Stop = $false; ProcessId = $processId; RuntimeError = $null; CompileError = $null; Fatal = $null
-        DialogMessage = $null; Excel = $Excel
+        Excel = $Excel
         EditorWasVisible = [XlWright.Dialog]::IsEditorVisible([uint32]$processId)
         StartTicks = [XlWright.ExcelProcess]::StartTicks($processId)
         Closed = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList))
@@ -480,58 +475,20 @@ function Invoke-ExcelMacro {
         try { [void]$ps.EndInvoke($async) } finally { $ps.Dispose() }
     }
     foreach ($text in $state.Closed) { Write-Warning ("Closed a dialog shown by macro '" + $Name + "': " + $text) }
-    $kind = $null
     $message = $null
     if ($state.Fatal) {
-        $kind = 'ExcelStopped'
         $message = $state.Fatal + ' Stopped the Excel instance of this call (PID ' + $processId + '). Unsaved changes are lost.'
     }
     elseif ($state.CompileError) {
-        $kind = 'CompileError'
         $message = "Macro '" + $Name + "' stopped with a compile error: " + $state.CompileError
     }
     elseif ($state.RuntimeError) {
-        $kind = 'RuntimeError'
         $message = "Macro '" + $Name + "' stopped with a runtime error: " + $state.RuntimeError
     }
-    if ($kind) {
-        $exception = New-Object System.InvalidOperationException($message)
-        $exception.Data['XlWrightFailure'] = $kind
-        $exception.Data['XlWrightDialogMessage'] = $state.DialogMessage
-        throw $exception
-    }
+    if ($message) { throw (New-Object System.InvalidOperationException($message)) }
     if ($failure) { throw $failure }
     # A Sub returns nothing; do not put a null into the output of the script block.
     if ($null -ne $value) { $value }
-}
-
-function Get-VbaTestName {
-    <#
-    .SYNOPSIS
-    Lists the VBA tests of a project as "<module>.<Sub>", in the order of the components and of the code.
-
-    .DESCRIPTION
-    A test is a Sub in a standard module that takes no arguments, is not Private and whose name starts with
-    "Test_". Invoke-VbaTest.ps1 runs these; Publish-Workbook.ps1 -ExcludeTests reports the ones it leaves.
-    #>
-    param(
-        # The VBProject of an open workbook. It must not be locked.
-        [Parameter(Mandatory)]$Project
-    )
-    foreach ($component in $Project.VBComponents) {
-        if ($component.Type -ne 1) { continue }  # vbext_ct_StdModule
-        $module = $component.CodeModule
-        $count = $module.CountOfLines
-        if ($count -eq 0) { continue }
-        # The VBE normalizes the code, so a declaration always starts its (continued) line.
-        $code = [regex]::Replace($module.Lines(1, $count), ' _\r?\n', ' ')
-        foreach ($line in ($code -split '\r?\n')) {
-            # Private is left out on purpose: Application.Run would run a Private Sub by its qualified name.
-            if ($line -match '^\s*(?:Public\s+)?(?:Static\s+)?Sub\s+(Test_\w*)\s*\(\s*\)') {
-                $component.Name + '.' + $Matches[1]
-            }
-        }
-    }
 }
 
 function Get-ExcelPrerequisite {
@@ -860,5 +817,5 @@ function Write-ExcelRange {
     }
 }
 
-Export-ModuleMember -Function Use-ExcelWorkbook, New-ExcelWorkbook, Get-ExcelProcessId, Invoke-ExcelMacro, Get-VbaTestName,
+Export-ModuleMember -Function Use-ExcelWorkbook, New-ExcelWorkbook, Get-ExcelProcessId, Invoke-ExcelMacro,
     Get-ExcelPrerequisite, Read-ExcelRange, Write-ExcelRange

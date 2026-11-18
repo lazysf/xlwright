@@ -6,23 +6,13 @@ Updates a work book from its VBA (and optional ribbon) sources and publishes a V
 The sources are read from the work book's folder: vba/ (required) and ribbon/customUI14.xml
 (embedded only when present). The default output file name is the work book's name, or the folder
 name + .xlsm when the work book is named workbook.xlsm.
-
--ExcludeTests removes the standard modules whose name starts with "Test_" from the published copy before it
-is locked. The work book keeps them. Tests that are still in the published copy (a Sub named Test_* in
-another standard module) are listed in a warning. The copy is then compiled with Test-VbaCompile.ps1; if a module that
-is left uses a removed one, nothing is published and the compile error is thrown.
-
-Output: the path of the published workbook, as the last line. With -ExcludeTests, one line
-"removed test module: <name>" per removed module comes before it.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$OutDir,
     [ValidateNotNullOrEmpty()][string]$FileName,
-    [switch]$Force,
-    # Leave the test modules (standard modules named Test_*) out of the published copy.
-    [switch]$ExcludeTests
+    [switch]$Force
 )
 $ErrorActionPreference = 'Stop'
 
@@ -70,40 +60,6 @@ try {
 
     [void][IO.Directory]::CreateDirectory($outputDirectory)
     [IO.File]::Copy($updatedWorkbook, $pendingOutput)
-    if ($ExcludeTests) {
-        Import-Module (Join-Path $PSScriptRoot 'XlWright.psm1') -Force
-        # Not after the lock: whether a locked project can be changed through COM was not checked.
-        Use-ExcelWorkbook -Path $pendingOutput -Save -ScriptBlock {
-            param($xl, $wb)
-            $project = $wb.VBProject
-            $components = $project.VBComponents
-            # Collected first, so that the collection does not change while it is enumerated.
-            $testModules = @(foreach ($component in $components) {
-                if ($component.Type -eq 1 -and $component.Name -like 'Test_*') { $component }  # vbext_ct_StdModule
-            })
-            foreach ($component in $testModules) {
-                $name = $component.Name
-                $components.Remove($component)
-                "removed test module: " + $name
-            }
-            $left = @(Get-VbaTestName $project)
-            if ($left.Count -gt 0) {
-                Write-Warning ("Tests left in the published workbook (not in a module named Test_*): " + ($left -join ', '))
-            }
-        }
-        # A module that is left can use a removed one. In the locked copy that fails only when it runs on the user's machine.
-        $compileJson = Join-Path ([IO.Path]::GetTempPath()) ($publishId + '-compile.json')
-        try {
-            & (Join-Path $PSScriptRoot 'Test-VbaCompile.ps1') -Path $pendingOutput -OutFile $compileJson
-            $compiled = [IO.File]::ReadAllText($compileJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
-        }
-        finally { Remove-Item -LiteralPath $compileJson -Force -ErrorAction SilentlyContinue }
-        if ($compiled.Compiled -ne $true) {
-            $place = $compiled.CompileError
-            throw ("The published copy does not compile without the test modules: " + $place.Message + " (module " +
-                $place.Module + ", line " + $place.Line + "). Move what the other modules use out of the Test_* modules.")
-        }
-    }
     & (Join-Path $PSScriptRoot 'Lock-VbaProject.ps1') -Path $pendingOutput
     [IO.File]::Replace($updatedWorkbook, $workbook.FullName, [NullString]::Value)
 

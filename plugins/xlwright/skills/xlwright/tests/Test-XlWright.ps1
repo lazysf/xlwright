@@ -5,7 +5,7 @@ Checks the xlwright scripts against the real Excel on this machine.
 .DESCRIPTION
 Every case creates its own workbooks in a new temporary folder and checks explicit expected values.
 Nothing outside that folder is changed. The default cases keep Excel hidden. -Full adds the cases
-that show Excel and the VBE on the screen (VBA compile error, macro dialogs, failing VBA tests, ribbon click, ribbon layout, publish with VBA lock, publish without the test modules, screenshot); do not touch
+that show Excel and the VBE on the screen (VBA compile error, macro dialogs, ribbon click, ribbon layout, publish with VBA lock, screenshot); do not touch
 those windows while they run. These cases also check that Excel never takes the foreground.
 
 Preconditions: no Excel process is running, and AccessVBOM is 1. Otherwise nothing runs (exit 2).
@@ -41,8 +41,8 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $S = [IO.File]::ReadAllText((Join-Path $data 'strings.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
 
 # The cases that cover each file, by its path in the skill folder: the cases that call the script, directly or
-# through another script (Publish-Workbook.ps1 calls Import-Vba.ps1, Add-CustomUI.ps1, Lock-VbaProject.ps1 and, with
-# -ExcludeTests, Test-VbaCompile.ps1; Compare-Vba.ps1 calls Export-Vba.ps1). '*' is every case. A file of scripts\
+# through another script (Publish-Workbook.ps1 calls Import-Vba.ps1, Add-CustomUI.ps1 and Lock-VbaProject.ps1;
+# Compare-Vba.ps1 calls Export-Vba.ps1). '*' is every case. A file of scripts\
 # that is not listed, Test-XlWright.ps1 and anything in tests\data\ also run every case; other files run none.
 # When a case or a script is added, add it here as well.
 $CasesByFile = [ordered]@{
@@ -52,20 +52,19 @@ $CasesByFile = [ordered]@{
     'scripts/Invoke-ExcelScript.ps1' = 'invoke-excelscript', 'timeout', 'range', 'userform', 'vba-prune', 'workbook-summary', 'macro-dialog'
     'scripts/Export-Vba.ps1' = 'cells-and-vba', 'userform', 'vba-compare', 'vba-prune'
     'scripts/Compare-Vba.ps1' = 'vba-compare', 'vba-prune'
-    'scripts/Test-VbaCompile.ps1' = 'vba-compile', 'vba-compile-error', 'publish-exclude-tests'
-    'scripts/Invoke-VbaTest.ps1' = 'vba-test', 'vba-test-fail'
+    'scripts/Test-VbaCompile.ps1' = 'vba-compile', 'vba-compile-error'
     'scripts/Add-CustomUI.ps1' = 'input-rejected', 'workbook-summary', 'ribbon', 'ribbon-layout', 'publish'
     'scripts/Ribbon.psm1' = 'ribbon', 'ribbon-layout'
     'scripts/Invoke-RibbonButton.ps1' = 'ribbon', 'ribbon-layout'
     'scripts/Test-RibbonLayout.ps1' = 'ribbon-layout', 'publish'
-    'scripts/Publish-Workbook.ps1' = 'input-rejected', 'publish', 'publish-exclude-tests'
-    'scripts/Lock-VbaProject.ps1' = 'input-rejected', 'publish', 'publish-exclude-tests'
+    'scripts/Publish-Workbook.ps1' = 'input-rejected', 'publish'
+    'scripts/Lock-VbaProject.ps1' = 'input-rejected', 'publish'
     'scripts/Get-WorkbookSummary.ps1' = 'workbook-summary', 'publish'
     'scripts/Find-CellError.ps1' = 'cell-error'
     'scripts/Test-Prerequisite.ps1' = 'prerequisite'
     'scripts/Save-WorkbookScreenshot.ps1' = 'screenshot'
 }
-$FullOnlyCases = 'vba-compile-error', 'macro-dialog', 'vba-test-fail', 'ribbon', 'ribbon-layout', 'publish', 'publish-exclude-tests', 'screenshot'
+$FullOnlyCases = 'vba-compile-error', 'macro-dialog', 'ribbon', 'ribbon-layout', 'publish', 'screenshot'
 
 # Returns the cases that cover the files (paths in the skill folder, with / or \): All when every case is needed.
 function Resolve-ChangedCase([string[]]$Files) {
@@ -380,49 +379,6 @@ Invoke-Case 'macro' {
     Assert 'arguments passed, value returned' ($r.Sum -eq 6) $r.Sum
     Assert 'Sub ran twice' ($r.Calls -eq 2) $r.Calls
     Assert 'a macro that takes time is waited for' ($r.Slow -eq 7) $r.Slow
-}
-
-function Invoke-VbaTest([string]$Book, [string[]]$Extra = @()) {
-    $json = Join-Path $temp ('vba-test-' + [guid]::NewGuid().ToString('N') + '.json')
-    $run = Invoke-Script (Join-Path $scripts 'Invoke-VbaTest.ps1') (@('-Path', $Book, '-OutFile', $json) + $Extra)
-    $parsed = $null
-    if (Test-Path -LiteralPath $json) { $parsed = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8) | ConvertFrom-Json }
-    [pscustomobject]@{ Exit = $run.Exit; Json = $parsed; Output = $run.Output }
-}
-
-Invoke-Case 'vba-test' {
-    $dir = New-CaseDir 'vba-test'
-    $book = New-BookWithMacros $dir 'vba-test\pass'
-    $hash = Get-FileHashText $book
-    $t = Invoke-VbaTest $book
-    $detail = $t.Json | ConvertTo-Json -Compress -Depth 5
-    Assert 'all passed: exit 0 and Ok' ($t.Exit -eq 0 -and $t.Json.Ok -eq $true -and $null -eq $t.Json.Error) $detail
-    # Sorted by module, in the order of the code; no Private Sub, Function, Sub with arguments or other name.
-    $names = @($t.Json.Tests | ForEach-Object { $_.Name }) -join ','
-    Assert 'only the tests are listed, in order' ($names -eq 'Alpha.Test_Second,Alpha.Test_First,Test_Calc.Test_Add,Test_Calc.Test_ImplicitPublic') $names
-    Assert 'every test ran and passed' (@($t.Json.Tests | Where-Object { $_.Result -ne 'passed' -or $null -eq $_.ElapsedMs }).Count -eq 0) $detail
-    Assert 'summary counts' ($t.Json.Summary.Total -eq 4 -and $t.Json.Summary.Passed -eq 4 -and $t.Json.Summary.Failed -eq 0 -and $t.Json.Summary.NotRun -eq 0) $detail
-    Assert 'workbook unchanged by the run' ((Get-FileHashText $book) -eq $hash) 'hash changed'
-
-    $one = Invoke-VbaTest $book @('-Name', 'Test_Calc.Test_Add,Alpha.Test_First')
-    $names = @($one.Json.Tests | ForEach-Object { $_.Name }) -join ','
-    Assert '-Name: only the named tests ran' ($one.Exit -eq 0 -and $names -eq 'Alpha.Test_First,Test_Calc.Test_Add') ($one.Json | ConvertTo-Json -Compress -Depth 5)
-
-    # A Private Sub must not become runnable by naming it.
-    $private = Invoke-VbaTest $book @('-Name', 'Test_Calc.Test_Private')
-    Assert '-Name: a name that is not a test is an error' ($private.Exit -eq 1 -and $private.Json.Ok -eq $false -and [string]$private.Json.Error -like 'Test not found: Test_Calc.Test_Private*' -and @($private.Json.Tests).Count -eq 0) ($private.Json | ConvertTo-Json -Compress -Depth 5)
-
-    $empty = Join-Path $dir 'empty.xlsm'
-    [void](New-EmptyBook $empty)
-    $none = Invoke-VbaTest $empty
-    Assert 'no test: an error, not a pass' ($none.Exit -eq 1 -and $none.Json.Ok -eq $false -and [string]$none.Json.Error -like 'No test found*') ($none.Json | ConvertTo-Json -Compress -Depth 5)
-
-    # The limit only has to be longer than starting Excel and running the first test.
-    $hang = Invoke-VbaTest (New-BookWithMacros $dir 'vba-test\hang') @('-TimeoutSeconds', '8')
-    $detail = $hang.Json | ConvertTo-Json -Compress -Depth 5
-    $results = @($hang.Json.Tests | ForEach-Object { $_.Result }) -join ','
-    Assert 'timeout: the test that hangs failed, the rest was not run' ($hang.Exit -eq 1 -and $results -eq 'passed,failed,not_run') $detail
-    Assert 'timeout: Error says so' ([string]$hang.Json.Error -like 'Timed out after 8 s*') $detail
 }
 
 function Invoke-Compare([string]$Book, [string]$SourceDir) {
@@ -1164,27 +1120,6 @@ if ($Full) {
         }
     }
 
-    # A failing test shows the runtime error dialog on the screen.
-    Invoke-Case 'vba-test-fail' -WatchForeground {
-        $book = New-BookWithMacros (New-CaseDir 'vba-test-fail') 'vba-test\fail'
-        $watch = [Diagnostics.Stopwatch]::StartNew()
-        $t = Invoke-VbaTest $book
-        $detail = $t.Json | ConvertTo-Json -Compress -Depth 5
-        $tests = @($t.Json.Tests)
-        Assert 'a failed test: exit 1 and not Ok' ($t.Exit -eq 1 -and $t.Json.Ok -eq $false) $detail
-        $results = @($tests | ForEach-Object { $_.Result }) -join ','
-        # Test_Broken comes first: a compile error fails only that test and the run goes on.
-        Assert 'result of every test' ($results -eq 'failed,passed,failed,passed,passed,failed,not_run') $results
-        Assert 'compile error: the test failed with the text of the dialog' ($tests[0].Name -eq 'Test_Broken.Test_Undeclared' -and [string]$tests[0].Message -ne '' -and [string]$tests[0].Message -notlike '*Microsoft Visual Basic*') $tests[0].Message
-        Assert 'runtime error: message of the dialog, without the title' ([string]$tests[2].Message -like '*80040001*: expected 3, actual 2' -and [string]$tests[2].Message -notlike '*Microsoft Visual Basic*') $tests[2].Message
-        Assert 'passed tests have no message' ($null -eq $tests[1].Message -and $null -eq $tests[3].Message) $detail
-        Assert 'MsgBox with OK: closed and reported as a warning' (@($t.Json.Warnings | Where-Object { $_ -like "*'Test_Fail.Test_4_Note': probe: note" }).Count -eq 1) $detail
-        Assert 'Yes/No MsgBox: the test failed with the text' ($tests[5].Message -eq 'question') $tests[5].Message
-        Assert 'Yes/No MsgBox: Error says that Excel was stopped' ([string]$t.Json.Error -like '*cannot be closed without choosing an answer: probe: question*Stopped the Excel instance of this call*') $t.Json.Error
-        Assert 'summary counts' ($t.Json.Summary.Total -eq 7 -and $t.Json.Summary.Passed -eq 3 -and $t.Json.Summary.Failed -eq 3 -and $t.Json.Summary.NotRun -eq 1) $detail
-        Assert 'stopped within 30 s' ($watch.Elapsed.TotalSeconds -lt 30) ([int]$watch.Elapsed.TotalSeconds)
-    }
-
     Invoke-Case 'ribbon' -WatchForeground {
         $dir = New-CaseDir 'ribbon'
         $book = New-BookWithVba $dir
@@ -1350,58 +1285,6 @@ if ($Full) {
         $dynPath = $S.Tab + '/' + $S.Group + '/' + $S.DynButton
         Assert 'dist: ribbon layout matches the XML' ($layout.Exit -eq 0) ($res | ConvertTo-Json -Compress -Depth 8)
         Assert 'dist: getEnabled callback ran' (@($res.Dynamic | Where-Object { $_.Path -eq $dynPath -and $_.Item -eq 'Enabled' -and $_.Actual -eq $false }).Count -eq 1) ($res.Dynamic | ConvertTo-Json -Compress)
-    }
-
-    Invoke-Case 'publish-exclude-tests' -WatchForeground {
-        $dir = New-CaseDir 'publish-exclude-tests'
-        $book = Join-Path $dir 'book.xlsm'
-        [void](New-EmptyBook $book)
-        Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $dir 'vba') -Recurse
-        # Test_Calc is a test module. Alpha holds tests but is not named Test_*.
-        Copy-Item -Path (Join-Path $data 'vba-test\pass\standard\*') -Destination (Join-Path $dir 'vba\standard')
-        # The published project is locked, so the modules are probed by running a Sub, not by listing them.
-        $probe = {
-            param($xl, $wb)
-            $run = { param($name) try { [void]$xl.Run($name); 'ran' } catch { 'missing' } }
-            @{
-                Protection = $wb.VBProject.Protection; Add = $xl.Run('AddNums', 4, 5)
-                TestModule = (& $run 'Test_Calc.Test_Add'); Mixed = (& $run 'Alpha.Test_First')
-            }
-        }
-        $publisher = Join-Path $scripts 'Publish-Workbook.ps1'
-
-        $dist = Join-Path $dir 'dist\book.xlsm'
-        $pub = Invoke-Script $publisher @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'), '-ExcludeTests')
-        $lines = @($pub.Output -split "\r?\n" | Where-Object { $_ })
-        Assert '-ExcludeTests: exit 0' ($pub.Exit -eq 0) $pub.Output
-        Assert '-ExcludeTests: the output names the removed module and no other' ((@($lines | Where-Object { $_ -like 'removed test module:*' }) -join ',') -eq 'removed test module: Test_Calc') $pub.Output
-        Assert '-ExcludeTests: the last line of the output is the published workbook' ($lines[-1] -eq $dist) $pub.Output
-        # The host wraps a long warning.
-        Assert '-ExcludeTests: warns about the tests left in another module' (($pub.Output -replace '\s+', ' ') -match 'Tests left in the published workbook.*: Alpha\.Test_Second, Alpha\.Test_First') $pub.Output
-        $d = Use-ExcelWorkbook -Path $dist -EnableMacros -ScriptBlock $probe
-        Assert '-ExcludeTests, dist: locked, macro runs' ($d.Protection -eq 1 -and $d.Add -eq 9) ($d | ConvertTo-Json -Compress)
-        Assert '-ExcludeTests, dist: test module removed, other modules kept' ($d.TestModule -eq 'missing' -and $d.Mixed -eq 'ran') ($d | ConvertTo-Json -Compress)
-        $w = Use-ExcelWorkbook -Path $book -EnableMacros -ScriptBlock $probe
-        Assert '-ExcludeTests, work book: not locked, test module kept' ($w.Protection -eq 0 -and $w.Add -eq 9 -and $w.TestModule -eq 'ran' -and $w.Mixed -eq 'ran') ($w | ConvertTo-Json -Compress)
-
-        $plain = Invoke-Script $publisher @('-Path', $book, '-OutDir', (Join-Path $dir 'dist-plain'))
-        Assert 'without -ExcludeTests: exit 0, only the path in the output' ($plain.Exit -eq 0 -and $plain.Output.Trim() -eq (Join-Path $dir 'dist-plain\book.xlsm')) $plain.Output
-        $p = Use-ExcelWorkbook -Path (Join-Path $dir 'dist-plain\book.xlsm') -EnableMacros -ScriptBlock $probe
-        Assert 'without -ExcludeTests, dist: locked, test module kept' ($p.Protection -eq 1 -and $p.TestModule -eq 'ran' -and $p.Mixed -eq 'ran') ($p | ConvertTo-Json -Compress)
-
-        # Uses calls a function of Test_Helper: without the test module the copy does not compile and is not published.
-        $usesDir = Join-Path $dir 'uses'
-        New-Item -ItemType Directory -Path $usesDir | Out-Null
-        $usesBook = Join-Path $usesDir 'book.xlsm'
-        [void](New-EmptyBook $usesBook)
-        Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $usesDir 'vba') -Recurse
-        Copy-Item -Path (Join-Path $data 'vba-test\uses-test\standard\*') -Destination (Join-Path $usesDir 'vba\standard')
-        $usesHash = Get-FileHashText $usesBook
-        $uses = Invoke-Script $publisher @('-Path', $usesBook, '-OutDir', (Join-Path $usesDir 'dist'), '-ExcludeTests')
-        $usesOutput = $uses.Output -replace '\s+', ' '
-        Assert '-ExcludeTests, a module uses a test module: exit 1 and the compile error' ($uses.Exit -ne 0 -and $usesOutput -like '*does not compile without the test modules*module Uses*') $uses.Output
-        Assert '-ExcludeTests, a module uses a test module: nothing published' (-not (Test-Path -LiteralPath (Join-Path $usesDir 'dist\book.xlsm'))) 'published'
-        Assert '-ExcludeTests, a module uses a test module: work book unchanged' ((Get-FileHashText $usesBook) -eq $usesHash) 'hash changed'
     }
 
     Invoke-Case 'screenshot' -WatchForeground {

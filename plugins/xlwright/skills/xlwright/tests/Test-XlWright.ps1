@@ -41,17 +41,16 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $S = [IO.File]::ReadAllText((Join-Path $data 'strings.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
 
 # The cases that cover each file, by its path in the skill folder: the cases that call the script, directly or
-# through another script (Publish-Workbook.ps1 calls Import-Vba.ps1, Add-CustomUI.ps1 and Lock-VbaProject.ps1;
-# Compare-Vba.ps1 calls Export-Vba.ps1). '*' is every case. A file of scripts\
+# through another script (Publish-Workbook.ps1 calls Import-Vba.ps1, Add-CustomUI.ps1 and Lock-VbaProject.ps1).
+# '*' is every case. A file of scripts\
 # that is not listed, Test-XlWright.ps1 and anything in tests\data\ also run every case; other files run none.
 # When a case or a script is added, add it here as well.
 $CasesByFile = [ordered]@{
     'scripts/XlWright.psm1' = '*'
     # Most cases use it to set up their workbooks.
     'scripts/Import-Vba.ps1' = '*'
-    'scripts/Invoke-ExcelScript.ps1' = 'invoke-excelscript', 'timeout', 'range', 'userform', 'vba-prune', 'workbook-summary', 'macro-dialog'
-    'scripts/Export-Vba.ps1' = 'cells-and-vba', 'userform', 'vba-compare', 'vba-prune'
-    'scripts/Compare-Vba.ps1' = 'vba-compare', 'vba-prune'
+    'scripts/Invoke-ExcelScript.ps1' = 'invoke-excelscript', 'timeout', 'range', 'userform', 'workbook-summary', 'macro-dialog'
+    'scripts/Export-Vba.ps1' = 'cells-and-vba', 'userform'
     'scripts/Test-VbaCompile.ps1' = 'vba-compile', 'vba-compile-error'
     'scripts/Add-CustomUI.ps1' = 'input-rejected', 'workbook-summary', 'ribbon', 'ribbon-layout', 'publish'
     'scripts/Ribbon.psm1' = 'ribbon', 'ribbon-layout'
@@ -313,6 +312,18 @@ Invoke-Case 'cells-and-vba' {
         $b = if (Test-Path -LiteralPath $exported) { Get-FileHashText $exported } else { 'missing' }
         Assert ('export round trip identical: ' + $rel) ($a -eq $b) $b
     }
+
+    # Components that are not in the sources stay; Publish-Workbook.ps1 relies on it.
+    $partial = Join-Path $dir 'partial'
+    New-Item -ItemType Directory -Path (Join-Path $partial 'standard') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $partial 'standard\Extra.bas'), "Attribute VB_Name = ""Extra""`nOption Explicit`n", $utf8)
+    $import = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $book, '-SourceDir', $partial)
+    Assert 'partial import: exit 0' ($import.Exit -eq 0) $import.Output
+    $names = Use-ExcelWorkbook -Path $book -ScriptBlock {
+        param($xl, $wb)
+        @($wb.VBProject.VBComponents | ForEach-Object { $_.Name + ':' + $_.Type } | Sort-Object) -join ','
+    }
+    Assert 'partial import: the components that are not in the sources stay' ($names -eq 'CalcOptions:2,Extra:1,Sheet1:100,ThisWorkbook:100,Util:1') $names
 }
 
 Invoke-Case 'invoke-excelscript' {
@@ -381,108 +392,6 @@ Invoke-Case 'macro' {
     Assert 'a macro that takes time is waited for' ($r.Slow -eq 7) $r.Slow
 }
 
-function Invoke-Compare([string]$Book, [string]$SourceDir) {
-    $json = Join-Path $temp ('compare-' + [guid]::NewGuid().ToString('N') + '.json')
-    $run = Invoke-Script (Join-Path $scripts 'Compare-Vba.ps1') @('-Path', $Book, '-SourceDir', $SourceDir, '-OutFile', $json)
-    $parsed = $null
-    if (Test-Path -LiteralPath $json) { $parsed = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8) | ConvertFrom-Json }
-    [pscustomobject]@{ Exit = $run.Exit; Json = $parsed; Output = $run.Output }
-}
-
-Invoke-Case 'vba-compare' {
-    $dir = New-CaseDir 'vba-compare'
-    $book = New-BookWithVba $dir
-    $source = Join-Path $dir 'vba'
-    $hash = Get-FileHashText $book
-    $c = Invoke-Compare $book $source
-    $detail = $c.Json | ConvertTo-Json -Compress -Depth 5
-    $rows = @($c.Json.Components | ForEach-Object { $_.Kind + '/' + $_.Name + '=' + $_.Status }) -join ','
-    Assert 'imported sources: exit 0 and in sync' ($c.Exit -eq 0 -and $c.Json.InSync -eq $true -and $null -eq $c.Json.Error) $detail
-    Assert 'every component is listed, by kind and name' ($rows -eq 'standard/Util=same,classes/CalcOptions=same,documents/ThisWorkbook=same') $rows
-    Assert 'workbook unchanged by the comparison' ((Get-FileHashText $book) -eq $hash) 'hash changed'
-
-    # Edited sources: one kind of difference per component.
-    $edited = Join-Path $dir 'edited'
-    Copy-Item -LiteralPath $source -Destination $edited -Recurse
-    $util = Join-Path $edited 'standard\Util.bas'
-    $text = [IO.File]::ReadAllText($util, $utf8)
-    [IO.File]::WriteAllText($util, $text.Replace('AddNums = a + b', 'AddNums = a - b'), $utf8)
-    $book2 = Join-Path $edited 'documents\ThisWorkbook.cls'
-    $text = [IO.File]::ReadAllText($book2, $utf8)
-    [IO.File]::WriteAllText($book2, $text.Replace('Public Function BookVersion', 'Public Function BOOKVERSION'), $utf8)
-    Remove-Item -LiteralPath (Join-Path $edited 'classes\CalcOptions.cls')
-    [IO.File]::WriteAllText((Join-Path $edited 'standard\Extra.bas'), "Attribute VB_Name = ""Extra""`nOption Explicit`n", $utf8)
-    $editedHash = Get-FileHashText $util
-    $e = Invoke-Compare $book $edited
-    $detail = $e.Json | ConvertTo-Json -Compress -Depth 5
-    $rows = @($e.Json.Components | ForEach-Object { $_.Kind + '/' + $_.Name + '=' + $_.Status }) -join ','
-    Assert 'edited sources: exit 1 and not in sync' ($e.Exit -eq 1 -and $e.Json.InSync -eq $false -and $null -eq $e.Json.Error) $detail
-    Assert 'status of every component' ($rows -eq 'standard/Extra=source_only,standard/Util=different,classes/CalcOptions=workbook_only,documents/ThisWorkbook=case_only') $rows
-    $first = @($e.Json.Components | Where-Object { $_.Name -eq 'Util' })[0].FirstDifference
-    Assert 'different: the first differing line of the source file' ($first.Line -eq 6 -and $first.Source -eq '    AddNums = a - b' -and $first.Workbook -eq '    AddNums = a + b') ($first | ConvertTo-Json -Compress)
-    Assert 'sources unchanged by the comparison' ((Get-FileHashText $util) -eq $editedHash) 'hash changed'
-
-    # What the VBE or an editor changes without changing the code is not a difference.
-    $spaced = Join-Path $dir 'spaced'
-    Copy-Item -LiteralPath $source -Destination $spaced -Recurse
-    $util = Join-Path $spaced 'standard\Util.bas'
-    $text = [IO.File]::ReadAllText($util, $utf8)
-    [IO.File]::WriteAllText($util, ($text.Replace("""Util""`n", """Util""`n`n`n").TrimEnd("`n") + "`n`n`n"), $utf8)
-    $p = Invoke-Compare $book $spaced
-    Assert 'blank lines after the attributes and at the end are not a difference' ($p.Exit -eq 0 -and $p.Json.InSync -eq $true) ($p.Json | ConvertTo-Json -Compress -Depth 5)
-    $text = [IO.File]::ReadAllText($util, $utf8)
-    [IO.File]::WriteAllText($util, $text.Replace("End Function`n`nPublic Function Greeting", "End Function`n`n`nPublic Function Greeting"), $utf8)
-    $q = Invoke-Compare $book $spaced
-    $first = @($q.Json.Components | Where-Object { $_.Name -eq 'Util' })[0].FirstDifference
-    Assert 'a blank line inside the code is a difference, at its line in the file' ($q.Exit -eq 1 -and $first.Line -eq 11 -and $first.Source -eq '') ($q.Json | ConvertTo-Json -Compress -Depth 5)
-
-    $missing = Invoke-Compare $book (Join-Path $dir 'no-such-dir')
-    Assert 'missing source directory: an error' ($missing.Exit -eq 1 -and $missing.Json.InSync -eq $false -and [string]$missing.Json.Error -like 'Source directory not found*') ($missing.Json | ConvertTo-Json -Compress -Depth 5)
-}
-
-Invoke-Case 'vba-prune' {
-    $dir = New-CaseDir 'vba-prune'
-    $book = New-BookWithVba $dir
-    $source = Join-Path $dir 'vba'
-    $importer = Join-Path $scripts 'Import-Vba.ps1'
-    # Components that are not in the sources: a UserForm and a standard module (uf-create), a standard
-    # module and the code of a sheet (imported from another folder).
-    $created = Invoke-Runner $book 'uf-create' @('-Save')
-    Assert 'UserForm added to the workbook' ($created.Exit -eq 0) $created.Output
-    $more = Join-Path $dir 'more'
-    New-Item -ItemType Directory -Path (Join-Path $more 'standard'), (Join-Path $more 'documents') | Out-Null
-    [IO.File]::WriteAllText((Join-Path $more 'standard\Extra.bas'), "Attribute VB_Name = ""Extra""`nOption Explicit`n", $utf8)
-    [IO.File]::WriteAllText((Join-Path $more 'documents\Sheet1.cls'), "Attribute VB_Name = ""Sheet1""`nOption Explicit`n", $utf8)
-    $added = Invoke-Script $importer @('-Path', $book, '-SourceDir', $more)
-    Assert 'more components imported' ($added.Exit -eq 0) $added.Output
-    $extraRows = 'standard/Extra=workbook_only,standard/FormProbe=workbook_only,documents/Sheet1=workbook_only,forms/frmInfo=workbook_only'
-    $rowsOf = { param($c) @($c.Json.Components | Where-Object { $_.Status -ne 'same' } | ForEach-Object { $_.Kind + '/' + $_.Name + '=' + $_.Status }) -join ',' }
-
-    $plain = Invoke-Script $importer @('-Path', $book, '-SourceDir', $source)
-    $rows = & $rowsOf (Invoke-Compare $book $source)
-    Assert 'without -Prune: exit 0 and nothing reported as removed' ($plain.Exit -eq 0 -and $plain.Output -notmatch 'removed|cleared') $plain.Output
-    Assert 'without -Prune: the components that are not in the sources stay' ($rows -eq $extraRows) $rows
-
-    # A failed import must not leave a pruned workbook behind.
-    $bad = Join-Path $dir 'bad'
-    Copy-Item -LiteralPath $source -Destination $bad -Recurse
-    [IO.File]::WriteAllText((Join-Path $bad 'documents\NoSuchSheet.cls'), "Attribute VB_Name = ""NoSuchSheet""`nOption Explicit`n", $utf8)
-    $hash = Get-FileHashText $book
-    $failed = Invoke-Script $importer @('-Path', $book, '-SourceDir', $bad, '-Prune')
-    Assert '-Prune with a source that cannot be imported: exit 1' ($failed.Exit -eq 1 -and $failed.Output -match 'No document module named NoSuchSheet') $failed.Output
-    Assert '-Prune with a source that cannot be imported: workbook unchanged' ((Get-FileHashText $book) -eq $hash) 'hash changed'
-
-    $pruned = Invoke-Script $importer @('-Path', $book, '-SourceDir', $source, '-Prune')
-    $lines = @($pruned.Output -split "\r?\n" | Where-Object { $_ -match '^(removed|cleared document module): ' } | Sort-Object) -join ','
-    Assert '-Prune: exit 0' ($pruned.Exit -eq 0) $pruned.Output
-    Assert '-Prune: reports what it removed and cleared, and nothing else' ($lines -eq 'cleared document module: Sheet1,removed: Extra,removed: FormProbe,removed: frmInfo') $pruned.Output
-    $after = Invoke-Compare $book $source
-    Assert '-Prune: the saved workbook is in sync with the sources' ($after.Exit -eq 0 -and $after.Json.InSync -eq $true -and @($after.Json.Components).Count -eq 3) ($after.Json | ConvertTo-Json -Compress -Depth 5)
-
-    $again = Invoke-Script $importer @('-Path', $book, '-SourceDir', $source, '-Prune')
-    Assert '-Prune with nothing to remove: exit 0 and nothing reported' ($again.Exit -eq 0 -and $again.Output -notmatch 'removed|cleared') $again.Output
-}
-
 Invoke-Case 'timeout' {
     $book = Join-Path (New-CaseDir 'timeout') 'book.xlsm'
     [void](New-EmptyBook $book)
@@ -534,6 +443,13 @@ Invoke-Case 'input-rejected' {
         $r = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $book, '-SourceDir', $src)
         Assert ('Import-Vba rejects ' + $s.Name) ($r.Exit -ne 0 -and $r.Output -like $s.Reason) $r.Output
     }
+    # Rejected after the workbook is open; the valid module in the same sources is not saved either.
+    $src = Join-Path $dir 'src-no-document'
+    New-Item -ItemType Directory -Path (Join-Path $src 'standard'), (Join-Path $src 'documents') -Force | Out-Null
+    [IO.File]::WriteAllBytes((Join-Path $src 'standard\Good.bas'), $ascii.GetBytes("Attribute VB_Name = ""Good""`nOption Explicit`n"))
+    [IO.File]::WriteAllBytes((Join-Path $src 'documents\NoSuchSheet.cls'), $ascii.GetBytes("Attribute VB_Name = ""NoSuchSheet""`nOption Explicit`n"))
+    $r = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $book, '-SourceDir', $src)
+    Assert 'Import-Vba rejects a document module the workbook does not have' ($r.Exit -ne 0 -and $r.Output -like '*No document module named NoSuchSheet*') $r.Output
     Assert 'workbook unchanged by rejected imports' ((Get-FileHashText $book) -eq $hash) 'hash changed'
 
     $badXml = Join-Path $dir 'bad.xml'

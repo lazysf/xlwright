@@ -15,15 +15,7 @@
 見直して残すと決めたもの（2026-11-17）: `Test-VbaCompile.ps1`、`Invoke-ExcelMacro`、`Read-ExcelRange` と `Write-ExcelRange`、`Save-WorkbookScreenshot.ps1`、`Get-WorkbookSummary.ps1` は、代わりの手段が無いか、無いと誤りが出る。`Find-CellError.ps1` と `Test-Prerequisite.ps1` は、無くても困らないが、ほかの機能を複雑にしていない。試験の `-Changed` は、手で項目を選ぶ遅さと誤りという、実際の作業から出た理由がある。
 
 見直して消したもの（2026-11-18）: VBA のテストの実行（`Invoke-VbaTest.ps1`）と、配布ブックからテストを外す `Publish-Workbook.ps1 -ExcludeTests`。ScriptBlock の中で `Invoke-ExcelMacro` を並べれば足り、テストをブックに置くと配布ブックから外す仕組みが要るようになるため。既定ではブックの `Test_` の `Sub` をすべて実行し、自分で書いていないマクロも動かすことにもなっていた。
-
-- [ ] 正本との照合のつながりを見直す。`Compare-Vba.ps1` → `Import-Vba.ps1 -Prune` → 「`-Prune` の前に `Compare-Vba.ps1` で消える対象を調べる」という手順、と膨らんだ。
-  - 理由: VBE が整えた形の正本は、取り込んで書き出しても 1 バイトも変わらない（`docs/notes/vba-roundtrip.md`）。`Export-Vba.ps1` で一時フォルダに書き出し、`git diff --no-index` で比べれば、ほぼ足りる。足りないのは、UserForm の `.frm` の空行と、大文字小文字だけの差の見分け。`-Prune` が要るのは、正本からモジュールを消した時だけで、`VBComponents.Remove` の 1 行で代わりになる（`docs/notes/vba-prune.md`）。
-  - 量: スクリプトとスイッチが約 190 行（`Compare-Vba.ps1`、`Import-Vba.ps1` の `-Prune`）、試験の項目が 2 つで約 95 行（`vba-compare`、`vba-prune`）。
-  - 決めること: 次のどれにするかを人に確かめる。
-    1. 両方消し、書き出しと `git diff --no-index` で比べる手順を `references/vba.md` に書く。`.frm` の空行と大文字小文字の差は、手順の注意として書く。
-    2. `Compare-Vba.ps1` だけ残し、`-Prune` は消す。
-    3. 今のまま残す。
-  - 消す時に直すもの: `SKILL.md`（`-Prune` の注意）、`references/vba.md` の「書き出しと取り込み」と「正本との照合」、`docs/notes/vba-roundtrip.md` と `docs/notes/vba-prune.md`（実測は残し、スクリプトの形にした理由を消す）、README の「できること」、試験の `$CasesByFile`、CHANGELOG の `[Unreleased]`。
+同じ日に、正本との照合（`Compare-Vba.ps1`）と、正本に無いコンポーネントを消す `Import-Vba.ps1 -Prune` も消した。VBE が整えた正本は往復しても変わらないので、照合は `Export-Vba.ps1` の書き出しと `git diff --no-index` で足りる（`docs/notes/vba-roundtrip.md`）。消すのは正本からモジュールを消した時だけで、名前を指定した `VBComponents.Remove` で足りる。一括で消すスイッチは、人が足したコードまで消すおそれと、それを防ぐために照合で対象を調べる手順を呼び込んでいた。手順と注意は `references/vba.md` の「正本との照合」と「正本から消したモジュール」にある。
 
 ## 今やる
 

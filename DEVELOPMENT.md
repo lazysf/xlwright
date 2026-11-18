@@ -80,8 +80,10 @@ powershell.exe -NoProfile -File plugins\xlwright\skills\xlwright\tests\Test-XlWr
 
 全体を流すと時間がかかります（2026-11-18 に測った時は、`-Full` を付けて 511 秒、既定の項目だけで 307 秒）。多くの項目が Excel を何度も起動するので、項目を選ぶほど短くなります。そこで、次のように流し分けます。
 
-- 作業の途中は、`-Changed` で流します。
-- commit の前に、既定の項目をすべて流します。`-Changed` が `-Full` の要る項目を飛ばした時は、`-Full` を付けて全体を流します。
+- 作業の途中と commit の前は、`-Changed` で流します。`-Changed` が `-Full` の要る項目を飛ばしても、そのまま commit します。
+- push の前に、`-Full` を付けて全体を流します。落ちた項目は直し、直した分を新しい commit にしてから push します。
+
+そのため、push と push の間の commit は、`-Full` の項目で落ちることがあります。`git bisect` などで途中の commit を取り出す時は、そのつもりで扱います。
 
 項目やスクリプトを足した時は、`$CasesByFile` も直します。項目 `changed-selection` が、表の項目の名前と、`-Full` が要る項目の一覧を確かめます。確かめる対象でない準備のブックは、`New-EmptyBook`、`New-BookWithVba`、`New-BookWithMacros` で作ります。どれも最初の 1 回だけ Excel で作り、後は写しを渡します。
 

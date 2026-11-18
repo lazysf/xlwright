@@ -17,4 +17,8 @@
 - **ブックに置いた VBA のテストをまとめて動かすスクリプトと、配布ブックからテストを外すスイッチ。** 確かめるマクロは、ScriptBlock の中で `Invoke-ExcelMacro` を並べれば動かせる。テストをブックに置くと、配布ブックから外す仕組みが要るようになる。ブックの `Test_` の `Sub` をすべて動かす作りでは、自分で書いていないマクロも動く。
 - **正本とブックを照合するスクリプトと、正本に無いコンポーネントを一括で消すスイッチ。** VBE が整えた正本は往復しても変わらないので、照合は `Export-Vba.ps1` の書き出しと `git diff --no-index` で足りる（[vba-roundtrip.md](./vba-roundtrip.md)）。消すのは正本からモジュールを消した時だけで、名前を指定した `VBComponents.Remove` で足りる。一括で消すと、人がブックに足したコードまで消すおそれがある。それを防ぐには照合で対象を調べる手順が要り、機能が膨らむ。手順と注意は [references/vba.md](../../plugins/xlwright/skills/xlwright/references/vba.md) の「正本との照合」と「正本から消したモジュール」にある。
 
+## 確かめる画面の拡大率
+
+画像を扱うスクリプトは、画面の拡大率 100% でだけ確かめる。人と決めた判断で、100% で確かめれば足りるとした。100% 以外の時、`Save-WorkbookScreenshot.ps1` は `Warnings` に警告を出す。`Test-RibbonLayout.ps1` の `-ScreenshotDir` は警告を出さず、タブの領域がウィンドウの画像からはみ出した時だけ、そのタブの `Error` に拡大率を疑う理由を入れる。確かめていない範囲は、`references/com.md` と `references/ribbon.md` に書いてある。
+
 `description` を今の形にしている理由は、[skill-description.md](./skill-description.md) にある。

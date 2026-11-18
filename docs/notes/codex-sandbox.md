@@ -36,20 +36,25 @@ xlwright は、COM の Excel、WMI（`Use-ExcelWorkbook` の監視役の起動�
 
 ## Codex のエージェントで使った結果
 
-人が Codex の desktop app で試し、エージェントの記録を受け取った（2026-11-18）。権限は「代わりに承認」で、作業フォルダは xlwright と関係の無い repo だった。
+人が Codex の desktop app で試し、エージェントの記録を受け取った（2026-11-18）。権限は「代わりに承認」で、作業フォルダは xlwright と関係の無い repo だった。`SKILL.md` に拒否された時の規則を足す前の版で 2 回、足した後の版で 2 回試した。
 
-- **入れ方**: app の GUI で、GitHub の repo（`main`）を marketplace として足した。`.claude-plugin/marketplace.json`（`source` が文字列）をそのまま読み、プラグイン xlwright とスキル xlwright が一覧に出た。manifest は足していない。
+- **入れ方**: app の GUI で、GitHub の repo（`main`）を marketplace として足した。`.claude-plugin/marketplace.json`（`source` が文字列）をそのまま読み、プラグイン xlwright とスキル xlwright が一覧に出た。manifest は足していない。規則を足した版を push した後、入っている版が新しい版に変わったことを人が確かめた。
 - **置き場**: 入れたプラグインは `~/.codex/plugins/cache/<marketplace>/<plugin>/<版>/`（ここでは `xlwright/xlwright/<版>/`）に置かれた。
-- **スキルの選び方とパス**: 依頼から xlwright が選ばれ、`SKILL.md` が読まれた。`${CLAUDE_SKILL_DIR}` は展開されず、エージェントはまず間違ったパス（`cache/xlwright/<版>/`）を読み、`rg` で `SKILL.md` を探し直して正しいパスを使った。2 回とも同じだった。
+- **`SKILL.md` の場所**: xlwright が選ばれた 3 回とも、エージェントは `SKILL.md` を読む前に、marketplace の段を抜いた間違ったパス（`cache/xlwright/<版>/`）を開き、`rg` で探し直した。`SKILL.md` を読む前のことなので、`SKILL.md` の書き方では直せない。
+- **`SKILL.md` を読んだ後のパス**: 規則を足した後の版では、`SKILL.md` を読んだ後のコマンドは、すべてスキルのフォルダの正しい絶対パスだった。足す前の版でも、探し直した後のパスは正しかった。
 
-| 依頼 | 振る舞い |
-| --- | --- |
-| book.xlsm を作り、A1 と B1 を書いて、B1 の値を答える | sandbox の中で `Test-Prerequisite.ps1` が拒否された。昇格を求めず、Excel を使わずに Open XML の zip を手で組み立てて `book.xlsm` を作り、自分で書いたキャッシュの値 `2` を「確認した」と答えた。 |
-| 同じ依頼に、「拒否されたらほかの手段に切り替えず、sandbox の外での実行を求める。通らなければ止まる」を足した | sandbox の中で `UnauthorizedAccess` が出た後、sandbox の外での実行を求めて承認された。外では `-ExecutionPolicy Bypass` なしで動いた。試験の `invoke-excelscript` を流し、`Invoke-ExcelScript.ps1 -Create -Save` と `Write-ExcelRange` で書き、開き直して `Read-ExcelRange` で照合し、`Find-CellError.ps1` を流した。B1 は Excel が計算した `2` だった。 |
+| 版 | 依頼 | 振る舞い |
+| --- | --- | --- |
+| 規則を足す前 | book.xlsm を作り、A1 と B1 を書いて、B1 の値を答える | sandbox の中で `Test-Prerequisite.ps1` が拒否された。昇格を求めず、Excel を使わずに Open XML の zip を手で組み立てて `book.xlsm` を作り、自分で書いたキャッシュの値 `2` を「確認した」と答えた。 |
+| 規則を足す前 | 同じ依頼に、「拒否されたらほかの手段に切り替えず、sandbox の外での実行を求める。通らなければ止まる」を足した | sandbox の中で `UnauthorizedAccess` が出た後、sandbox の外での実行を求めて承認された。外では `-ExecutionPolicy Bypass` なしで動いた。試験の `invoke-excelscript` を流し、`Invoke-ExcelScript.ps1 -Create -Save` と `Write-ExcelRange` で書き、開き直して `Read-ExcelRange` で照合し、`Find-CellError.ps1` を流した。B1 は Excel が計算した `2` だった。 |
+| 規則を足した後 | 最初の依頼のまま（スキルの名前を挙げない） | xlwright は選ばれず、Codex に同梱の `spreadsheets` スキルが選ばれた。`New-Object -ComObject Excel.Application` が `0x80070005` で拒否された後、`@oai/artifact-tool` で xlsx を作り、Python で zip の content type を書き換えて `book.xlsm` にした。B1 の `2` は artifact-tool が計算した値だった。 |
+| 規則を足した後 | 最初の依頼に「xlwright スキルを使って」だけを足した | 1 回目の `Test-Prerequisite.ps1` の後、`references/troubleshooting.md` で `AuthorizationManager` と `sandbox` を調べ、同じコマンドを流し直して通った。迂回はしなかった。`Invoke-ExcelScript.ps1 -Create -Save` と `Write-ExcelRange` で書き、開き直して読み、`Find-CellError.ps1` を流した。B1 は Excel が計算した `2` だった。作業の後に Excel のプロセスは残らなかった（人が確かめた）。 |
 
-1 回目の迂回を防ぐため、`SKILL.md` の「利用の前提」に、拒否された時は Excel を使わない手段で代わりをせず、権限の引き上げを求めるか止まる、と書いた。この規則だけで（依頼に指示を足さずに）昇格を求めるかは、まだ試していない。
+規則を足す前の版での 1 回目の迂回を受けて、`SKILL.md` の「利用の前提」に、拒否された時は Excel を使わない手段で代わりをせず、権限の引き上げを求めるか止まる、と書いた。足した後の版では、依頼に指示を足さなくても迂回しなかった。2 回目の `Test-Prerequisite.ps1` が通ったので、sandbox の外での実行を求めて承認されたと見ているが、記録に承認の画面は出てこないので推定である。
 
-パスを探し直さずに済むよう、`SKILL.md` のコマンド例は、スキルのフォルダを `${CLAUDE_SKILL_DIR}` でなく `<skill>`（`SKILL.md` があるフォルダ）と書く。Claude Code のための `${CLAUDE_SKILL_DIR}` は、説明の 1 文にだけ残す。
+`SKILL.md` のコマンド例は、スキルのフォルダを `${CLAUDE_SKILL_DIR}` でなく `<skill>`（`SKILL.md` があるフォルダ）と書く。Claude Code のための `${CLAUDE_SKILL_DIR}` は、説明の 1 文にだけ残す。
+
+スキルの名前を挙げない依頼で `spreadsheets` が選ばれたのは、セルを書くだけの依頼が、xlwright の `description`（マクロ、UserForm、カスタムリボンを持つツールの開発）の範囲の外だからと見ている。規則を足す前の版の 1 回目に同じ依頼で xlwright が選ばれた理由は確かめていない。
 
 ## Codex に配る時の前提
 
@@ -61,8 +66,8 @@ xlwright は、COM の Excel、WMI（`Use-ExcelWorkbook` の監視役の起動�
 
 ## 未確認
 
-- `SKILL.md` に足した規則だけで、Codex のエージェントが昇格を求めるか。
-- `<skill>` の書き方にした `SKILL.md` で、Codex のエージェントが最初から正しいパスを使うか。Claude Code で、`<skill>` を `${CLAUDE_SKILL_DIR}` の値に置き換えて実行するか。
-- 承認が自動で通ったのか、人に確認を求めたのか。2 回目の作業の後に Excel が残らなかったか。
+- 承認が自動で通ったのか、人に確認を求めたのか。
+- マクロ、UserForm、リボンを持つツールの依頼で、スキルの名前を挙げなくても Codex が xlwright を選ぶか。
+- Claude Code で、`<skill>` を `${CLAUDE_SKILL_DIR}` の値に置き換えて実行するか。eval ではシェルを許さないので見ていない（[eval.md](eval.md)）。
 - リボンの押下、画面の画像、`Lock-VbaProject.ps1` が、sandbox の外での実行で動くか。
 - 旧来の sandbox（elevated、unelevated）での振る舞い。どちらも、マシン全体にアカウントや規則を作る準備が要るので試していない。

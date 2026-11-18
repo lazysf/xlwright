@@ -16,3 +16,4 @@
   - [range-value.md](./notes/range-value.md): セルの範囲を 2 次元配列で読み書きする時の型と形の実測と、`Read-ExcelRange` と `Write-ExcelRange` の形にした理由。
   - [cell-error.md](./notes/cell-error.md): エラー値のセルを `SpecialCells` と `Value2` で列挙する方法の比較と、`Find-CellError.ps1` の形にした理由。
   - [screenshot.md](./notes/screenshot.md): ブックの見た目を画像にする方法（ウィンドウの `PrintWindow` と `Range.CopyPicture`）の比較と、その実測。
+  - [userform-screenshot.md](./notes/userform-screenshot.md): 表示した UserForm を、画面に出さずに画像にする方法の実測。

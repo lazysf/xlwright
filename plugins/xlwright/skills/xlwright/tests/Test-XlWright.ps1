@@ -1288,10 +1288,10 @@ namespace XlWrightTest {
         }
         $shooter = Join-Path $scripts 'Save-WorkbookScreenshot.ps1'
         $shoot = {
-            param([string]$Name, [string[]]$Extra)
+            param([string]$Name, [string[]]$Extra, [string]$Workbook = $book)
             $json = Join-Path $dir "$Name.json"
             $png = Join-Path $dir "$Name.png"
-            $run = Invoke-Script $shooter (@('-Path', $book, '-OutFile', $json, '-ImageFile', $png) + $Extra)
+            $run = Invoke-Script $shooter (@('-Path', $Workbook, '-OutFile', $json, '-ImageFile', $png) + $Extra)
             $text = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8)
             $colors = $null
             if (Test-Path -LiteralPath $png) { $colors = [XlWrightTest.Pixels]::MagentaGreen($png) }
@@ -1324,8 +1324,32 @@ namespace XlWrightTest {
             $r = & $shoot ($bad.Name -replace ' ', '-') $bad.Extra
             Assert ($bad.Name + ': exit 1 and Error, no image') ($r.Exit -eq 1 -and [string]$r.Json.Error -like $bad.Error -and -not (Test-Path -LiteralPath $r.Png)) $r.Text
         }
+
+        # A UserForm (240 x 160 pt) with a magenta background, shown and drawn instead of the window.
+        $formBook = Join-Path $dir 'form.xlsm'
+        [void](New-EmptyBook $formBook)
+        $created = Invoke-Runner $formBook 'uf-create' @('-Save')
+        Assert 'UserForm added to the workbook' ($created.Exit -eq 0) $created.Output
+        Use-ExcelWorkbook -Path $formBook -Save -ScriptBlock {
+            param($xl, $wb)
+            $form = $wb.VBProject.VBComponents.Item('frmInfo')
+            [void]$form.Designer  # Properties is null until the designer has been read.
+            $form.Properties.Item('BackColor').Value = 16711935
+        }
+        $formHash = Get-FileHashText $formBook
+        $form = & $shoot 'form' @('-UserForm', 'frmInfo', '-EnableMacros') $formBook
+        Assert '-UserForm: exit 0, the form named in the result' ($form.Exit -eq 0 -and $null -eq $form.Json.Error -and $form.Json.UserForm -eq 'frmInfo') $form.Text
+        Assert '-UserForm: the size of the form, not of the window' ($form.Json.Width -eq 320 -and $form.Json.Height -eq 213) $form.Text
+        Assert '-UserForm: the magenta background drawn' ($form.Colors -and $form.Colors[0] -gt 500) ($form.Colors -join ',')
+        foreach ($bad in @(
+            @{ Name = 'form without macros'; Extra = @('-UserForm', 'frmInfo'); Error = '-UserForm needs -EnableMacros*' },
+            @{ Name = 'not a form'; Extra = @('-UserForm', 'FormProbe', '-EnableMacros'); Error = 'Not a UserForm of the workbook: FormProbe' })) {
+            $r = & $shoot ($bad.Name -replace ' ', '-') $bad.Extra $formBook
+            Assert ($bad.Name + ': exit 1 and Error, no image') ($r.Exit -eq 1 -and [string]$r.Json.Error -like $bad.Error -and -not (Test-Path -LiteralPath $r.Png)) $r.Text
+        }
         Assert 'clipboard text unchanged' ((Get-Clipboard -Format Text -Raw) -eq $clipboard) 'changed'
         Assert 'workbook unchanged' ((Get-FileHashText $book) -eq $hash) 'hash changed'
+        Assert 'workbook with the form unchanged' ((Get-FileHashText $formBook) -eq $formHash) 'hash changed'
     }
 }
 

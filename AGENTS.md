@@ -12,7 +12,7 @@ xlwright の開発ルール
 ## スキルの書き方
 
 - `SKILL.md` には、毎回の作業で要る規則と手順だけを書く。安全の規則は `SKILL.md` に置く。作業ごとの詳しい手順は `references/` に分け、`SKILL.md` の表から辿れるようにする。
-- `${CLAUDE_SKILL_DIR}` が展開されるのは `SKILL.md` の本文だけ。`references/` のコマンド例では、スキルのフォルダを `<skill>` と書く。
+- スキルのフォルダは、コマンド例では `SKILL.md` と `references/` のどちらでも `<skill>` と書く。`${CLAUDE_SKILL_DIR}` は Claude Code でしか展開されないので、`SKILL.md` の説明の 1 文にだけ使う。
 - スキルの仕様（frontmatter、変数、読み込まれ方）は、記憶でなく Claude Code の公式 docs で確かめる。
 - 文書には、実際の Excel で確かめた事実を書く。確かめていないことは、そうと分かるように書く。
 

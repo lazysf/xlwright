@@ -7,7 +7,7 @@ description: Windows 版 Excel を PowerShell COM で動かし、Excel を土台
 
 PowerShell から `Excel.Application` を COM で操作して、Excel を土台にしたツールのブックを作り、直す。リボンだけは COM で定義できないため、閉じたブックの zip を直接書き換える。
 
-このスキルのフォルダは `${CLAUDE_SKILL_DIR}` で、スクリプトはその `scripts/` にある。`references/` のコマンド例にある `<skill>` は、このフォルダの絶対パスに置き換えて実行する。Git Bash からは `powershell.exe -NoProfile -File "<script>"` で実行し、引数のパスは `/` 区切りのまま渡してよい。
+このスキルのフォルダは、この `SKILL.md` があるフォルダで、スクリプトはその `scripts/` にある。Claude Code では、このフォルダは `${CLAUDE_SKILL_DIR}` である。コマンド例の `<skill>` は、このフォルダの絶対パスに置き換えて実行する。Git Bash からは `powershell.exe -NoProfile -File "<script>"` で実行し、引数のパスは `/` 区切りのまま渡してよい。
 
 ## 利用の前提
 
@@ -30,7 +30,7 @@ PowerShell から `Excel.Application` を COM で操作して、Excel を土台�
 1、2、4 と、ブックがほかで開かれていないかは、`Test-Prerequisite.ps1` でまとめて調べられる。Excel を起動せず、設定もブックも変えない。
 
 ```powershell
-powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/scripts/Test-Prerequisite.ps1" -OutFile <result.json> -Path <workbook> -Vba
+powershell.exe -NoProfile -File "<skill>/scripts/Test-Prerequisite.ps1" -OutFile <result.json> -Path <workbook> -Vba
 ```
 
 - 結果は UTF-8 の JSON で `-OutFile` に書く。`Ready` が `true` なら進めてよい。`false` の時は、`Problems` に理由と次にすることが 1 件 1 文で入る（Excel が動いている、WMI からプロセスを作れない、ブックが無い、ブックがほかで開かれている）。終了コードは、`Ready` が `true` の時だけ 0。
@@ -114,7 +114,7 @@ $ws = $wb.Worksheets.Item('集計表')
 ```
 
 ```powershell
-powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/scripts/Invoke-ExcelScript.ps1" -Path <workbook> -Script <read.ps1> -OutFile <result.json>
+powershell.exe -NoProfile -File "<skill>/scripts/Invoke-ExcelScript.ps1" -Path <workbook> -Script <read.ps1> -OutFile <result.json>
 ```
 
 - スクリプトのファイルは UTF-8 として読む（BOM の有無を問わない）。日本語のシート名や文字列を直接書いてよい。
@@ -164,7 +164,7 @@ Invoke-ExcelMacro -Excel $xl -Name 'Util.AddNums' -ArgumentList 2, 3
 スクリプトが手元の Excel で動くかは、`tests/Test-XlWright.ps1` で確かめる。各項目は一時フォルダに新しいブックを作って、期待値と照合する。一時フォルダの外は変えない。Excel が動いている時と `AccessVBOM` が `1` でない時は、何もせずに終了コード 2 で止まる。
 
 ```powershell
-powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/tests/Test-XlWright.ps1" -OutFile <result.json>
+powershell.exe -NoProfile -File "<skill>/tests/Test-XlWright.ps1" -OutFile <result.json>
 ```
 
 - 既定の項目は Excel を表示しない。セルと VBA、`Invoke-ExcelScript.ps1`、範囲の読み書き、VBA のコンパイル、マクロの実行、上限、呼び出し元が殺された時、不正な入力の拒否（VBA のソース、リボンの XML、配布の失敗）、見張りが立てられない時、前提の確認、ブックの概要、エラー値のセルの列挙、UserForm を確かめる。5 分ほどかかる。

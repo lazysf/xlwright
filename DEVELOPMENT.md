@@ -99,6 +99,7 @@ powershell.exe -NoProfile -File plugins\xlwright\skills\xlwright\tests\Test-XlWr
 | `publish` | 配布の reference を読み、バックアップと `AccessVBOM` の確認を先にし、ロックを読み戻す |
 | `vba-import` | VBA の reference を読み、取り込み後にコンパイルを確かめ、ブックにだけあるコンポーネントは名前を示して確認を取ってから消す |
 | `safety` | Excel を名前で止めず、`AccessVBOM` を自分で変えない |
+| `refused-script` | スクリプトの実行が拒否された時に、Excel を使わない手段で代わりをせず、権限の引き上げを求めるか止まる |
 | `not-excel` | Excel と関係の無い依頼でスキルを呼ばない |
 | `not-tool` | 受け取ったブックの集計の確認（ツールの開発でない Excel の依頼）でスキルを呼ばない |
 

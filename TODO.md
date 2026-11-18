@@ -14,6 +14,8 @@
 
 見直して残すと決めたもの（2026-11-17）: `Test-VbaCompile.ps1`、`Invoke-ExcelMacro`、`Read-ExcelRange` と `Write-ExcelRange`、`Save-WorkbookScreenshot.ps1`、`Get-WorkbookSummary.ps1` は、代わりの手段が無いか、無いと誤りが出る。`Find-CellError.ps1` と `Test-Prerequisite.ps1` は、無くても困らないが、ほかの機能を複雑にしていない。試験の `-Changed` は、手で項目を選ぶ遅さと誤りという、実際の作業から出た理由がある。
 
+見直して消したもの（2026-11-18）: VBA のテストの実行（`Invoke-VbaTest.ps1`）と、配布ブックからテストを外す `Publish-Workbook.ps1 -ExcludeTests`。ScriptBlock の中で `Invoke-ExcelMacro` を並べれば足り、テストをブックに置くと配布ブックから外す仕組みが要るようになるため。既定ではブックの `Test_` の `Sub` をすべて実行し、自分で書いていないマクロも動かすことにもなっていた。
+
 - [ ] 正本との照合のつながりを見直す。`Compare-Vba.ps1` → `Import-Vba.ps1 -Prune` → 「`-Prune` の前に `Compare-Vba.ps1` で消える対象を調べる」という手順、と膨らんだ。
   - 理由: VBE が整えた形の正本は、取り込んで書き出しても 1 バイトも変わらない（`docs/notes/vba-roundtrip.md`）。`Export-Vba.ps1` で一時フォルダに書き出し、`git diff --no-index` で比べれば、ほぼ足りる。足りないのは、UserForm の `.frm` の空行と、大文字小文字だけの差の見分け。`-Prune` が要るのは、正本からモジュールを消した時だけで、`VBComponents.Remove` の 1 行で代わりになる（`docs/notes/vba-prune.md`）。
   - 量: スクリプトとスイッチが約 190 行（`Compare-Vba.ps1`、`Import-Vba.ps1` の `-Prune`）、試験の項目が 2 つで約 95 行（`vba-compare`、`vba-prune`）。

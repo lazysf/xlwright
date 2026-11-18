@@ -154,7 +154,7 @@ Invoke-ExcelMacro -Excel $xl -Name 'Util.AddNums' -ArgumentList 2, 3
 編集した後は、`-Save` なしでブックを開き直して読み戻す。書いたつもりの値ではなく、Excel が保存した結果を見る。動かしてよいマクロの範囲は「マクロが動くことへの注意」のとおり。
 
 - **シート**: `Value2`、`Formula`、`Text`（表示形式が適用された文字列）を読む。数式は Excel が再計算した値で確かめる。数式を書いた・行や列やシートを消した後は、`Find-CellError.ps1` で `#REF!` や `#NAME?` のセルが無いかを調べる（[COM 編集の詳細](references/com.md)の「エラー値のセルを探す」）。書式、条件付き書式、列幅、グラフ、ボタンの見た目は、`Save-WorkbookScreenshot.ps1` で画像にして見る（同じく「見た目を画像にする」）。
-- **VBA**: 変更したコンポーネントの名前・種別・コードを読み戻す。`Test-VbaCompile.ps1` でコンパイルし、構文エラーや宣言の無い変数が無いことを確かめる（[VBA の編集ルールと入出力](references/vba.md)）。実行してよいマクロは `Invoke-ExcelMacro` で動かし、戻り値を確かめる（「マクロを動かす」）。確かめる場合が多い時も、ScriptBlock の中で `Invoke-ExcelMacro` を並べて呼ぶ。確かめるためのコードを `vba/` に置かない。`vba/` の中身は配布ブックにも入る。ThisWorkbook に置いた関数は、`$xl.Run` で呼ぶと（ブック名で修飾しても）空が返る。`[System.__ComObject].InvokeMember('FuncName', [Reflection.BindingFlags]::InvokeMethod, $null, $wb, $null)` で Workbook のメンバーとして呼ぶと値が返る。
+- **VBA**: 変更したコンポーネントの名前・種別・コードを読み戻す。`Test-VbaCompile.ps1` でコンパイルし、構文エラーや宣言の無い変数が無いことを確かめる（[VBA の編集ルールと入出力](references/vba.md)）。実行してよいマクロは `Invoke-ExcelMacro` で動かし、戻り値を確かめる（「マクロを動かす」）。確かめる場合が多い時も、ScriptBlock の中で `Invoke-ExcelMacro` を並べて呼ぶ。確かめるためだけの VBA は、`vba/` にも作業ブックにも残さない。`Publish-Workbook.ps1` は作業ブックの写しに `vba/` を `-Prune` なしで取り込むので、どちらに残したコードも配布ブックに入る。要る時は、一時フォルダに取ったブックの写しに足す。ThisWorkbook に置いた関数は、`$xl.Run` で呼ぶと（ブック名で修飾しても）空が返る。`[System.__ComObject].InvokeMember('FuncName', [Reflection.BindingFlags]::InvokeMethod, $null, $wb, $null)` で Workbook のメンバーとして呼ぶと値が返る。
 - **リボンとボタン**: `Test-RibbonLayout.ps1` でタブ・グループ・ボタンの並び、大きさ、有効無効、表示非表示を XML と照らし、タブの画像でアイコンを見る。`Invoke-RibbonButton.ps1` で実際に押し、出たダイアログの文言を確かめる（[リボン](references/ribbon.md)）。
 
 ## 動作確認

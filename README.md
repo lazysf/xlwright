@@ -54,6 +54,10 @@ powershell.exe -NoProfile -File "$env:USERPROFILE\.claude\plugins\cache\xlwright
 
 手直しの手順と repo の構成は [DEVELOPMENT.md](DEVELOPMENT.md) にあります。版ごとの変更は [CHANGELOG.md](CHANGELOG.md) にあります。
 
+## 助けと貢献
+
+質問や不具合の報告は、この repo の GitHub の issue で受け付けます。pull request は受け付けていません。
+
 ## ライセンス
 
 [MIT License](LICENSE)

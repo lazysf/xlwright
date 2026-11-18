@@ -13,6 +13,7 @@ PowerShell から `Excel.Application` を COM で操作して、Excel を土台�
 
 - Windows 版 Excel（デスクトップ版）、Excel の COM、Windows PowerShell 5.1 を使う。
 - WMI（`Win32_Process.Create`）からプロセスを作れること。Excel を起動するたびに、上限で Excel を止める見張りのプロセスを WMI で立てる。立てられない環境では、このスキルは使えない。`Could not start the watchdog` のエラーが出たら、迂回せずに止まり、人へ伝える。
+- スクリプトの実行が、実行ポリシー、sandbox、権限で拒否されたら、Excel を使わない手段（ブックの zip や XML を直に組み立てる、ほかのスキルを使う）で代わりをしない。Excel が開いて計算したことを確かめられないからだ。実行環境に権限を引き上げる仕組み（sandbox の外での実行の承認など）があれば、それを求める。無いか、通らなければ、止まって人に伝える。
 - エージェントの作業中、人はその端末で Excel を使わない。Excel 以外のアプリは使ってよい。
 - リボンの確認（`Test-RibbonLayout.ps1`、`Invoke-RibbonButton.ps1`）と配布ブックの出力では、Excel や VBE のウィンドウが画面に出る。前面は取らず、人が使っているアプリの後ろに出る。出たウィンドウを人が操作しないよう、始める前に伝える。
 - VBA のコンパイルの検査（`Test-VbaCompile.ps1`）は、コンパイルエラーがある時だけ、VBE のウィンドウとエラーのダイアログが画面に短い間出る。スクリプトが閉じるので、人は操作しない。

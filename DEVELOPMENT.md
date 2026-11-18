@@ -109,7 +109,8 @@ claude plugin eval plugins/xlwright
 - どの case も、許すツールは Read、Glob、Grep、Skill だけです。Windows ではシェルを許した eval が動かないため（シェルは OS の sandbox の中で動き、ネイティブの Windows には sandbox の仕組みが無い）、Excel を実際に動かす確認は `Test-XlWright.ps1` で行います。
 - 既定では、1 つの case をプラグインあり・なしで 3 回ずつ流します。会話と同じアカウントで動き、その分の使用量を消費します。最初は `--case` と `--runs 1` で試します。
 - 結果は `plugins/xlwright/evals/results/` に書かれ、Git には入れません。
-- 既存のマクロを確認なしに動かさない規則は、単独の case にしていません。人から受け取ったブックを確かめる依頼はスキルの範囲の外で、試した case（2026-11-18）はプラグインなしでも同じ答えが出て PASS し、規則の抜けを見分けられなかったためです。
+- 既存のマクロを確認なしに動かさない規則は、単独の case にしていません。人から受け取ったブックを確かめる依頼はスキルの範囲の外で、試した case（2026-11-18）はプラグインなしでも同じ答えが出て PASS し、規則の抜けを見分けられなかったためです。`ribbon` の採点では、既存のマクロ Summarize を、利用者の確認を待ってから押す手順も PASS とします。
+- 2026-11-18 の時点で、`ribbon` はプラグインありでも `closed-workbook-and-click` が FAIL します（判定の model を haiku と sonnet にして、どちらも 3 票とも FAIL）。回答は採点の基準を満たしているように読めますが、判定の理由は結果に残らず、原因は確かめていません。`publish` は、判定が haiku の時に割れることがありました（sonnet では 3 票とも PASS）。
 - case は開発用ですが、プラグインの中に置きます。`--eval-dir` は、プラグインの外を受け付けませんでした。`..` を含むパスは `must stay inside the plugin root`、絶対パスは `must be a relative path inside the plugin` で拒否されました。
 - 上の `claude` には、Claude Desktop に同梱された CLI を使います。同梱版は `%APPDATA%` の下の Claude Desktop のフォルダにある `claude-code\<版>\<ハッシュ>\claude.exe` です。アプリの更新で場所が変わり、古い版も残るので、更新日時が最も新しいものを使います。
 - 使用量を Desktop とそろえて把握するため、同梱の CLI は Desktop と同じアカウントでログインして使います。流す前に `claude auth status` を実行し、`loggedIn` が `true`、`authMethod` が `claude.ai`、`email` が Desktop でログインしているアカウントと同じことを確かめます。違う時は、`claude auth login` で Desktop と同じアカウントにログインし直します。

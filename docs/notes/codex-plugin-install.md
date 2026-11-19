@@ -42,6 +42,16 @@ docs（[Package your plugin](https://developers.openai.com/plugins/build/plugins
 - `config.toml` には `[marketplaces.xlwright]`（worktree を指す）と `[plugins."xlwright@xlwright"]` が 1 件ずつあった。写しの `cache/xlwright/xlwright/<版>/` には、直下の `plugin.json` と `.claude-plugin/` の両方が入っていた（Claude が読み取りで確かめた）。
 - 同じ worktree で、同梱の Claude Code 2.1.326 の `claude plugin validate` を、プラグインのフォルダと repo のルートに流すと、どちらも通った。読まれたのは `.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` で、出た警告（アイコンが無い）は足す前の repo と同じだった。
 
+## GitHub から入れた時（2026-11-19）
+
+2026-11-19 に版を上げて push した後に、Codex タブの「プラグインマーケットプレイスを追加」に `lazysf/xlwright` を入れて足し、xlwright を入れた（2026-11-19、人の操作）。
+
+- 詳細の画面には、push した版の番号、カテゴリ `Productivity`、開発者 `lazysf`、マーケットプレイス `xlwright` が出た（人の画面の写し）。カテゴリと開発者は、直下の `plugin.json` の値だった。
+- `config.toml` の `[marketplaces.xlwright]` は `source_type = "git"`、`ref = "main"` だった。repo は `~/.codex/.tmp/marketplaces/xlwright/` に clone され、詳細の画面のソースはその下の `plugins\xlwright` だった。
+- 写しの `~/.codex/plugins/cache/xlwright/xlwright/<版>/` は、repo の `plugins/xlwright/` と一致した。違いは、Git に入らない `evals/results/` だけだった（Claude が確かめた）。
+
+今の 2 つの marketplace のファイルには、表示名で見分ける目印が無いので、GitHub から入れた時にどちらが読まれたかは画面では分からない。手元のフォルダから入れた時と同じく、`.agents/plugins/marketplace.json` が読まれたと見ている。
+
 ## 未確認
 
 - 候補の右端の `xlwright` が何を表すか。プラグインを外していたので、project の名前と見ているが確かめていない。

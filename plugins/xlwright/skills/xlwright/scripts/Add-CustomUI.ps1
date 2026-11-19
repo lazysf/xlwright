@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Embeds or replaces customUI/customUI14.xml (Office 2010+ RibbonX) in a closed .xlsm package.
+Embeds or replaces customUI/customUI14.xml (Office 2010+ RibbonX) in a closed .xlsm, .xlsb, .xlam or .xlsx package.
 
 .DESCRIPTION
 Excel's COM API cannot define a ribbon, so the XML is written straight into the OOXML zip.
@@ -14,6 +14,7 @@ param(
     [Parameter(Mandatory)][string]$XmlPath
 )
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'XlWright.psm1') -Force
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -23,6 +24,7 @@ $relNs = 'http://schemas.openxmlformats.org/package/2006/relationships'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
 $Path = (Resolve-Path -LiteralPath $Path).ProviderPath
+Assert-WorkbookExtension $Path
 # Parse first so that malformed XML never reaches the workbook.
 [xml]$ui = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $XmlPath).ProviderPath, $utf8)
 

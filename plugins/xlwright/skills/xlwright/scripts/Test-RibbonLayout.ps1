@@ -105,6 +105,7 @@ function Get-InsertMso($Node) {
 }
 
 function Read-CustomUI([string]$Workbook) {
+    Assert-WorkbookExtension $Workbook
     $zip = [IO.Compression.ZipFile]::OpenRead($Workbook)
     try {
         $entry = $zip.GetEntry('customUI/customUI14.xml')

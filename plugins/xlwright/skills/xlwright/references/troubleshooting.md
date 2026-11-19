@@ -11,7 +11,7 @@
 | `Excel` | `Running` と、`Processes`（`Id`、`StartTime`、`WindowTitle`） | Excel が動いている |
 | `AccessVBOM` | `Value`（レジストリの値。ポリシーのキー（`HKCU`、`HKLM` の順）を先に読み、利用者の設定のキーは最後。どれにも無ければ `null`）と `Enabled` | `-Vba` を付けていて、値が `1` でない |
 | `Wmi` | `Ok` と `Error` | WMI からプロセスを作れない |
-| `Workbook` | `Path`、`Exists`、`OpenElsewhere`、`Git`。`-Path` が無ければ `null` | ブックが無い。ブックがほかで開かれている |
+| `Workbook` | `Path`、`Exists`、`OpenElsewhere`、`Git`。`-Path` が無ければ `null` | ブックが無い。扱わない形式のブック（SKILL.md の「扱うブックの形式」）。ブックがほかで開かれている |
 | `Workbook.Git` | `Available`（git が使える）、`InRepository`、`Tracked`、`Uncommitted`。分からない項目は `null` | 問題にしない |
 | `Error` | 確認そのものが失敗した時の理由 | - |
 

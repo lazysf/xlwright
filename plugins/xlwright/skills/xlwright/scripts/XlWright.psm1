@@ -294,6 +294,23 @@ function Stop-ExcelSession($Session, $Workbook) {
     }
 }
 
+# The formats this skill handles (the table of workbook formats in SKILL.md). Others, e.g. .xltm and .xls, were not
+# checked with every script, so they are rejected before Excel or the zip is touched.
+$script:WorkbookExtensions = '.xlsx', '.xlsm', '.xlsb', '.xlam'
+
+function Test-WorkbookExtension([string]$Path) {
+    $script:WorkbookExtensions -contains [IO.Path]::GetExtension($Path).ToLowerInvariant()
+}
+
+function Assert-WorkbookExtension {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-WorkbookExtension $Path)) {
+        throw (New-Object System.ArgumentException(("Unsupported workbook format: " + $Path + ". This skill handles " +
+            ($script:WorkbookExtensions -join ', ') + "."), 'Path'))
+    }
+}
+
 function Use-ExcelWorkbook {
     [CmdletBinding()]
     param(
@@ -310,6 +327,7 @@ function Use-ExcelWorkbook {
         [ValidateRange(1, 86400)][int]$TimeoutSeconds = 300
     )
     $Path = (Resolve-Path -LiteralPath $Path).ProviderPath
+    Assert-WorkbookExtension $Path
     $session = Start-ExcelSession ([bool]$Visible) ([bool]$EnableEvents) $TimeoutSeconds
     $wb = $null
     try {
@@ -335,7 +353,7 @@ function Use-ExcelWorkbook {
 function New-ExcelWorkbook {
     [CmdletBinding()]
     param(
-        # Target file. The format follows the extension: .xlsm (macro-enabled) or .xlsx.
+        # Target file. The format follows the extension: .xlsm (macro-enabled), .xlsb (binary) or .xlsx.
         [Parameter(Mandatory)][string]$Path,
         [ValidateRange(1, 86400)][int]$TimeoutSeconds = 120
     )
@@ -344,7 +362,8 @@ function New-ExcelWorkbook {
     $format = switch ([IO.Path]::GetExtension($Path).ToLowerInvariant()) {
         '.xlsm' { 52 }   # xlOpenXMLWorkbookMacroEnabled
         '.xlsx' { 51 }   # xlOpenXMLWorkbook
-        default { throw "Unsupported extension: $Path" }
+        '.xlsb' { 50 }   # xlExcel12
+        default { throw "Unsupported extension: $Path. A new workbook can be .xlsm, .xlsb or .xlsx." }
     }
     $session = Start-ExcelSession $false $false $TimeoutSeconds
     $wb = $null
@@ -500,7 +519,8 @@ function Get-ExcelPrerequisite {
     Returns Ready, Problems, Excel, AccessVBOM, Wmi and Workbook. Ready is true when Problems is empty.
     A problem is: a running Excel, a process that cannot be started through WMI (one hidden "cmd.exe /c exit"
     is started to find out, the way the watchdog is), with -Vba an AccessVBOM that is not 1, and with -Path a
-    workbook that does not exist or has an owner file (~$<name>) next to it, i.e. is open somewhere.
+    workbook that does not exist, is not in a format this skill handles, or has an owner file (~$<name>) next to it,
+    i.e. is open somewhere.
     The Git state of the workbook is reported but is never a problem.
     #>
     [CmdletBinding()]
@@ -554,6 +574,10 @@ function Get-ExcelPrerequisite {
         # Excel keeps this file next to a workbook it has open, also when its window is hidden.
         $open = Test-Path -LiteralPath (Join-Path $directory ('~$' + $name)) -PathType Leaf
         if (-not $exists) { $problems.Add('Workbook not found: ' + $full) }
+        if (-not (Test-WorkbookExtension $full)) {
+            $problems.Add('Unsupported workbook format: ' + $name + '. This skill handles ' +
+                ($script:WorkbookExtensions -join ', ') + '.')
+        }
         if ($open) {
             $problems.Add('The workbook seems to be open: ~$' + $name + ' is next to it. Ask the user to close it.')
         }
@@ -818,4 +842,4 @@ function Write-ExcelRange {
 }
 
 Export-ModuleMember -Function Use-ExcelWorkbook, New-ExcelWorkbook, Get-ExcelProcessId, Invoke-ExcelMacro,
-    Get-ExcelPrerequisite, Read-ExcelRange, Write-ExcelRange
+    Get-ExcelPrerequisite, Read-ExcelRange, Write-ExcelRange, Assert-WorkbookExtension

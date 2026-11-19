@@ -13,7 +13,9 @@ powershell.exe -NoProfile -File "<skill>/scripts/Publish-Workbook.ps1" -Path <�
 作業ブックは VBA を編集できる状態で更新する。配布後の修正も作業ブックと正本から行う。VBE のロックで制限するのは、Excel 上での VBA の閲覧・編集。配布時の保護は VBA プロジェクトに限る。ブック構成も保護する場合は、シートの表示切り替えなど、マクロが行う操作を妨げないか確かめる。
 
 - `-OutDir` は出力先のフォルダを指定する。相対パスは実行時のカレントディレクトリから解決し、出力先フォルダがなければ作成する。
-- `-FileName` は出力するファイルの名前（拡張子 `.xlsm` を含む）。省略時は作業ブックと同じ名前になる（`tool/tool.xlsm` なら `tool.xlsm`）。例外として、作業ブックの名前が `workbook.xlsm` の時は、ブックのフォルダ名を使う（`tool/workbook.xlsm` なら `tool.xlsm`）。
+- 作業ブックは `.xlsm` か `.xlsb`。
+- `-FileName` は出力するファイルの名前（拡張子を含む）。省略時は作業ブックと同じ名前になる（`tool/tool.xlsm` なら `tool.xlsm`）。例外として、作業ブックの名前が `workbook.xlsm` か `workbook.xlsb` の時は、ブックのフォルダ名に作業ブックの拡張子を付ける（`tool/workbook.xlsb` なら `tool.xlsb`）。
+- 拡張子で出力の形式が決まる（SKILL.md の「扱うブックの形式」）。`.xlsm` ならマクロ有効ブック、`.xlsb` ならバイナリ形式のブック、`.xlam` ならアドインで出力する（`-FileName tool.xlam`）。作業ブックと違う形式の時は、Excel の `SaveAs` で変換してからロックする。作業ブックの形式は変わらない。アドインの導入（Excel の `アドイン` に足す）は Excel の設定を変えるので、人が行う。
 - 出力先に同名のファイルがある場合は、`-Force` を付けたときだけ上書きする。
 
-出力後は、配布用のブックの `VBProject.Protection` が `1`、作業ブックが `0` であることを、`Invoke-ExcelScript.ps1` で読み戻して確かめる。リボンがある時は、配布用のブックにも `Test-RibbonLayout.ps1` を当てて、見え方を XML と照らす（[リボン](ribbon.md)）。VBA をロックしたブックでも、リボンは作られ、callback（`getEnabled`）も動いた。
+出力後は、配布用のブックの `VBProject.Protection` が `1`、作業ブックが `0` であることを、`Invoke-ExcelScript.ps1` で読み戻して確かめる。リボンがある時は、配布用のブックにも `Test-RibbonLayout.ps1` を当てて、見え方を XML と照らす（[リボン](ribbon.md)）。VBA をロックしたブックでも、リボンは作られ、callback（`getEnabled`）も動いた。`.xlsb` と `.xlam` でも、`Test-RibbonLayout.ps1` でリボンが XML と合った。`.xlam` のボタンを `Invoke-RibbonButton.ps1` で押せるかは確かめていない。

@@ -33,7 +33,7 @@ PowerShell から `Excel.Application` を COM で操作して、Excel を土台�
 powershell.exe -NoProfile -File "<skill>/scripts/Test-Prerequisite.ps1" -OutFile <result.json> -Path <workbook> -Vba
 ```
 
-- 結果は UTF-8 の JSON で `-OutFile` に書く。`Ready` が `true` なら進めてよい。`false` の時は、`Problems` に理由と次にすることが 1 件 1 文で入る（Excel が動いている、WMI からプロセスを作れない、ブックが無い、ブックがほかで開かれている）。終了コードは、`Ready` が `true` の時だけ 0。
+- 結果は UTF-8 の JSON で `-OutFile` に書く。`Ready` が `true` なら進めてよい。`false` の時は、`Problems` に理由と次にすることが 1 件 1 文で入る（Excel が動いている、WMI からプロセスを作れない、ブックが無い、扱わない形式のブック、ブックがほかで開かれている）。終了コードは、`Ready` が `true` の時だけ 0。
 - `-Vba` は、VBA を読む・変える作業の時に付ける。付けた時だけ、`AccessVBOM` が `1` でないことを問題にする。
 - `Workbook.Git` の `Tracked` と `Uncommitted` は、問題に数えない。追跡されていないブックと、未 commit の変更があるブックは、Git では戻せないので、バックアップを先に取る。
 - バックアップ（3）は調べない。ブックを作る前など、ブックがまだ無い時は `-Path` を付けない。
@@ -58,6 +58,19 @@ Excel は既定で、VBA とブックイベントを無効にし、外部ブッ�
 | リボン（customUI） | zip を直接編集（`Add-CustomUI.ps1`） | COM にリボンを定義する API が無い |
 
 順序は **COM の編集 → ブックを閉じる → customUI の埋め込み → COM で開き直して検証**。openpyxl など Excel 以外のツールで保存しない（リボンの関連付けが消える。[リボン](references/ribbon.md)）。
+
+## 扱うブックの形式
+
+扱うのは次の 4 つだけ。ほかの形式（`.xltm`、`.xls` など）は、どのスクリプトもブックに触れる前に `Unsupported workbook format` で拒否する。拒否されたら、迂回せずに人へ伝える。
+
+| 形式 | 用途 | 作る（`-Create`） | 開く・編集・確かめる | 配布の作業ブック | 配布の出力 |
+| --- | --- | --- | --- | --- | --- |
+| `.xlsm` | ツールの本体 | ○ | ○ | ○ | ○ |
+| `.xlsb` | ツールの本体（バイナリ形式） | ○ | ○ | ○ | ○ |
+| `.xlsx` | ツールが読み書きするブック、ひな形、シートだけのツール | ○ | ○ | × | × |
+| `.xlam` | アドインとして配る成果物 | × | ○ | × | ○ |
+
+`.xlsx` は VBA を持てないので、VBA を扱うスクリプトは失敗する。
 
 ## 対象と作業手順
 
@@ -84,7 +97,7 @@ Excel は既定で、VBA とブックイベントを無効にし、外部ブッ�
 | VBA の変更（`vba/` の正本を編集して取り込む） | [VBA の編集ルールと入出力](references/vba.md) |
 | UserForm の作成・変更 | [UserForm の作成と編集](references/userform.md) |
 | リボンの変更、見え方とボタンの動作確認 | [リボン](references/ribbon.md) |
-| VBA をロックした配布ブックの出力 | [配布ブックの出力](references/publish.md) |
+| VBA をロックした配布ブック（`.xlsm`、`.xlsb`）かアドイン（`.xlam`）の出力 | [配布ブックの出力](references/publish.md) |
 | ツールの作業で複数のブックを順に扱う、ひな形のシートを別ブックからコピーする | [COM 編集の詳細](references/com.md) |
 | Excel が起動しない、実行が拒否される | [実行環境と起動の失敗](references/troubleshooting.md) |
 
@@ -120,7 +133,7 @@ powershell.exe -NoProfile -File "<skill>/scripts/Invoke-ExcelScript.ps1" -Path <
 - スクリプトのファイルは UTF-8 として読む（BOM の有無を問わない）。日本語のシート名や文字列を直接書いてよい。
 - 結果は UTF-8 の JSON で `-OutFile` に書く。`Ok`、`Result`（ScriptBlock が出力した値の配列）、`Error`、`Warnings` を持つ。失敗した時は終了コードが 1。`powershell.exe` の標準出力は Git Bash から見ると日本語が化けるので、結果は JSON で読む。
 - 返す値は文字列・数値・真偽値・hashtable・配列にする。COM オブジェクトは `"[COM object]"` に置き換わる。複数セルの `Value2`（2 次元配列）は行の配列になるが、エラー値は数値（`-2146826281` など）のまま出るので、セルは `Read-ExcelRange` で読む。COM メソッドの戻り値（`Worksheets.Add()` など）も結果に混ざるので、要らないものは `[void]` で捨てる。
-- `-Create` を付けると、先に新しいブックを作る（既にあれば失敗する）。拡張子が `.xlsm` ならマクロ有効ブック、`.xlsx` なら通常のブックになる。
+- `-Create` を付けると、先に新しいブックを作る（既にあれば失敗する）。拡張子が `.xlsm` ならマクロ有効ブック、`.xlsb` ならバイナリ形式のブック、`.xlsx` なら通常のブックになる。作れる形式は「扱うブックの形式」のとおり。
 - `-Save` は、ScriptBlock が例外なしで終わった時だけ保存する。例外が出たら、保存せずに閉じる。
 - `-Visible` はウィンドウを表示する。ユーザーの画面に Excel が出るので、先に一言伝える。
 - `-TimeoutSeconds`（既定 300）を過ぎると、見張りのプロセスがこの呼び出しで起動した Excel だけを止め、`Timed out after ...` のエラーになる。保存していない変更は失われる。見張りは呼び出し元のシェルが timeout などで殺されても残り、上限で Excel を止める。長いマクロを動かす時は、上限を明示して延ばす。

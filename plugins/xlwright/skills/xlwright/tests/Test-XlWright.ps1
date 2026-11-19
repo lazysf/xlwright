@@ -505,6 +505,22 @@ Invoke-Case 'input-rejected' {
     $leftovers = @(Get-ChildItem -LiteralPath $pubDir -File -Force | Where-Object { $_.Name -like '.excel-publish-*' -or $_.Name -like '.customui-*' })
     if (Test-Path -LiteralPath $out) { $leftovers += @(Get-ChildItem -LiteralPath $out -File -Force) }
     Assert 'no output or temporary file after failed publish' ($leftovers.Count -eq 0) (($leftovers | ForEach-Object { $_.Name }) -join ',')
+    $r = Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $pubBook, '-OutDir', $out, '-FileName', 'book.xlsx')
+    Assert 'publish rejects an output that is not .xlsm, .xlsb or .xlam' ($r.Exit -ne 0 -and $r.Output -like '*ending in .xlsm, .xlsb or .xlam*') $r.Output
+
+    # Formats outside the skill are rejected before Excel or the zip is touched, whatever the content is.
+    $legacy = Join-Path $dir 'legacy.xls'
+    Copy-Item -LiteralPath $book -Destination $legacy
+    $legacyHash = Get-FileHashText $legacy
+    $r = Invoke-Runner $legacy 'read'
+    Assert 'Invoke-ExcelScript rejects an .xls' ($r.Exit -eq 1 -and [string]$r.Json.Error -like '*Unsupported workbook format*') ($r.Json | ConvertTo-Json -Compress)
+    $r = Invoke-Script (Join-Path $scripts 'Add-CustomUI.ps1') @('-Path', $legacy, '-XmlPath', (Join-Path $data 'ribbon\base.xml'))
+    Assert 'Add-CustomUI rejects an .xls' ($r.Exit -ne 0 -and $r.Output -like '*Unsupported workbook format*') $r.Output
+    Assert '.xls unchanged by the rejections' ((Get-FileHashText $legacy) -eq $legacyHash) 'hash changed'
+    $newAddin = Join-Path $dir 'new.xlam'
+    $failure = $null
+    try { [void](New-ExcelWorkbook -Path $newAddin) } catch { $failure = $_.Exception.Message }
+    Assert 'New-ExcelWorkbook rejects .xlam' ([string]$failure -like 'Unsupported extension:*.xlsm, .xlsb or .xlsx.' -and -not (Test-Path -LiteralPath $newAddin)) $failure
 }
 
 Invoke-Case 'watchdog-unavailable' {
@@ -611,6 +627,10 @@ Invoke-Case 'prerequisite' {
     Assert 'closed workbook: exit 0, exists, not open' ($closed.Exit -eq 0 -and $closed.Json.Workbook.Path -eq $book -and $closed.Json.Workbook.Exists -eq $true -and $closed.Json.Workbook.OpenElsewhere -eq $false) $detail
     $missing = Invoke-Prerequisite @('-Path', (Join-Path $dir 'no-such.xlsm'))
     Assert 'missing workbook: exit 1 and a problem' ($missing.Exit -eq 1 -and $missing.Json.Ready -eq $false -and $missing.Json.Workbook.Exists -eq $false -and @($missing.Json.Problems).Count -eq 1 -and [string]$missing.Json.Problems[0] -like 'Workbook not found:*') ($missing.Json | ConvertTo-Json -Compress -Depth 6)
+    $legacy = Join-Path $dir 'legacy.xls'
+    Copy-Item -LiteralPath $book -Destination $legacy
+    $unsupported = Invoke-Prerequisite @('-Path', $legacy)
+    Assert 'unsupported format: exit 1 and a problem' ($unsupported.Exit -eq 1 -and $unsupported.Json.Ready -eq $false -and $unsupported.Json.Workbook.Exists -eq $true -and @($unsupported.Json.Problems).Count -eq 1 -and [string]$unsupported.Json.Problems[0] -like 'Unsupported workbook format: legacy.xls.*') ($unsupported.Json | ConvertTo-Json -Compress -Depth 6)
 
     # A hidden Excel that has the workbook open is a running Excel and leaves the owner file next to it.
     $open = Use-ExcelWorkbook -Path $book -ScriptBlock {
@@ -740,7 +760,9 @@ Invoke-Case 'workbook-summary' {
         $plain.Json.Vba.HasProject -eq $false -and @($plain.Json.Vba.Components).Count -eq 0 -and @($plain.Json.CustomUI).Count -eq 0) $plain.Text
     # An .xlsb is a zip file as well and can carry a ribbon.
     $binary = Join-Path $dir 'binary.xlsb'
-    Use-ExcelWorkbook -Path $other -ScriptBlock { param($xl, $wb) $wb.SaveAs($binary, 50) }  # xlExcel12
+    [void](New-ExcelWorkbook -Path $binary)
+    $format = Use-ExcelWorkbook -Path $binary -ScriptBlock { param($xl, $wb) $wb.FileFormat }
+    Assert '.xlsb: created as a binary workbook' ($format -eq 50) $format  # xlExcel12
     $ribbon = Invoke-Script (Join-Path $scripts 'Add-CustomUI.ps1') @('-Path', $binary, '-XmlPath', (Join-Path $data 'ribbon\base.xml'))
     Assert '.xlsb: ribbon embedded' ($ribbon.Exit -eq 0) $ribbon.Output
     $xlsb = Invoke-Summary $binary
@@ -1266,6 +1288,41 @@ if ($Full) {
         $dynPath = $S.Tab + '/' + $S.Group + '/' + $S.DynButton
         Assert 'dist: ribbon layout matches the XML' ($layout.Exit -eq 0) ($res | ConvertTo-Json -Compress -Depth 8)
         Assert 'dist: getEnabled callback ran' (@($res.Dynamic | Where-Object { $_.Path -eq $dynPath -and $_.Item -eq 'Enabled' -and $_.Actual -eq $false }).Count -eq 1) ($res.Dynamic | ConvertTo-Json -Compress)
+
+        # The same work book published as an add-in.
+        $pub = Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'), '-FileName', 'tool.xlam')
+        Assert 'add-in: publish exit 0' ($pub.Exit -eq 0) $pub.Output
+        $addin = Join-Path $dir 'dist\tool.xlam'
+        $r = Use-ExcelWorkbook -Path $addin -EnableMacros -ScriptBlock {
+            param($xl, $wb)
+            @{ IsAddin = $wb.IsAddin; FileFormat = $wb.FileFormat; Protection = $wb.VBProject.Protection; Add = $xl.Run('AddNums', 4, 5) }
+        }
+        Assert 'add-in: saved as an add-in' ($r.IsAddin -eq $true -and $r.FileFormat -eq 55) ($r | ConvertTo-Json -Compress)
+        Assert 'add-in: VBA protection 1' ($r.Protection -eq 1) $r.Protection
+        Assert 'add-in: macro runs' ($r.Add -eq 9) $r.Add
+        $json = Join-Path $dir 'addin-layout.json'
+        $layout = Invoke-Script (Join-Path $scripts 'Test-RibbonLayout.ps1') @('-Path', $addin, '-OutFile', $json)
+        $res = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        Assert 'add-in: ribbon layout matches the XML' ($layout.Exit -eq 0) ($res | ConvertTo-Json -Compress -Depth 8)
+        $leftovers = @(Get-ChildItem -LiteralPath $dir, (Join-Path $dir 'dist') -File -Force | Where-Object { $_.Name -like '.excel-publish-*' })
+        Assert 'add-in: no temporary file left' ($leftovers.Count -eq 0) (($leftovers | ForEach-Object { $_.Name }) -join ',')
+
+        # An .xlsb work book named workbook.xlsb: the output takes the folder name and stays an .xlsb.
+        $binDir = Join-Path $dir 'bintool'
+        New-Item -ItemType Directory -Path $binDir | Out-Null
+        $binBook = Join-Path $binDir 'workbook.xlsb'
+        [void](New-ExcelWorkbook -Path $binBook)
+        Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $binDir 'vba') -Recurse
+        $pub = Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $binBook, '-OutDir', (Join-Path $binDir 'dist'))
+        Assert '.xlsb: publish exit 0' ($pub.Exit -eq 0) $pub.Output
+        foreach ($p in @(@{ Path = (Join-Path $binDir 'dist\bintool.xlsb'); Protection = 1 }, @{ Path = $binBook; Protection = 0 })) {
+            $r = Use-ExcelWorkbook -Path $p.Path -EnableMacros -ScriptBlock {
+                param($xl, $wb)
+                @{ FileFormat = $wb.FileFormat; Protection = $wb.VBProject.Protection; Add = $xl.Run('AddNums', 4, 5) }
+            }
+            $label = '.xlsb ' + (Split-Path -Leaf $p.Path)
+            Assert ($label + ': binary workbook, VBA protection ' + $p.Protection + ', macro runs') ($r.FileFormat -eq 50 -and $r.Protection -eq $p.Protection -and $r.Add -eq 9) ($r | ConvertTo-Json -Compress)
+        }
     }
 
     Invoke-Case 'screenshot' -WatchForeground {

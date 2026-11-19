@@ -6,6 +6,15 @@
 
 ### Added
 
+- `Publish-Workbook.ps1` が、VBA をロックしたアドイン（`.xlam`）を出力できる。`-FileName` の拡張子を `.xlam` にする（`-FileName tool.xlam`）。作業ブックの形式は変わらない。
+- `.xlsb` のブックを、`.xlsm` と同じように作り、編集し、配布できる。`New-ExcelWorkbook` と `-Create` で `.xlsb` を作れ、`Publish-Workbook.ps1` は `.xlsb` の作業ブックを受け付け、`.xlsb` でも出力できる。
+
+### Changed
+
+- **Breaking:** 扱うブックを `.xlsx`、`.xlsm`、`.xlsb`、`.xlam` に限った。ほかの形式（`.xltm`、`.xls` など）は、どのスクリプトもブックを開く前に拒否する。`Test-Prerequisite.ps1 -Path` も、その形式を問題として返す。今までは、Excel が開けるブックならそのまま開いていた。対象のブックを、Excel で `.xlsm` か `.xlsx` に保存し直してから渡す。
+
+### Added
+
 - Codex 用の manifest（`plugin.json`）と marketplace（`.agents/plugins/marketplace.json`）。ChatGPT の app の Codex タブで、この repo を marketplace として足して入れられる。
 
 ### Changed

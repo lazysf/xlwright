@@ -28,7 +28,7 @@ powershell.exe -NoProfile -File "<skill>/scripts/Get-WorkbookSummary.ps1" -Path 
 - `Connections` に、接続文字列と SQL は入れない。サーバー名や認証情報が入っていることがあるため。中身が要る時は、ユーザーに確かめてから読む。
 - `Vba.Components` の `Kind` は、`standard`、`classes`、`documents`、`forms`、`other`。コードの無い文書モジュールは省く。VBA を読めない時（`AccessVBOM` が `1` でない、VBA プロジェクトがロックされている）は、`Components` が `null` になり、`Vba.Error` に理由が入る。ほかの項目は返り、終了コードは 0 のまま。
 - ブックが無い時や開けない時は、`Error` に理由が入り、終了コードは 1 になる。
-- 確かめたのは、`.xlsm` と `.xlsx`、グラフシート、非表示のシート、テーブル、CSV を読み込んだ接続、ブックへのリンク 1 つ、VBA プロジェクトをロックしたブック、リボンを埋め込んだ `.xlsb` の `CustomUI`。OLE DB や ODBC の接続、Power Query、リンク先の無いリンク、保護されたシート、Excel 4.0 マクロシート、`AccessVBOM` が `1` でない時、`.xlsb` の `CustomUI` のほかの項目、`.xls` では確かめていない。
+- 確かめたのは、`.xlsm` と `.xlsx`、グラフシート、非表示のシート、テーブル、CSV を読み込んだ接続、ブックへのリンク 1 つ、VBA プロジェクトをロックしたブック。OLE DB や ODBC の接続、Power Query、リンク先の無いリンク、保護されたシート、Excel 4.0 マクロシート、`AccessVBOM` が `1` でない時、`.xlam` では確かめていない。`.xlsb` で確かめたのは、VBA の標準・クラス・文書モジュールとリボンを持つブックの `CustomUI` と `Vba.Components`。`.xls` など、SKILL.md の「扱うブックの形式」に無い形式は、ブックを読む前に拒否して `Error` に理由を入れる。
 
 ## エラー値のセルを探す
 
@@ -57,7 +57,7 @@ powershell.exe -NoProfile -File "<skill>/scripts/Find-CellError.ps1" -Path <work
 - こぼれる先がふさがった数式は、そのセルが `#SPILL!` の `formula` になる。こぼれた先のエラーは、こぼした数式と別に 1 セルずつ数える。
 - `Calculation` が `manual` の時は、保存された値が古いことがある。直したはずのエラーが残って見えたり、新しいエラーが見えなかったりする。その時は、結果が古いかもしれないことをユーザーに伝える。
 - 定義名、条件付き書式、入力規則の中の `#REF!` は、セルの値に出ないので見つからない。定義名の参照先は `Get-WorkbookSummary.ps1` の `Names` で読める。
-- 確かめたのは、`.xlsx` の数式と定数のエラー、こぼれた先のエラー、`#SPILL!`、非表示と保護のシート、使っている範囲が `A1` から始まらないシート、20001 行のシート。数式を非表示にした保護シート、手動の計算で保存されたブック、16384 列に近い広いシート、`.xlsb` と `.xls` では確かめていない。
+- 確かめたのは、`.xlsx` の数式と定数のエラー、こぼれた先のエラー、`#SPILL!`、非表示と保護のシート、使っている範囲が `A1` から始まらないシート、20001 行のシート。数式を非表示にした保護シート、手動の計算で保存されたブック、16384 列に近い広いシート、`.xlsm` と `.xlam` では確かめていない。
 
 ## 見た目を画像にする
 
@@ -149,7 +149,7 @@ Use-ExcelWorkbook -Path $Path -Save -ScriptBlock {
 
 - **この形のスクリプトは ASCII だけで書く。** `powershell.exe`（5.1）は BOM なしの `.ps1` を UTF-8 として読まない。日本語のシート名、モジュール名、VBA コードは、UTF-8 のデータファイルに分けて `[IO.File]::ReadAllText($p, [Text.Encoding]::UTF8)` で読み込む。この方法で、日本語のモジュール名、コメント、文字列リテラル（全角と半角カナを含む）が化けずに入り、`$xl.Run` の戻り値も一致することを確かめてある。日本語のパスやラベルを `-File` の引数として渡すのは問題ない（Git Bash から `-TabLabel 'ツール'` のように渡して動くことを確かめてある）。
 - **日本語の結果はファイルに書いて読む。** 確認したい値は `[IO.File]::WriteAllLines($p, $lines, (New-Object Text.UTF8Encoding($false)))` で UTF-8 のファイルに書き出す。
-- 新しいブックは `New-ExcelWorkbook -Path <file>` で作る。拡張子が `.xlsm` ならマクロ有効ブック、`.xlsx` なら通常のブックで保存する。既にファイルがあればエラーで止まる。作ったブックの絶対パスを出力するので、要らなければ `[void]` で捨てる。上限は `-TimeoutSeconds`（既定 120）。
+- 新しいブックは `New-ExcelWorkbook -Path <file>` で作る。拡張子が `.xlsm` ならマクロ有効ブック、`.xlsb` ならバイナリ形式のブック、`.xlsx` なら通常のブックで保存する。既にファイルがあればエラーで止まる。作ったブックの絶対パスを出力するので、要らなければ `[void]` で捨てる。上限は `-TimeoutSeconds`（既定 120）。
 - `Use-ExcelWorkbook` は `Invoke-ExcelScript.ps1` と同じ `-Save`、`-Visible`、`-EnableMacros`、`-EnableEvents`、`-TimeoutSeconds` を取り、上限と終了の扱いも同じ（SKILL.md の「COM 編集」）。
 - モジュールを読み込むと、ScriptBlock の中で `Invoke-ExcelMacro` も使える（SKILL.md の「マクロを動かす」）。
 - `Use-ExcelWorkbook` は ScriptBlock が出力した値をそのまま返す。COM メソッドの戻り値（`Worksheets.Add()` など）も混ざるので、要らないものは `[void]` で捨てる。COM オブジェクトを返すと、ブックを閉じた後も参照が残る。

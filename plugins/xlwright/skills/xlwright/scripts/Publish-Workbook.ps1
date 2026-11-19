@@ -4,8 +4,10 @@ Updates a work book from its VBA (and optional ribbon) sources and publishes a V
 
 .DESCRIPTION
 The sources are read from the work book's folder: vba/ (required) and ribbon/customUI14.xml
-(embedded only when present). The default output file name is the work book's name, or the folder
-name + .xlsm when the work book is named workbook.xlsm.
+(embedded only when present). The work book is an .xlsm or an .xlsb. The default output file name is
+the work book's name, or the folder name + the work book's extension when the work book is named
+workbook.xlsm or workbook.xlsb. The extension of the output file name picks the format: .xlsm
+(macro-enabled workbook), .xlsb (binary workbook) or .xlam (add-in). The work book keeps its format.
 #>
 [CmdletBinding()]
 param(
@@ -16,9 +18,13 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+# The file formats of SaveAs (XlFileFormat) by the extensions an output can have.
+$outputFormats = @{ '.xlsm' = 52; '.xlsb' = 50; '.xlam' = 55 }  # xlOpenXMLWorkbookMacroEnabled, xlExcel12, xlOpenXMLAddIn
+
 $workbook = Get-Item -LiteralPath $Path
-if ($workbook -isnot [IO.FileInfo] -or $workbook.Extension -ne '.xlsm') {
-    throw "Expected an .xlsm file: $Path"
+$workbookExtension = $workbook.Extension.ToLowerInvariant()
+if ($workbook -isnot [IO.FileInfo] -or $workbookExtension -notin '.xlsm', '.xlsb') {
+    throw "Expected an .xlsm or .xlsb file: $Path"
 }
 
 $sourceDir = Join-Path $workbook.DirectoryName 'vba'
@@ -27,11 +33,12 @@ if (!(Test-Path -LiteralPath $sourceDir -PathType Container)) { throw "Missing V
 $hasRibbon = Test-Path -LiteralPath $ribbonPath -PathType Leaf
 
 if (!$PSBoundParameters.ContainsKey('FileName')) {
-    $FileName = if ($workbook.Name -eq 'workbook.xlsm') { $workbook.Directory.Name + '.xlsm' } else { $workbook.Name }
+    $FileName = if ($workbook.BaseName -eq 'workbook') { $workbook.Directory.Name + $workbookExtension } else { $workbook.Name }
 }
-if ([IO.Path]::GetExtension($FileName) -ne '.xlsm' -or
+$outputExtension = [IO.Path]::GetExtension($FileName).ToLowerInvariant()
+if (-not $outputFormats.ContainsKey($outputExtension) -or
     $FileName.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0) {
-    throw "Expected a file name ending in .xlsm: $FileName"
+    throw "Expected a file name ending in .xlsm, .xlsb or .xlam: $FileName"
 }
 $provider = $null
 $drive = $null
@@ -48,8 +55,8 @@ if (!$Force -and (Test-Path -LiteralPath $outputPath)) {
 }
 
 $publishId = '.excel-publish-' + [guid]::NewGuid().ToString('N')
-$updatedWorkbook = Join-Path $workbook.DirectoryName ($publishId + '.xlsm')
-$pendingOutput = [IO.Path]::Combine($outputDirectory, $publishId + '.xlsm')
+$updatedWorkbook = Join-Path $workbook.DirectoryName ($publishId + $workbookExtension)
+$pendingOutput = [IO.Path]::Combine($outputDirectory, $publishId + $outputExtension)
 try {
     # Keep the work book intact until the imports and the release lock succeed.
     [IO.File]::Copy($workbook.FullName, $updatedWorkbook)
@@ -59,7 +66,19 @@ try {
     }
 
     [void][IO.Directory]::CreateDirectory($outputDirectory)
-    [IO.File]::Copy($updatedWorkbook, $pendingOutput)
+    if ($outputExtension -ne $workbookExtension) {
+        # Excel keeps customUI through SaveAs, and the VBA project of the converted file can be locked like that of
+        # the work book (docs/notes/publish-addin.md). Lock after the conversion so that the check reads the output.
+        Import-Module (Join-Path $PSScriptRoot 'XlWright.psm1')
+        $format = $outputFormats[$outputExtension]
+        Use-ExcelWorkbook -Path $updatedWorkbook -ScriptBlock {
+            param($xl, $wb)
+            $wb.SaveAs($pendingOutput, $format)
+        }
+    }
+    else {
+        [IO.File]::Copy($updatedWorkbook, $pendingOutput)
+    }
     & (Join-Path $PSScriptRoot 'Lock-VbaProject.ps1') -Path $pendingOutput
     [IO.File]::Replace($updatedWorkbook, $workbook.FullName, [NullString]::Value)
 

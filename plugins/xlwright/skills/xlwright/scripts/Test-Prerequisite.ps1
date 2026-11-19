@@ -6,7 +6,7 @@ Checks what this skill needs before a workbook is opened and reports what stands
 Excel is not started, and no setting, workbook or Git state is changed. The one thing that is done is to start
 a hidden "cmd.exe /c exit" through WMI, because only that shows whether the watchdog can be started.
 
-Checked: a running Excel, AccessVBOM, WMI, and with -Path the workbook (exists, open somewhere, Git state).
+Checked: a running Excel, AccessVBOM, WMI, and with -Path the workbook (exists, format, open somewhere, Git state).
 A problem keeps Ready false; see Get-ExcelPrerequisite in XlWright.psm1 for what counts as one. AccessVBOM is
 a problem only with -Vba. The Git state never is.
 

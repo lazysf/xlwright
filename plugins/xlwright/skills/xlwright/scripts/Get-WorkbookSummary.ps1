@@ -45,17 +45,16 @@ $warnings = @()
 try {
     $full = (Resolve-Path -LiteralPath $Path).ProviderPath
     $result.Path = $full
+    # Every format this skill handles is a zip file.
+    Assert-WorkbookExtension $full
 
     # Before Excel opens the workbook: while it is open, the zip cannot be read (docs/notes/workbook-summary.md).
-    # The Open XML formats and .xlsb are zip files; .xls is not.
-    if ([IO.Path]::GetExtension($full) -in '.xlsx', '.xlsm', '.xltx', '.xltm', '.xlam', '.xlsb') {
-        $zip = [IO.Compression.ZipFile]::OpenRead($full)
-        try {
-            $result.CustomUI = @($zip.Entries | ForEach-Object { $_.FullName } |
-                Where-Object { $_ -like 'customUI/*' -and -not $_.EndsWith('/') } | Sort-Object)
-        }
-        finally { $zip.Dispose() }
+    $zip = [IO.Compression.ZipFile]::OpenRead($full)
+    try {
+        $result.CustomUI = @($zip.Entries | ForEach-Object { $_.FullName } |
+            Where-Object { $_ -like 'customUI/*' -and -not $_.EndsWith('/') } | Sort-Object)
     }
+    finally { $zip.Dispose() }
 
     # Only plain values leave the block; a COM reference that outlives the workbook keeps Excel from exiting.
     $found = Use-ExcelWorkbook -Path $full -TimeoutSeconds $TimeoutSeconds -WarningVariable +warnings -ScriptBlock {

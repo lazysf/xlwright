@@ -1,6 +1,6 @@
 # プラグインとして入れた時の振る舞い
 
-- Date: 2026-11-13
+- Date: 2026-11-19
 - 出典: Claude Desktop の Code タブの設定の「プラグイン」の画面と `/plugin` の操作、同梱の Claude Code 2.1.321 の `claude plugin list`、`claude plugin marketplace add --help`、`claude plugin update`、`installed_plugins.json` とキャッシュのフォルダ、導入先での `skills/xlwright/tests/Test-XlWright.ps1` の実行（commit `9cf0254`）、Claude Code の docs（<https://code.claude.com/docs/en/plugins>、<https://code.claude.com/docs/en/skills>、<https://code.claude.com/docs/en/discover-plugins>、<https://code.claude.com/docs/en/plugins/loading>、<https://code.claude.com/docs/en/plugins-reference>）、主要なプラグインの repo の manifest と workflow（2026-11-13 の main）、release-please-action の README（<https://github.com/googleapis/release-please-action>）と GitHub の docs（<https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes>）（2026-11-16）
 
 利用者と同じ手順で入れて確かめた事実と、README の入れ方と版を今の形にしている理由を書く。入れ方そのものは [README](../../README.md) を正本とする。
@@ -38,6 +38,10 @@
 - 版を CI で自動で付ける形（release-please など）は採らない。調べた主要な repo（`obra/superpowers`、`wshobson/agents`、`anthropics/claude-plugins-official`、`anthropics/claude-code`、`anthropics/skills`）は、どれも版を手で書くか、書かずにハッシュに任せていた。自動にすると、新しい依存と、Actions に PR を作らせる権限の設定が要る。docs の版の決め方（manifest の `version`、項目の `version`、commit のハッシュの順）に git のタグは出てこない。
 - release-please を採らない理由は、ほかに 2 つある。release-please は版を上げる PR を自分で作るので、版を上げていない push を止める pre-push の hook と両立しない。CHANGELOG は commit message から作られるので、利用者に向けて日本語でまとめて書く今の形にならない。
 - tag は、版を上げた push の後に手で付ける。版と commit の対応を残すためで、利用者の版には関わらない。GitHub の Release と CI は足さない。Release の中身は CHANGELOG.md の写しになる。lint は commit の時の hook で流れているので、CI で流し直さない。
+- 公式のプラグインの一覧（plugin directory）には申請しない。人と決めた判断（2026-11-19）。そのため、`claude plugin validate plugins/xlwright` が出す一覧向けの確認は、直さずに残している（同梱の Claude Code 2.1.326、2026-11-19）。
+  - 警告 `ICON_MISSING`: プラグインに icon が無い。直すには、`.claude-plugin/icon.png` に正方形の PNG を置くか、`plugin.json` の `icon` に正方形の PNG か JPEG を書く。一辺が 512〜2048 px で、2 MB 未満にする。SVG と WebP は受け付けない。一覧の icon になるのは、developer portal で初めて保存または申請した時のファイルだけで、後から変えても一覧の icon は変わらない。
+  - 注記: プラグインのフォルダに README が無いので、repo の一番上の README.md が使われる。申請は commit したものだけを、repo の一番上から読む。
+  - どちらも validate の結果（`Validation passed`）を変えない。
 
 ## 未確認
 

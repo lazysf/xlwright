@@ -30,6 +30,12 @@
   - 待つもの: toggleButton や menu を持つリボンの依頼。来たら、まず今の `Invoke-RibbonButton.ps1` で押せるかを試す。
   - 足りる形: toggleButton と menu の中のボタンを押せること。dropDown は、使う依頼が来てから考える。
   - やらないこと: 押した後の状態（toggleButton の押下状態）を callback と照らすこと。
+- [ ] プラグインの icon を足す。
+  - 記載: 2026-11-19（`claude plugin validate` の警告 `ICON_MISSING`）
+  - 理由: icon が無いので、公式のプラグインの一覧に申請すると icon の無い項目になる。一覧には申請しないと決めたので、今は要らない。
+  - 待つもの: 一覧に申請する、または画面で icon を見分けたくなった時。
+  - 足りる形: 一覧の条件（`docs/notes/plugin-install.md`）に合う正方形の PNG を、`.claude-plugin/icon.png` に置くこと。一覧の icon は初めて保存または申請した時に決まるので、申請の前に置く。
+  - やらないこと: icon を描くこと。絵は人が用意する。
 - [ ] 簡易表示のリボンの見分けを確かめる（`references/ribbon.md` の未確認）。
   - 記載: 2026-11-16（スキルの文書とスクリプトの見直し）
   - 理由: `Test-RibbonLayout.ps1` は、タブの中身の高さが 60 px 未満の時に簡易表示と見なし、確かめられなかったとして止まる。この見分けは実機で確かめていないので、簡易表示のリボンを見誤っても、今は気づけない。

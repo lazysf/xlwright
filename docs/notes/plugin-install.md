@@ -25,6 +25,7 @@
 - 「ディレクトリ」の画面の「Code」の一覧で marketplace を更新すると、写しが新しい commit になり、新しい版がキャッシュに届いた。しかし入っている版（`~/.claude/plugins/installed_plugins.json`）は切り替わらず、「更新」は押せないままだった。`/reload-plugins` とアプリの再起動でも変わらなかった。新しいセッションも古い版を読み込んだ。
 - 同梱の CLI で `claude plugin update xlwright@xlwright` を流すと、入っている版が `689ca7f5a64a` から `000448a646ae` に切り替わった。アプリを再起動すると、新しいセッションは新しい版を読み込んだ。Desktop の画面だけで更新を済ませる手段は、見つからなかった。
 - `plugin.json` に `version` を書いた commit（`4373f8a`）を push した後、同梱の CLI で `claude plugin update xlwright@xlwright` を流すと、入っている版が `000448a646ae` から `0.1.0` に切り替わった。キャッシュには版 `0.1.0` のフォルダができ、中身は `plugins/xlwright/` と一致した。前の版のフォルダには `.orphaned_at` が置かれた。続けてもう一度流すと、`already at the latest version (0.1.0)` と出て、何も変わらなかった。
+- 2026-11-19 に版を上げて push した後、同梱の CLI で `claude plugin update xlwright@xlwright` を流すと（人の操作）、`installed_plugins.json` の版は push した版、`gitCommitSha` は push した先頭の commit になった。キャッシュのその版のフォルダは、`plugins/xlwright/` と一致した。違いは、Claude Code が置く `.in_use` だけだった（Claude が確かめた）。新しいセッションで `/xlwright:xlwright` が読み込まれたことは、人が確かめた。
 
 ## 入れ方と版を今の形にしている理由
 

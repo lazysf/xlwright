@@ -50,6 +50,8 @@ docs（[Package your plugin](https://developers.openai.com/plugins/build/plugins
 - `config.toml` の `[marketplaces.xlwright]` は `source_type = "git"`、`ref = "main"` だった。repo は `~/.codex/.tmp/marketplaces/xlwright/` に clone され、詳細の画面のソースはその下の `plugins\xlwright` だった。
 - 写しの `~/.codex/plugins/cache/xlwright/xlwright/<版>/` は、repo の `plugins/xlwright/` と一致した。違いは、Git に入らない `evals/results/` だけだった（Claude が確かめた）。
 
+同じ日に次の版を push した後に、候補を外した Codex へ、同じ手順で GitHub から入れ直した（2026-11-19、人の操作）。人が詳細の画面で、push した版の番号を見た。写しは `~/.codex/plugins/cache/xlwright/xlwright/<版>/` で、repo の `plugins/xlwright/` と一致した。違いは、Git に入らない `evals/results/` だけだった（Claude が確かめた）。
+
 今の 2 つの marketplace のファイルには、表示名で見分ける目印が無いので、GitHub から入れた時にどちらが読まれたかは画面では分からない。手元のフォルダから入れた時と同じく、`.agents/plugins/marketplace.json` が読まれたと見ている。
 
 ## 未確認

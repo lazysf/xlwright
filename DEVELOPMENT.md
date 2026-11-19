@@ -25,10 +25,16 @@ prek install
 `.claude/skills/xlwright` は、`plugins/xlwright/skills/xlwright` を指す相対パスのシンボリックリンクです。この repo を Claude Code で開くと、スキルが `/xlwright` としてプロジェクトから読み込まれ、入れ直さずに手直しを試せます。
 プラグイン版も入れている端末では、`/xlwright`（手直し中）と `/xlwright:xlwright`（入れた版）の両方が読み込まれます。開発する端末では、プラグイン版を無効にしておきます。同じ名前のスキルが `~/.claude/skills/xlwright/` にあると、そちらが `/xlwright` として優先されるので、外しておきます。
 
+Codex には、`.agents/skills/xlwright` が同じフォルダを指すリンクとして読まれます。この repo を作業フォルダにして Codex を開くと、スキルが repo のファイルから読み込まれます。プラグインとして入れた版は、写しを読むので、手直しが届くには入れ直しが要ります（[docs/notes/codex-plugin-install.md](docs/notes/codex-plugin-install.md)）。開発する端末では、Codex からもプラグイン版を外しておきます。リンクとプラグイン版を並べた時に、どちらが選ばれるかは確かめていません。
+
 リンクとして取り出すには、Git の `core.symlinks=true` と、シンボリックリンクを作れる権限（Windows の開発者モードか管理者）が要ります。リンクにならずにテキストファイルとして取り出された時は、それを消して作り直します。
 
 ```powershell
 cmd /c mklink /D .claude\skills\xlwright ..\..\plugins\xlwright\skills\xlwright
+```
+
+```powershell
+cmd /c mklink /D .agents\skills\xlwright ..\..\plugins\xlwright\skills\xlwright
 ```
 
 開発者モードが有効なら、管理者でなくても `mklink` で作れます。`New-Item -ItemType SymbolicLink` は、開発者モードでも管理者特権を求めて失敗しました（Windows PowerShell 5.1）。

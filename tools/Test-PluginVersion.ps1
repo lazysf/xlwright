@@ -7,8 +7,10 @@ Runs as a prek pre-push hook. prek sets PRE_COMMIT_FROM_REF (the commit the remo
 PRE_COMMIT_TO_REF (the commit being pushed).
 
 Claude Code keeps users on the cached copy of a plugin until the version in plugin.json changes,
-so a push whose range changes plugins/xlwright/ must also change that version. The version is read
-from the commits themselves, not from the working tree.
+so a push whose range changes plugins/xlwright/ must also change that version. The plugin carries
+two manifests: .claude-plugin/plugin.json for Claude Code and plugin.json for Codex. The pushed
+commit must give both the same version. The version is read from the commits themselves, not from
+the working tree.
 
 When the remote does not have the branch yet, the push is compared with the merge base of the
 remote's default branch (<remote>/HEAD, then <remote>/main). When neither exists, the check is
@@ -20,14 +22,15 @@ $ErrorActionPreference = 'Stop'
 
 $pluginDir = 'plugins/xlwright/'
 $manifest = 'plugins/xlwright/.claude-plugin/plugin.json'
+$codexManifest = 'plugins/xlwright/plugin.json'
 $zero = '^0+$'
 
-function Get-ManifestVersion([string]$Commit) {
+function Get-ManifestVersion([string]$Commit, [string]$Path = $manifest) {
     # ls-tree prints nothing when the file is missing, where show would fail.
-    $listed = git ls-tree --name-only $Commit -- $manifest
+    $listed = git ls-tree --name-only $Commit -- $Path
     if ($LASTEXITCODE -ne 0) { throw "git ls-tree failed (exit $LASTEXITCODE)" }
     if (!$listed) { return $null }
-    $json = (git show "${Commit}:$manifest") -join "`n"
+    $json = (git show "${Commit}:$Path") -join "`n"
     if ($LASTEXITCODE -ne 0) { throw "git show failed (exit $LASTEXITCODE)" }
     $version = ($json | ConvertFrom-Json).version
     if ($version -is [string] -and $version) { return $version }
@@ -98,10 +101,21 @@ try {
             Write-Output "$manifest has no version in the commit being pushed."
             exit 1
         }
+        $codexVersion = Get-ManifestVersion $toCommit $codexManifest
+        if (!$codexVersion) {
+            Write-Output "$codexManifest has no version in the commit being pushed."
+            exit 1
+        }
+        if ($codexVersion -ne $newVersion) {
+            Write-Output "The manifests disagree: $manifest has $newVersion, $codexManifest has $codexVersion."
+            Write-Output "Give both the same `"version`"."
+            exit 1
+        }
+        # The base may predate $codexManifest, so the old version comes from $manifest alone.
         $oldVersion = Get-ManifestVersion $base
         if ($oldVersion -eq $newVersion) {
             Write-Output "This push changes $($changed.Count) file(s) under $pluginDir but keeps version $newVersion."
-            Write-Output "Users stay on the cached copy until the version changes. Raise `"version`" in $manifest."
+            Write-Output "Users stay on the cached copy until the version changes. Raise `"version`" in $manifest and $codexManifest."
             exit 1
         }
         Write-Output "Plugin version: $oldVersion -> $newVersion"

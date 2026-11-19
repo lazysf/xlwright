@@ -31,6 +31,17 @@ repo のルートに `.agents/skills/xlwright`（`../../plugins/xlwright/skills/
 
 答えたパスがリンクの下だったので、リンクのスキルは repo のファイルを読んでいると見ている。手直しのたびに入れ直す必要は無い見込みだが、手直しが届くかは試していない。
 
+## Claude 用と Codex 用の manifest を並べた時
+
+docs（[Package your plugin](https://developers.openai.com/plugins/build/plugins)）は、どのエージェントでも読める形としてプラグインのフォルダの直下の `plugin.json` を勧め、marketplace は `.agents/plugins/marketplace.json`（`.claude-plugin/marketplace.json` は legacy-compatible）に置くと書く。両方を置いた時にどちらを使うかは、書いていない。
+
+一時フォルダの worktree（commit `f6dfc01`）に、`plugins/xlwright/plugin.json` と `.agents/plugins/marketplace.json` を足して確かめた（2026-11-19）。見分けるため、それぞれの `interface.displayName` を `xlwright (manifest test)` と `xlwright (agents marketplace)` にした。足す前に、Codex から xlwright の marketplace とプラグインは外してあった（人の報告）。
+
+- app で worktree を marketplace として足すと、「マーケットプレイス」の一覧には `xlwright (agents marketplace)` の 1 件だけが「1個のプラグイン」として出た（人の画面の写し）。同じフォルダに `.claude-plugin/marketplace.json` もあるが、`.agents/plugins/marketplace.json` が使われ、marketplace は 2 件にならなかった。
+- プラグインの一覧と詳細の画面には、`xlwright (manifest test)`、開発者 `lazysf`、カテゴリ `Productivity`、バージョン（`plugin.json` の `version`）が出た（人の画面の写し）。表示名、開発者、カテゴリは、直下の `plugin.json` の `extensions.com.openai.interface` の値だった。
+- `config.toml` には `[marketplaces.xlwright]`（worktree を指す）と `[plugins."xlwright@xlwright"]` が 1 件ずつあった。写しの `cache/xlwright/xlwright/<版>/` には、直下の `plugin.json` と `.claude-plugin/` の両方が入っていた（Claude が読み取りで確かめた）。
+- 同じ worktree で、同梱の Claude Code 2.1.326 の `claude plugin validate` を、プラグインのフォルダと repo のルートに流すと、どちらも通った。読まれたのは `.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` で、出た警告（アイコンが無い）は足す前の repo と同じだった。
+
 ## 未確認
 
 - 候補の右端の `xlwright` が何を表すか。プラグインを外していたので、project の名前と見ているが確かめていない。

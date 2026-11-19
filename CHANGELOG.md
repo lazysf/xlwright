@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Codex 用の manifest（`plugin.json`）と marketplace（`.agents/plugins/marketplace.json`）。ChatGPT の app の Codex タブで、この repo を marketplace として足して入れられる。
+
 ### Changed
 
 - スクリプトの実行が実行ポリシー、sandbox、権限で拒否された時に、Excel を使わない手段で代わりをせず、権限の引き上げを求めるか止まるよう、スキルに書いた。

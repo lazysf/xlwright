@@ -1,6 +1,6 @@
 # xlwright
 
-Excel を土台にしたツールやアプリケーション（マクロ、UserForm、カスタムリボンを持ち、人が操作して使うブック）を作り、確かめるための Claude Code のスキルです。
+Excel を土台にしたツールやアプリケーション（マクロ、UserForm、カスタムリボンを持ち、人が操作して使うブック）を作り、確かめるための Claude Code と Codex のスキルです。
 Windows 版 Excel を PowerShell の COM で操作します。ファイルを直接書き換えるのではなく、実際の Excel を動かします。
 
 次の用途は対象にしません。ほかの表計算のスキル（Claude の `xlsx` スキルなど）を使ってください。
@@ -31,7 +31,9 @@ Windows 版 Excel を PowerShell の COM で操作します。ファイルを直
 
 ## 入れ方
 
-Claude Code のプラグインとして入れます。この repo を marketplace として足してから、プラグインを入れます。`<repo>` には、GitHub の `owner/repo` を渡します。
+プラグインとして入れます。この repo を marketplace として足してから、プラグインを入れます。`<repo>` には、GitHub の `owner/repo` を渡します。
+
+### Claude Code
 
 ```text
 /plugin marketplace add <repo>
@@ -39,6 +41,12 @@ Claude Code のプラグインとして入れます。この repo を marketplac
 ```
 
 入れたスキルは `/xlwright:xlwright` という名前になり、短く `/xlwright` でも呼べます。依頼の内容から自動でも選ばれます。
+
+### Codex
+
+ChatGPT の app の Codex タブの「プラグイン」で「プラグインマーケットプレイスを追加」を開き、ソースに `<repo>` を入れて足します。足した marketplace から xlwright を入れます。
+
+Codex の sandbox の中では、スクリプトの実行と COM での Excel の起動が拒否されます。スキルは、拒否された時に sandbox の外での実行を求めるか、止まります。
 
 ## 動作確認
 
@@ -48,7 +56,7 @@ Claude Code のプラグインとして入れます。この repo を marketplac
 powershell.exe -NoProfile -File "$env:USERPROFILE\.claude\plugins\cache\xlwright\xlwright\<版>\skills\xlwright\tests\Test-XlWright.ps1"
 ```
 
-`<版>` は、入れた版の番号（`0.1.0` など）を名前に持つフォルダです。`-Full` を付けると、Excel と VBE を画面に出す試験（コンパイルエラーの検出、マクロが出すダイアログの扱い、リボンの押下と見え方の照合、配布ブックの出力、ブックの見た目の画像）も行います。
+`<版>` は、入れた版の番号（`0.1.0` など）を名前に持つフォルダです。Codex で入れた時は、`$env:USERPROFILE\.codex\plugins\cache\xlwright\xlwright\<版>\` の下にあります。`-Full` を付けると、Excel と VBE を画面に出す試験（コンパイルエラーの検出、マクロが出すダイアログの扱い、リボンの押下と見え方の照合、配布ブックの出力、ブックの見た目の画像）も行います。
 
 ## 開発
 

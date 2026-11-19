@@ -60,7 +60,7 @@ xlwright は、COM の Excel、WMI（`Use-ExcelWorkbook` の監視役の起動�
 
 公式 docs から読んだこと。marketplace の読み方とスキルの選び方は、上の実機で確かめた。
 
-- Codex は、`name` と `description` を持つ `SKILL.md` を読む。プラグインの manifest は `.codex-plugin/plugin.json`、marketplace は `.agents/plugins/marketplace.json` に置く。desktop app は `.claude-plugin/marketplace.json` も読める。
+- Codex は、`name` と `description` を持つ `SKILL.md` を読む。manifest と marketplace の置き場と、Claude 用と並べた時にどちらが使われるかは、[codex-plugin-install.md](codex-plugin-install.md) にある。
 - `${CLAUDE_SKILL_DIR}` にあたる変数は、Codex の docs に無い。
 - Windows で sandbox の外で動かすには、full access にする。docs は、その時に Codex の操作が作業フォルダに限られなくなると注意している。
 

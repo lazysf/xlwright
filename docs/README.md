@@ -21,4 +21,5 @@
   - [skill-description.md](./notes/skill-description.md): スキルの `description` を今の形にしている理由と、選ばれる範囲の実測。
   - [eval.md](./notes/eval.md): この repo で `claude plugin eval` がどう振る舞うかと、case を今の形にしている理由。
   - [codex-sandbox.md](./notes/codex-sandbox.md): Codex の sandbox の中で xlwright のスクリプトと COM の Excel が動くかと、Codex のエージェントで xlwright を使った時の振る舞いの実測。
-  - [codex-plugin-install.md](./notes/codex-plugin-install.md): Codex で手元のフォルダからプラグインを入れた時の写しの置き場と、手直しが届く条件と、`.agents/skills` のリンクで手直し中のスキルを読ませた実測。
+  - [codex-exec.md](./notes/codex-exec.md): `codex exec` で eval の case を流す時の依頼文の足し方と記録の読み方の実測と、`Invoke-CodexCheck.ps1` の採点を今の形にしている理由。
+  - [codex-plugin-install.md](./notes/codex-plugin-install.md): Codex で手元のフォルダからプラグインを入れた時の写しの置き場と、手直しが届く条件と、`.agents/skills` のリンクで手直し中のスキルを読ませた実測と、Claude 用と Codex 用の manifest を並べた時にどちらが使われるかの実測。

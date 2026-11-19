@@ -1,6 +1,6 @@
 # Codex の sandbox で xlwright のスクリプトが動くか
 
-- Date: 2026-11-18
+- Date: 2026-11-19
 - 出典: Codex の desktop app（`OpenAI.Codex` 26.1111.2228.0）に同梱された `codex.exe`（`codex-cli 0.169.0-alpha.11.1`）の `codex sandbox <command>` で、`powershell.exe` を sandbox の中で起動した実測。`~/.codex/config.toml` は `sandbox_mode = "workspace-write"`、`[windows] sandbox = "mxc"`。Windows 11、Windows PowerShell 5.1.26100.9818。公式 docs は [Package your plugin](https://developers.openai.com/plugins/build/plugins)、[Build skills](https://learn.chatgpt.com/docs/build-skills.md)、[Windows sandbox](https://learn.chatgpt.com/docs/windows/windows-sandbox.md)。
 
 Codex の MXC の sandbox の中では、xlwright のスクリプトは動かなかった。COM で Excel を起動する所で、アクセスを拒否された。Codex に配るかを決める前に、この制限を前提にする。
@@ -52,6 +52,8 @@ xlwright は、COM の Excel、WMI（`Use-ExcelWorkbook` の監視役の起動�
 
 規則を足す前の版での 1 回目の迂回を受けて、`SKILL.md` の「利用の前提」に、拒否された時は Excel を使わない手段で代わりをせず、権限の引き上げを求めるか止まる、と書いた。足した後の版では、依頼に指示を足さなくても迂回しなかった。2 回目の `Test-Prerequisite.ps1` が通ったので、sandbox の外での実行を求めて承認されたと見ているが、記録に承認の画面は出てこないので推定である。
 
+2026-11-19 に、commit `c3e091e`（2026-11-18 に push した版に Codex 用の manifest を足した候補）を入れ、空の作業フォルダで「xlwright スキルを使って」と頼む同じ依頼を送った（人が操作し、記録を受け取った）。権限は「代わりに承認」だった。1 回目の `Test-Prerequisite.ps1` の後に `references/troubleshooting.md` を読み、同じコマンドを流し直して通った。`Invoke-ExcelScript.ps1 -Create -Save` と `Write-ExcelRange` で書き、開き直して `Read-ExcelRange` で読み、B1 は `2` だった。承認の画面は出なかった（人の報告）。同梱の `codex exec --help` は、`--approve-for-me` を「承認の求めを workspace-write の sandbox の自動の審査に回す」と説明している。app の「代わりに承認」も同じ仕組みで、外での実行が自動で通ったと見ているが、確かめていない。作業の後に Excel のプロセスは残らず、ブックの `sheet1.xml` は A1 が `1`、B1 が数式 `A1+1` と値 `2` だった（Claude が確かめた）。
+
 `SKILL.md` のコマンド例は、スキルのフォルダを `${CLAUDE_SKILL_DIR}` でなく `<skill>`（`SKILL.md` があるフォルダ）と書く。Claude Code のための `${CLAUDE_SKILL_DIR}` は、説明の 1 文にだけ残す。
 
 スキルの名前を挙げない依頼で `spreadsheets` が選ばれたのは、セルを書くだけの依頼が、xlwright の `description`（マクロ、UserForm、カスタムリボンを持つツールの開発）の範囲の外だからと見ている。規則を足す前の版の 1 回目に同じ依頼で xlwright が選ばれた理由は確かめていない。
@@ -66,7 +68,7 @@ xlwright は、COM の Excel、WMI（`Use-ExcelWorkbook` の監視役の起動�
 
 ## 未確認
 
-- 承認が自動で通ったのか、人に確認を求めたのか。
+- 「代わりに承認」でない権限（人に承認を求める権限）で、sandbox の外での実行を求める画面が出るか。
 - マクロ、UserForm、リボンを持つツールの依頼で、スキルの名前を挙げなくても Codex が xlwright を選ぶか。
 - Claude Code で、`<skill>` を `${CLAUDE_SKILL_DIR}` の値に置き換えて実行するか。eval ではシェルを許さないので見ていない（[eval.md](eval.md)）。
 - リボンの押下、画面の画像、`Lock-VbaProject.ps1` が、sandbox の外での実行で動くか。

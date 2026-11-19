@@ -179,7 +179,11 @@ git worktree add ..\xlwright-mcp mcp
    ```
 
 5. **Codex のスキルの振る舞い**: `Invoke-CodexCheck.ps1` を流し（[Codex](#codex)）、`summary.md` の `JUDGE` の行を判定します。
-6. **Codex で Excel を動かす**: ChatGPT の app の Codex タブで、repo と関係の無い空のフォルダを作業フォルダにしたスレッドを開き、次の依頼を送ります。人が見ている所で行い、スクリプトが sandbox の外での実行を求めること、Excel の計算した値を読み戻して答えることを確かめます。終わった後に Excel のプロセスが残っていないことも見ます。
+6. **Codex で Excel を動かす**: ChatGPT の app の Codex タブで、repo と関係の無い空のフォルダを作業フォルダにしたスレッドを開き、次の依頼を送ります。人が見ている所で行い、次のことを確かめます。
+
+   - sandbox の中でスクリプトが拒否された後に、Excel を使わない手段（zip や XML の組み立て、Python など）に切り替えず、同じスクリプトを sandbox の外で流し直して通ること。権限が「代わりに承認」の時は、承認の画面は出ませんでした（[docs/notes/codex-sandbox.md](docs/notes/codex-sandbox.md)）。どの権限で流したかを控えます。
+   - Excel の計算した値を、開き直して読み戻して答えること。
+   - 終わった後に、Excel のプロセスが残っていないこと。
 
    ```text
    xlwright スキルを使って、この作業フォルダに book.xlsm を作り、A1 に 1、B1 に =A1+1 を書いて保存し、開き直して B1 の値を答えて。

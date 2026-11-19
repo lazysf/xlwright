@@ -26,9 +26,10 @@
 | `Test-RibbonLayout.ps1`（配布した `.xlsb`） | 終了コード 0、食い違い 0 |
 | `Publish-Workbook.ps1`（`.xlsm` の作業ブックから `.xlsb` へ） | `FileFormat` が `50`、`Protection` が `1`、マクロが動いた |
 
+UserForm は、試験の `userform` の項目で確かめた。`.xlsm` から書き出したフォーム（`.frm` と `.frx`）を `.xlsb` に取り込むと、デザイン（キャプション、大きさ、コントロール、フレームの中身）は `.xlsm` と同じに読めた。一時の VBA でフォントを変えて保存し、フォームを開くと、初期化の処理とフォントが効いた。`.xlsb` から書き出すと、`.frm` と `.frx` の両方が出た。
+
 `.xlsb` も zip なので、`Add-CustomUI.ps1` と `Get-WorkbookSummary.ps1` は `.xlsm` と同じく zip を直接読み書きする。作業ブックと違う形式で配る時は、`SaveAs` で変換してからロックする（[publish-addin.md](./publish-addin.md)）。
 
 ## 未確認
 
-- UserForm を持つ `.xlsb`（`.frx` の取り込みと書き出し）。
 - 大きなブックでの、`.xlsm` との速さやファイルの大きさの差。

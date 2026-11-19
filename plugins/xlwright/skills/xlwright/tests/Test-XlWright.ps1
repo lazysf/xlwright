@@ -59,7 +59,7 @@ $CasesByFile = [ordered]@{
     'scripts/Publish-Workbook.ps1' = 'input-rejected', 'publish'
     'scripts/Lock-VbaProject.ps1' = 'input-rejected', 'publish'
     'scripts/Get-WorkbookSummary.ps1' = 'workbook-summary', 'publish'
-    'scripts/Find-CellError.ps1' = 'cell-error'
+    'scripts/Find-CellError.ps1' = 'cell-error', 'publish'
     'scripts/Test-Prerequisite.ps1' = 'prerequisite'
     'scripts/Save-WorkbookScreenshot.ps1' = 'screenshot'
 }
@@ -581,7 +581,7 @@ Invoke-Case 'stop-own-process' {
 Invoke-Case 'changed-selection' {
     $show = { param($r) 'All=' + $r.All + ' Cases=' + (@($r.Cases) -join ',') }
     $r = Resolve-ChangedCase @('scripts\Find-CellError.ps1')
-    Assert 'a listed script: its cases' ((& $show $r) -eq 'All=False Cases=cell-error') (& $show $r)
+    Assert 'a listed script: its cases' ((& $show $r) -eq 'All=False Cases=cell-error,publish') (& $show $r)
     $r = Resolve-ChangedCase @('scripts/Ribbon.psm1', 'scripts/Test-RibbonLayout.ps1')
     Assert 'two scripts: their cases once each, sorted' ((& $show $r) -eq 'All=False Cases=publish,ribbon,ribbon-layout') (& $show $r)
     foreach ($file in 'scripts/XlWright.psm1', 'scripts/New-Thing.ps1', 'tests/Test-XlWright.ps1', 'tests/data/vba/standard/Util.bas') {
@@ -1001,6 +1001,20 @@ Invoke-Case 'userform' {
     $rt = Invoke-Runner $copy 'uf-runtime' @('-EnableMacros')
     $expected = $S.FormCaption + '|' + $S.FormSheetValue + '|True|Meiryo UI'
     Assert 'runtime initialize and font' ($rt.Json.Result[0] -eq $expected) $rt.Json.Result[0]
+
+    # The same form in an .xlsb: import, design, font and runtime, then export it again.
+    $binary = Join-Path $dir 'copy.xlsb'
+    [void](New-EmptyBook $binary)
+    $import = Invoke-Script (Join-Path $scripts 'Import-Vba.ps1') @('-Path', $binary, '-SourceDir', (Join-Path $dir 'export'))
+    Assert '.xlsb: import exit 0' ($import.Exit -eq 0) $import.Output
+    $d3 = Invoke-Runner $binary 'uf-design'
+    $j3 = $d3.Json.Result | ConvertTo-Json -Depth 6 -Compress
+    Assert '.xlsb: design identical after import' ($d3.Exit -eq 0 -and $j3 -eq $j1) ($j1 + ' <> ' + $j3)
+    $f = Invoke-Runner $binary 'uf-font' @('-EnableMacros', '-Save')
+    $rt = Invoke-Runner $binary 'uf-runtime' @('-EnableMacros')
+    Assert '.xlsb: runtime initialize and font' ($f.Exit -eq 0 -and $rt.Json.Result[0] -eq $expected) ($f.Output + [string]$rt.Json.Result[0])
+    $export = Invoke-Script (Join-Path $scripts 'Export-Vba.ps1') @('-Path', $binary, '-OutDir', (Join-Path $dir 'export-xlsb'))
+    Assert '.xlsb: .frm and .frx exported' ($export.Exit -eq 0 -and (Test-Path (Join-Path $dir 'export-xlsb\forms\frmInfo.frm')) -and (Test-Path (Join-Path $dir 'export-xlsb\forms\frmInfo.frx'))) $export.Output
 }
 
 if ($Full) {
@@ -1304,6 +1318,12 @@ if ($Full) {
         $layout = Invoke-Script (Join-Path $scripts 'Test-RibbonLayout.ps1') @('-Path', $addin, '-OutFile', $json)
         $res = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8) | ConvertFrom-Json
         Assert 'add-in: ribbon layout matches the XML' ($layout.Exit -eq 0) ($res | ConvertTo-Json -Compress -Depth 8)
+        # An add-in hides its sheets from the Excel window; the scripts still read them.
+        $summary = Invoke-Summary $addin
+        Assert 'add-in: summary with the sheet, the locked VBA and the ribbon' ($summary.Exit -eq 0 -and $null -eq $summary.Json.Error -and @($summary.Json.Sheets).Count -eq 1 -and
+            $summary.Json.Vba.Locked -eq $true -and (@($summary.Json.CustomUI) -join ',') -eq 'customUI/customUI14.xml') $summary.Text
+        $errors = Invoke-FindError $addin
+        Assert 'add-in: cell errors read, none found' ($errors.Exit -eq 0 -and $errors.Json.Count -eq 0 -and @($errors.Json.Sheets).Count -eq 1) $errors.Text
         $leftovers = @(Get-ChildItem -LiteralPath $dir, (Join-Path $dir 'dist') -File -Force | Where-Object { $_.Name -like '.excel-publish-*' })
         Assert 'add-in: no temporary file left' ($leftovers.Count -eq 0) (($leftovers | ForEach-Object { $_.Name }) -join ',')
 

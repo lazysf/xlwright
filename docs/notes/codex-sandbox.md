@@ -54,6 +54,8 @@ xlwright は、COM の Excel、WMI（`Use-ExcelWorkbook` の監視役の起動�
 
 2026-11-19 に、commit `c3e091e`（2026-11-18 に push した版に Codex 用の manifest を足した候補）を入れ、空の作業フォルダで「xlwright スキルを使って」と頼む同じ依頼を送った（人が操作し、記録を受け取った）。権限は「代わりに承認」だった。1 回目の `Test-Prerequisite.ps1` の後に `references/troubleshooting.md` を読み、同じコマンドを流し直して通った。`Invoke-ExcelScript.ps1 -Create -Save` と `Write-ExcelRange` で書き、開き直して `Read-ExcelRange` で読み、B1 は `2` だった。承認の画面は出なかった（人の報告）。同梱の `codex exec --help` は、`--approve-for-me` を「承認の求めを workspace-write の sandbox の自動の審査に回す」と説明している。app の「代わりに承認」も同じ仕組みで、外での実行が自動で通ったと見ているが、確かめていない。作業の後に Excel のプロセスは残らず、ブックの `sheet1.xml` は A1 が `1`、B1 が数式 `A1+1` と値 `2` だった（Claude が確かめた）。
 
+同じ日に、commit `6369412`（`.xlsb` と `.xlam` を扱う候補）でも、同じ依頼を送った（人が操作し、記録を受け取った）。1 回目の `Test-Prerequisite.ps1` が `AuthorizationManager check failed`（`UnauthorizedAccess`）で拒否された後、Excel を使わない手段に切り替えず、同じコマンドで承認を求めて流し直し、通った。どの権限で流したかは、記録に出ていない。続けて、`SKILL.md` の「初めての端末では先に動作確認の試験を流す」を挙げ、試験の `invoke-excelscript` を流してよいかを人に尋ねてから流した。`Invoke-ExcelScript.ps1 -Create -Save` で書き、開き直して読むと、B1 は数式 `=A1+1`、値 `2` だった。`Find-CellError.ps1` はエラー 0 件だった。作った一時ファイルは自分で消した。作業の後に Excel のプロセスは残らなかった（Claude が確かめた）。
+
 `SKILL.md` のコマンド例は、スキルのフォルダを `${CLAUDE_SKILL_DIR}` でなく `<skill>`（`SKILL.md` があるフォルダ）と書く。Claude Code のための `${CLAUDE_SKILL_DIR}` は、説明の 1 文にだけ残す。
 
 スキルの名前を挙げない依頼で `spreadsheets` が選ばれたのは、セルを書くだけの依頼が、xlwright の `description`（マクロ、UserForm、カスタムリボンを持つツールの開発）の範囲の外だからと見ている。規則を足す前の版の 1 回目に同じ依頼で xlwright が選ばれた理由は確かめていない。

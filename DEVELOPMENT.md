@@ -114,12 +114,12 @@ powershell.exe -NoProfile -File plugins\xlwright\skills\xlwright\tests\Test-XlWr
 | `not-tool` | 受け取ったブックの集計の確認（ツールの開発でない Excel の依頼）でスキルを呼ばない |
 
 ```powershell
-claude plugin eval plugins/xlwright --case userform --runs 1
-claude plugin eval plugins/xlwright
+claude plugin eval plugins/xlwright --case userform --runs 1 --judge-model sonnet
+claude plugin eval plugins/xlwright --judge-model sonnet
 ```
 
 - どの case も、許すツールは Read、Glob、Grep、Skill だけです。Excel を実際に動かす確認は `Test-XlWright.ps1` で行います。
-- 既定では、1 つの case をプラグインあり・なしで 3 回ずつ流します。会話と同じアカウントで動き、その分の使用量を消費します。最初は `--case` と `--runs 1` で試します。判定の model は `--judge-model sonnet` で指定します。
+- 既定では、1 つの case をプラグインあり・なしで 3 回ずつ流します。会話と同じアカウントで動き、その分の使用量を消費します。最初は `--case` と `--runs 1` で試します。`--case` は 1 回だけ渡し、複数の case は 1 つずつ流します（[docs/notes/eval.md](docs/notes/eval.md) の「case の選び方」）。判定の model は `--judge-model sonnet` で指定します。
 - 結果は `plugins/xlwright/evals/results/` に書かれ、Git には入れません。
 - case は開発用ですが、プラグインの中に置きます。
 - シェルを許さない理由、case をプラグインの中に置く理由、原因の分からない FAIL は、[docs/notes/eval.md](docs/notes/eval.md) にあります。

@@ -11,7 +11,8 @@ those windows while they run. These cases also check that Excel never takes the 
 Preconditions: no Excel process is running, and AccessVBOM is 1. Otherwise nothing runs (exit 2).
 After each case no Excel process may remain. If one does, the run stops without touching it.
 
--Case runs only the named cases, e.g. -Case timeout,userform.
+-Case runs only the named cases, e.g. -Case timeout,userform. A name that is not a case, or a case that needs
+-Full given without -Full, runs nothing (exit 2).
 
 -Changed runs only the cases that cover the files of the skill changed since HEAD (staged, unstaged and untracked),
 by $CasesByFile below. It cannot be combined with -Case. The cases that need -Full are named and skipped without it.
@@ -49,17 +50,18 @@ $CasesByFile = [ordered]@{
     'scripts/XlWright.psm1' = '*'
     # Most cases use it to set up their workbooks.
     'scripts/Import-Vba.ps1' = '*'
-    'scripts/Invoke-ExcelScript.ps1' = 'invoke-excelscript', 'timeout', 'range', 'userform', 'workbook-summary', 'macro-dialog', 'one-session'
-    'scripts/Export-Vba.ps1' = 'cells-and-vba', 'userform'
-    'scripts/Test-VbaCompile.ps1' = 'vba-compile', 'vba-compile-error'
+    'scripts/Invoke-ExcelScript.ps1' = 'invoke-excelscript', 'timeout', 'range', 'userform', 'workbook-summary', 'macro-dialog', 'one-session',
+        'input-rejected', 'screenshot'
+    'scripts/Export-Vba.ps1' = 'cells-and-vba', 'userform', 'macros-off'
+    'scripts/Test-VbaCompile.ps1' = 'vba-compile', 'vba-compile-error', 'macros-off'
     'scripts/Add-CustomUI.ps1' = 'input-rejected', 'workbook-summary', 'ribbon', 'ribbon-layout', 'publish'
-    'scripts/Ribbon.psm1' = 'ribbon', 'ribbon-layout'
+    'scripts/Ribbon.psm1' = 'ribbon', 'ribbon-layout', 'publish'
     'scripts/Invoke-RibbonButton.ps1' = 'ribbon', 'ribbon-layout'
     'scripts/Test-RibbonLayout.ps1' = 'ribbon-layout', 'publish'
     'scripts/Publish-Workbook.ps1' = 'input-rejected', 'publish'
     'scripts/Lock-VbaProject.ps1' = 'input-rejected', 'publish'
-    'scripts/Get-WorkbookSummary.ps1' = 'workbook-summary', 'publish'
-    'scripts/Find-CellError.ps1' = 'cell-error', 'publish'
+    'scripts/Get-WorkbookSummary.ps1' = 'workbook-summary', 'publish', 'macros-off'
+    'scripts/Find-CellError.ps1' = 'cell-error', 'publish', 'macros-off'
     'scripts/Test-Prerequisite.ps1' = 'prerequisite'
     'scripts/Save-WorkbookScreenshot.ps1' = 'screenshot'
 }
@@ -112,14 +114,31 @@ if ($Changed) {
     }
 }
 
+# The names of the cases in this file, in their order.
+function Get-CaseName {
+    $text = [IO.File]::ReadAllText($PSCommandPath)
+    @([regex]::Matches($text, "(?m)^\s*Invoke-Case '([^']+)'") | ForEach-Object { $_.Groups[1].Value })
+}
+
+# A name that is mistyped, or that needs -Full without it, would otherwise run nothing and pass.
+if ($Case -and -not $Changed) {
+    $names = Get-CaseName
+    $unknown = @($Case | Where-Object { $names -notcontains $_ })
+    if ($unknown) { Write-Output ('No such case: ' + ($unknown -join ', ') + '. Nothing was run.'); exit 2 }
+    $needFull = @($Case | Where-Object { -not $Full -and $FullOnlyCases -contains $_ })
+    if ($needFull) { Write-Output ('These cases need -Full: ' + ($needFull -join ', ') + '. Nothing was run.'); exit 2 }
+}
+
 if (@(Get-Process EXCEL -ErrorAction SilentlyContinue).Count -gt 0) {
     Write-Output 'Excel is running. Close it (or ask the user) before running the tests.'
     exit 2
 }
 Import-Module $module -Force
-# The same reading of AccessVBOM as Test-Prerequisite.ps1, policy keys included.
-if (-not (Get-ExcelPrerequisite).AccessVBOM.Enabled) {
-    Write-Output 'AccessVBOM is not 1. Ask the user to trust access to the VBA project object model.'
+# The same reading of AccessVBOM as Test-Prerequisite.ps1, policy keys included. Its problem says whether the
+# value is not 1 or the key could not be read (a sandbox, for example), which needs rights, not the setting.
+$prerequisite = Get-ExcelPrerequisite -Vba
+if (-not $prerequisite.AccessVBOM.Enabled) {
+    Write-Output (@($prerequisite.Problems | Where-Object { $_ -like 'AccessVBOM*' }) -join ' ')
     exit 2
 }
 
@@ -277,7 +296,8 @@ function Get-PersonalState([string]$Path) {
         }
         $r.Filter = $wb.RemovePersonalInformation
         $notes = $wb.Worksheets.Item(1).Comments
-        $r.NoteAuthorIsLogin = $notes.Count -gt 0 -and [string]$notes.Item(1).Author -eq $env:USERNAME
+        # Excel takes the author of a new note from Application.UserName, which need not be the login name.
+        $r.NoteAuthorIsUser = $notes.Count -gt 0 -and [string]$notes.Item(1).Author -eq [string]$xl.UserName
         [pscustomobject]$r
     }
 }
@@ -567,14 +587,31 @@ Invoke-Case 'input-rejected' {
     Copy-Item -LiteralPath $book -Destination $pubBook
     [IO.File]::WriteAllBytes((Join-Path $pubDir 'vba\standard\Bad.bas'), $sources[0].Bytes)
     $out = Join-Path $dir 'dist'
-    $r = Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $pubBook, '-OutDir', $out)
+    # The output folder exists, so that a file left in it would be seen.
+    New-Item -ItemType Directory -Path $out | Out-Null
+    $publish = Join-Path $scripts 'Publish-Workbook.ps1'
+    $r = Invoke-Script $publish @('-Path', $pubBook, '-OutDir', $out)
     Assert 'publish fails on a bad source' ($r.Exit -ne 0 -and $r.Output -like '*without BOM and LF*') $r.Output
     Assert 'work book unchanged by failed publish' ((Get-FileHashText $pubBook) -eq $hash) 'hash changed'
     $leftovers = @(Get-ChildItem -LiteralPath $pubDir -File -Force | Where-Object { $_.Name -like '.excel-publish-*' -or $_.Name -like '.customui-*' })
-    if (Test-Path -LiteralPath $out) { $leftovers += @(Get-ChildItem -LiteralPath $out -File -Force) }
+    $leftovers += @(Get-ChildItem -LiteralPath $out -File -Force)
     Assert 'no output or temporary file after failed publish' ($leftovers.Count -eq 0) (($leftovers | ForEach-Object { $_.Name }) -join ',')
-    $r = Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $pubBook, '-OutDir', $out, '-FileName', 'book.xlsx')
+    $r = Invoke-Script $publish @('-Path', $pubBook, '-OutDir', $out, '-FileName', 'book.xlsx')
     Assert 'publish rejects an output that is not .xlsm, .xlsb or .xlam' ($r.Exit -ne 0 -and $r.Output -like '*ending in .xlsm, .xlsb or .xlam*') $r.Output
+    # These are refused before the work book is copied. The console wraps long lines anywhere, so the
+    # messages are compared without white space.
+    $existing = Join-Path $out 'book.xlsm'
+    [IO.File]::WriteAllText($existing, 'old output', $ascii)
+    $r = Invoke-Script $publish @('-Path', $pubBook, '-OutDir', $out)
+    Assert 'publish refuses an existing output without -Force' ($r.Exit -ne 0 -and ($r.Output -replace '\s+', '') -like '*Outputalreadyexists*-Force*') $r.Output
+    Assert 'existing output unchanged' ([IO.File]::ReadAllText($existing) -eq 'old output') 'output changed'
+    $r = Invoke-Script $publish @('-Path', $pubBook, '-OutDir', $pubDir)
+    Assert 'publish refuses an output in place of the work book' ($r.Exit -ne 0 -and ($r.Output -replace '\s+', '') -like '*Outputmustbeseparatefromtheworkbook*') $r.Output
+    $plain = Join-Path $pubDir 'plain.xlsx'
+    Copy-Item -LiteralPath $pubBook -Destination $plain
+    $r = Invoke-Script $publish @('-Path', $plain, '-OutDir', $out, '-Force')
+    Assert 'publish refuses a work book that is not .xlsm or .xlsb' ($r.Exit -ne 0 -and ($r.Output -replace '\s+', '') -like '*Expectedan.xlsmor.xlsbfile*') $r.Output
+    Assert 'work book unchanged by refused publishes' ((Get-FileHashText $pubBook) -eq $hash) 'hash changed'
 
     # Formats outside the skill are rejected before Excel or the zip is touched, whatever the content is.
     $legacy = Join-Path $dir 'legacy.xls'
@@ -589,6 +626,13 @@ Invoke-Case 'input-rejected' {
     $failure = $null
     try { [void](New-ExcelWorkbook -Path $newAddin) } catch { $failure = $_.Exception.Message }
     Assert 'New-ExcelWorkbook rejects .xlam' ([string]$failure -like 'Unsupported extension:*.xlsm, .xlsb or .xlsx.' -and -not (Test-Path -LiteralPath $newAddin)) $failure
+    # An existing workbook is never replaced: SaveAs with DisplayAlerts off would overwrite it without a word.
+    $failure = $null
+    try { [void](New-ExcelWorkbook -Path $book) } catch { $failure = $_.Exception.Message }
+    Assert 'New-ExcelWorkbook refuses an existing workbook' ([string]$failure -like 'Already exists:*') $failure
+    $r = Invoke-Runner $book 'read' @('-Create', '-Save')
+    Assert 'Invoke-ExcelScript -Create refuses an existing workbook' ($r.Exit -eq 1 -and [string]$r.Json.Error -like 'Already exists:*') ($r.Json | ConvertTo-Json -Compress)
+    Assert 'existing workbook unchanged by -Create' ((Get-FileHashText $book) -eq $hash) 'hash changed'
 }
 
 Invoke-Case 'watchdog-unavailable' {
@@ -649,7 +693,7 @@ Invoke-Case 'stop-own-process' {
 Invoke-Case 'changed-selection' {
     $show = { param($r) 'All=' + $r.All + ' Cases=' + (@($r.Cases) -join ',') }
     $r = Resolve-ChangedCase @('scripts\Find-CellError.ps1')
-    Assert 'a listed script: its cases' ((& $show $r) -eq 'All=False Cases=cell-error,publish') (& $show $r)
+    Assert 'a listed script: its cases' ((& $show $r) -eq 'All=False Cases=cell-error,macros-off,publish') (& $show $r)
     $r = Resolve-ChangedCase @('scripts/Ribbon.psm1', 'scripts/Test-RibbonLayout.ps1')
     Assert 'two scripts: their cases once each, sorted' ((& $show $r) -eq 'All=False Cases=publish,ribbon,ribbon-layout') (& $show $r)
     foreach ($file in 'scripts/XlWright.psm1', 'scripts/New-Thing.ps1', 'tests/Test-XlWright.ps1', 'tests/data/vba/standard/Util.bas') {
@@ -661,7 +705,7 @@ Invoke-Case 'changed-selection' {
 
     # The table must name only cases that exist, and the cases that need -Full must be those inside if ($Full).
     $text = [IO.File]::ReadAllText($PSCommandPath)
-    $names = @([regex]::Matches($text, "(?m)^\s*Invoke-Case '([^']+)'") | ForEach-Object { $_.Groups[1].Value })
+    $names = Get-CaseName
     $listed = @($CasesByFile.Values | ForEach-Object { $_ } | Where-Object { $_ -ne '*' } | Sort-Object -Unique)
     $unknown = @($listed + $FullOnlyCases | Where-Object { $names -notcontains $_ })
     Assert 'the table names only existing cases' ($unknown.Count -eq 0) ($unknown -join ',')
@@ -1107,6 +1151,41 @@ Invoke-Case 'userform' {
     Assert '.xlsb: .frm and .frx exported' ($export.Exit -eq 0 -and (Test-Path (Join-Path $dir 'export-xlsb\forms\frmInfo.frm')) -and (Test-Path (Join-Path $dir 'export-xlsb\forms\frmInfo.frx'))) $export.Output
 }
 
+# Opening a workbook runs none of its code unless asked: macros and events are off by default.
+# Workbook_Open of tests\data\vba-open writes opened.txt next to the workbook.
+Invoke-Case 'macros-off' {
+    $dir = New-CaseDir 'macros-off'
+    $book = New-BookWithMacros $dir 'vba-open'
+    $mark = Join-Path $dir 'opened.txt'
+    # Whether Workbook_Open ran since the last call; the mark is removed for the next one.
+    $opened = {
+        $ran = Test-Path -LiteralPath $mark
+        Remove-Item -LiteralPath $mark -Force -ErrorAction SilentlyContinue
+        $ran
+    }
+    $ping = {
+        param($xl, $wb)
+        try { [string]$xl.Run('OpenMark.Ping') } catch { 'refused' }
+    }
+    [void](& $opened)
+    $r = Use-ExcelWorkbook -Path $book -ScriptBlock $ping
+    Assert 'default: Workbook_Open did not run' (-not (& $opened)) 'opened.txt written'
+    Assert 'default: a macro does not run' ($r -eq 'refused') $r
+    $summary = Invoke-Summary $book
+    Assert 'Get-WorkbookSummary: exit 0, Workbook_Open did not run' ($summary.Exit -eq 0 -and -not (& $opened)) $summary.Output
+    $errors = Invoke-FindError $book
+    Assert 'Find-CellError: exit 0, Workbook_Open did not run' ($errors.Exit -eq 0 -and -not (& $opened)) $errors.Output
+    $compile = Invoke-Compile $book
+    Assert 'Test-VbaCompile: exit 0, Workbook_Open did not run' ($compile.Exit -eq 0 -and -not (& $opened)) $compile.Output
+    $export = Invoke-Script (Join-Path $scripts 'Export-Vba.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'export'))
+    Assert 'Export-Vba: exit 0, Workbook_Open did not run' ($export.Exit -eq 0 -and -not (& $opened)) $export.Output
+    $r = Use-ExcelWorkbook -Path $book -EnableMacros -ScriptBlock $ping
+    Assert '-EnableMacros alone: the macro runs, Workbook_Open does not' ($r -eq '1' -and -not (& $opened)) $r
+    # The control: the mark does show a run of Workbook_Open.
+    [void](Use-ExcelWorkbook -Path $book -EnableMacros -EnableEvents -ScriptBlock { param($xl, $wb) })
+    Assert '-EnableMacros -EnableEvents: Workbook_Open runs' (& $opened) 'no opened.txt'
+}
+
 if ($Full) {
     # A compile error shows the VBE window and the error dialog on the screen.
     Invoke-Case 'vba-compile-error' -WatchForeground {
@@ -1398,11 +1477,11 @@ if ($Full) {
         Assert 'publish exit 0' ($pub.Exit -eq 0) $pub.Output
         $dist = Join-Path $dir 'dist\book.xlsm'
         # Not $s: variable names ignore case and $S holds the strings of the ribbon.
-        $cleared = { param($p) $p.Author -eq 'empty' -and $p.'Last Author' -eq 'empty' -and $p.Manager -eq 'empty' -and $p.Company -eq 'empty' -and $p.Filter -eq $true -and -not $p.NoteAuthorIsLogin }
+        $cleared = { param($p) $p.Author -eq 'empty' -and $p.'Last Author' -eq 'empty' -and $p.Manager -eq 'empty' -and $p.Company -eq 'empty' -and $p.Filter -eq $true -and -not $p.NoteAuthorIsUser }
         $personal = Get-PersonalState $dist
         Assert 'dist: personal information cleared' (& $cleared $personal) ($personal | ConvertTo-Json -Compress)
         $personal = Get-PersonalState $book
-        Assert 'work book: personal information kept' ($personal.Author -eq 'synthetic' -and $personal.Manager -eq 'synthetic' -and $personal.Company -eq 'synthetic' -and $personal.Filter -eq $false) ($personal | ConvertTo-Json -Compress)
+        Assert 'work book: personal information kept' ($personal.Author -eq 'synthetic' -and $personal.Manager -eq 'synthetic' -and $personal.Company -eq 'synthetic' -and $personal.Filter -eq $false -and $personal.NoteAuthorIsUser) ($personal | ConvertTo-Json -Compress)
         $zip = [IO.Compression.ZipFile]::OpenRead($dist)
         try {
             $reader = New-Object IO.StreamReader($zip.GetEntry('xl/workbook.xml').Open())
@@ -1440,6 +1519,10 @@ if ($Full) {
         $dynPath = $S.Tab + '/' + $S.Group + '/' + $S.DynButton
         Assert 'dist: ribbon layout matches the XML' ($layout.Exit -eq 0) ($res | ConvertTo-Json -Compress -Depth 8)
         Assert 'dist: getEnabled callback ran' (@($res.Dynamic | Where-Object { $_.Path -eq $dynPath -and $_.Item -eq 'Enabled' -and $_.Actual -eq $false }).Count -eq 1) ($res.Dynamic | ConvertTo-Json -Compress)
+        # -Force replaces the output; the new lock has a new password, so the file differs.
+        $distHash = Get-FileHashText $dist
+        $pub = Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'), '-Force')
+        Assert '-Force: publish exit 0, output replaced' ($pub.Exit -eq 0 -and (Get-FileHashText $dist) -ne $distHash) $pub.Output
 
         # The same work book published as an add-in.
         $pub = Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'), '-FileName', 'tool.xlam')

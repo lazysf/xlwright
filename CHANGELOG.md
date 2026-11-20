@@ -10,6 +10,7 @@
 
 ### Changed
 
+- リボンの文書（`references/ribbon.md`）に、実機で確かめた事実を書いた。`Invoke-RibbonButton.ps1` は toggleButton を押せるが、menu、menu の中の項目、dropDown は押せない。リボンの表示が「タブのみを表示する」の時、`Test-RibbonLayout.ps1` の照合は通るが、`-ScreenshotDir` の画像にリボンが写らない。「全画面表示モード」の時は、どちらのスクリプトもタブが見つからずに止まる。どちらの時も、ユーザーにリボンの表示を確かめてもらう。
 - `Publish-Workbook.ps1` が、配布用のブックから個人の情報（作成者、最終の編集者、管理者、会社、コメントの作成者、保存したフォルダのパス）を消す。出力の後に読み戻し、残っていれば失敗する。作業ブックは変えない。消さない時は `-KeepPersonalInformation` を付ける。今までは、作業ブックの情報がそのまま配布用のブックに残っていた。
 
 ### Fixed

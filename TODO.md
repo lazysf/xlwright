@@ -34,18 +34,18 @@
   - 待つもの: 同じ依頼がもう一度来た時。
   - 足りる形: フォーム名、変えるコントロール、見本のコントロールを受け、変えた後のフォントが見本と同じで、位置、大きさ、タブ順、コードが変わっていないことを返すこと。一時の VBA は、返すブックに残さない。
   - やらないこと: フォント以外のプロパティの一括変更。
-- [ ] リボンの押下の対象を広げる。toggleButton、menu の項目、dropDown。
+- [ ] リボンの押下の対象を、menu の中のボタンに広げる。
   - 記載: 2026-11-16（スキルの文書とスクリプトの見直し）
-  - 理由: `Invoke-RibbonButton.ps1` が探すのは、UI Automation で `Button` に見える要素だけ。toggleButton や menu の中の項目を押せるかは、確かめていない（`references/ribbon.md`）。toggleButton は `Test-RibbonLayout.ps1` で読めているので、`Button` に見えていれば今でも押せる。押せなければ、callback がつながっているかを押して確かめられない。マクロの本体は、callback から分けておけば `Invoke-ExcelMacro` で試せる（`references/ribbon.md`）ので、足りないのは「つながり」の確認だけ。
-  - 待つもの: toggleButton や menu を持つリボンの依頼。来たら、まず今の `Invoke-RibbonButton.ps1` で押せるかを試す。
-  - 足りる形: toggleButton と menu の中のボタンを押せること。dropDown は、使う依頼が来てから考える。
+  - 理由: `Invoke-RibbonButton.ps1` は toggleButton までは押せるが、menu の中の項目はタブを選んだだけではタブの中身に出ず、`Not found` になる。menu を MSAA の既定の動作で開けば、中の項目は Excel のウィンドウに出て、同じ方法で押せた（[docs/notes/ribbon-press-targets.md](docs/notes/ribbon-press-targets.md)）。押せなければ、callback がつながっているかを押して確かめられない。マクロの本体は、callback から分けておけば `Invoke-ExcelMacro` で試せる（`references/ribbon.md`）ので、足りないのは「つながり」の確認だけ。
+  - 待つもの: menu を持つリボンの依頼。
+  - 足りる形: menu を開き、中のボタンを押せること。dropDown は、使う依頼が来てから考える。
   - やらないこと: 押した後の状態（toggleButton の押下状態）を callback と照らすこと。
-- [ ] 簡易表示のリボンの見分けを確かめる（`references/ribbon.md` の未確認）。
-  - 記載: 2026-11-16（スキルの文書とスクリプトの見直し）
-  - 理由: `Test-RibbonLayout.ps1` は、タブの中身の高さが 60 px 未満の時に簡易表示と見なし、確かめられなかったとして止まる。この見分けは実機で確かめていないので、簡易表示のリボンを見誤っても、今は気づけない。
-  - 待つもの: 人が試せる時。Excel のリボンの表示を変える必要があり、エージェントは変えない。
-  - 足りる形: 確かめた結果を文書に書くこと。直せないものは、確かめた範囲を書く。
-  - やらないこと: 画面の拡大率が 100% 以外での確認。理由は `docs/notes/feature-review.md` の「確かめる画面の拡大率」にある。
+- [ ] 「タブのみを表示する」のリボンを見分け、リボンの写らない画像を返さない。
+  - 記載: 2026-11-16（スキルの文書とスクリプトの見直し）。2026-11-20 に実機で確かめて書き直した。
+  - 理由: リボンの表示が「タブのみを表示する」の時、`Test-RibbonLayout.ps1` の照合は通るが、`-ScreenshotDir` の画像にリボンが写らない（[docs/notes/ribbon-display-mode.md](docs/notes/ribbon-display-mode.md)）。今は画像を見た人か Claude が気づくしかない。「全画面表示モード」ではどちらのスクリプトもタブが見つからずに止まり、`Invoke-RibbonButton.ps1` の `Error` には表示の設定を疑う手がかりが出ない。単一行のリボンの見分け（60 px）は、確かめた Excel に単一行の設定が無く、確かめられていない。
+  - 待つもの: 画像にリボンが写らない事象が、実際の作業で起きた時。
+  - 足りる形: 「タブのみを表示する」の時に、確かめられなかったとして止まり、ユーザーに表示の切り替えを頼む理由を `Error` に入れること。`Invoke-RibbonButton.ps1` がタブを 1 つも見つけられない時に、`Test-RibbonLayout.ps1` と同じく表示の設定を疑う理由を `Error` に入れること。
+  - やらないこと: Excel のリボンの表示の設定を、スクリプトから変えること。画面の拡大率が 100% 以外での確認。理由は `docs/notes/feature-review.md` の「確かめる画面の拡大率」にある。
 - [ ] リボンの画像の埋め込み。`Add-CustomUI.ps1` で `image` 属性と `customUI/images` を扱う。
   - 記載: 2026-11-16（スキルの文書とスクリプトの見直し）
   - 理由: 今のアイコンは組み込みの `imageMso` だけ（`references/ribbon.md`）。自前のアイコン（社のロゴ、`imageMso` に無い絵柄）を求められると応じられない。

@@ -57,7 +57,7 @@ powershell.exe -NoProfile -File "<skill>/scripts/Test-RibbonLayout.ps1" -Path <w
 - `-ScreenshotDir` を付けると、XML の順に `tab-1.png`、`tab-2.png` … を書き、`Screenshots` に場所が入る。アイコンの絵柄は UI Automation で読めないので、この画像を Read で見て確かめる。画像は画面ではなく Excel のウィンドウに描かせて撮る（`PrintWindow`）。手前に別のウィンドウがある状態でも撮れた。画面の拡大率が 100% 以外の時は確かめていない。画像を撮れなかったタブは、照合を止めずに `File` が `null`、`Error` に理由が入る。
 - ツールチップ（`screentip`、`supertip`）は UI Automation で読めないので照らさない。
 
-確かめた場面（Excel 16、Windows 11）: カスタムタブの `insertAfterMso`（同じ組み込みタブの後ろに 2 つ。XML で後に書いたタブの方が組み込みタブの近くに出た）、`getLabel` と `getVisible` を持ち隠れたボタン、large と normal、`showLabel="false"`、`enabled="false"`、`visible="false"`、`getEnabled` / `getVisible` / `getLabel`、toggleButton、カスタムタブに入れた組み込みグループ、組み込みタブに足したグループ（`insertAfterMso` 付き）、組み込みグループを隠す定義、`label` の無いグループとボタン、`startFromScratch`、menu を含むグループ、未知の属性でリボン全体が無視された場合。簡易表示のリボンの見分け（タブの中身の高さが 60 px 未満）は、実機で確かめていない。
+確かめた場面（Excel 16、Windows 11）: カスタムタブの `insertAfterMso`（同じ組み込みタブの後ろに 2 つ。XML で後に書いたタブの方が組み込みタブの近くに出た）、`getLabel` と `getVisible` を持ち隠れたボタン、large と normal、`showLabel="false"`、`enabled="false"`、`visible="false"`、`getEnabled` / `getVisible` / `getLabel`、toggleButton、カスタムタブに入れた組み込みグループ、組み込みタブに足したグループ（`insertAfterMso` 付き）、組み込みグループを隠す定義、`label` の無いグループとボタン、`startFromScratch`、menu を含むグループ、未知の属性でリボン全体が無視された場合。簡易表示のリボンの見分け（タブの中身の高さが 60 px 未満）は、実機で確かめていない。確かめた Excel（16.0.20527）には単一行のリボンを選ぶ設定が無かった。リボンの表示が「タブのみを表示する」の時は、見分けが働かずに照合は通るが、`-ScreenshotDir` の画像にリボンが写らない。「全画面表示モード」の時は、`Test-RibbonLayout.ps1` は `No ribbon tab found` で、`Invoke-RibbonButton.ps1` は `Not found: tab` で止まる。画像にリボンが無い時と、作ったはずのタブが見つからない時は、ユーザーにリボンの表示が「常にリボンを表示する」かを確かめてもらう。
 
 ## ボタンの押下で確かめる
 
@@ -69,7 +69,7 @@ powershell.exe -NoProfile -File "<skill>/scripts/Invoke-RibbonButton.ps1" -Path 
 
 結果は UTF-8 の JSON で書き出される。押せなかった時は終了コードが 1 で、`Error` に理由が入る。
 
-- 探すのは、UI Automation で `Button` に見える要素だけ。toggleButton、menu の中の項目、dropDown を押せるかは確かめていない。
+- 探すのは、UI Automation で `Button` に見える要素だけ。button のほか、toggleButton も押せる（押していない状態から押し、callback の `pressed` に `True` が届いた）。menu（`MenuItem` に見える）、menu の中の項目、dropDown（`ComboBox` に見える）とその項目は、`Not found` で押せない。menu と dropDown の項目は、タブを選んだだけではタブの中身に出ない。開けば押せることは実機で確かめたが、このスクリプトは開く操作をしない。これらの callback は、本体を分けて `Invoke-ExcelMacro` で試す。
 - `TabFound` と `ButtonFound` が `true` なら、リボンは読み込まれている。`Clicked` が `true` なら、ボタンを押す操作が成功した。
 - 同じ表示名のタブが複数ある場合や、同じタブの中でボタン名が重複する場合は、押す前に `Ambiguous` で止まる。
 - 押した後に出たダイアログ（MsgBox など）は、`Dialogs` に出た順に入る。`Names` には本文とボタン名が入る（例: `["OK", "処理が完了しました"]`）。MsgBox では本文もボタンも同じ種類の要素に見えるので、分けずに並べている。OK だけの MsgBox は、× ボタンと同じ操作で閉じる。

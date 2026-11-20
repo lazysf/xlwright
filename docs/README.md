@@ -6,6 +6,8 @@
   - [plugin-install.md](./notes/plugin-install.md): プラグインとして入れた時の振る舞いと、README の入れ方と版の決め方を今の形にしている理由。
   - [foreground.md](./notes/foreground.md): リボンの操作で Excel を前面に出さない方法と、その実測。
   - [ribbon-long-macro.md](./notes/ribbon-long-macro.md): リボンのボタンで長く動くマクロを、`Invoke-RibbonButton.ps1` が待つかの実測。
+  - [ribbon-press-targets.md](./notes/ribbon-press-targets.md): toggleButton、menu、dropDown を `Invoke-RibbonButton.ps1` で押せるかと、UI Automation での見え方と、menu と dropDown を開いてから中の項目を押した実測。
+  - [ribbon-display-mode.md](./notes/ribbon-display-mode.md): リボンの表示の設定（タブのみを表示する、全画面表示モード）で、`Test-RibbonLayout.ps1` と `Invoke-RibbonButton.ps1` がどうなるかの実測。
   - [vba-compile.md](./notes/vba-compile.md): VBA のコンパイルを COM から起こしてエラーを読む方法と、その実測。
   - [macro-dialog.md](./notes/macro-dialog.md): マクロの実行中に出たダイアログを見つけて閉じる方法と、その実測。
   - [macro-arguments.md](./notes/macro-arguments.md): `Invoke-ExcelMacro` が PSObject で包んだ引数の中の値を渡す理由と、その実測。

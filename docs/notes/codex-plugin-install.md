@@ -1,6 +1,6 @@
 # Codex で手元のフォルダからプラグインを入れた時の振る舞い
 
-- Date: 2026-11-19
+- Date: 2026-11-20
 - 出典: Codex の desktop app（`OpenAI.Codex` 26.1111.2228.0）の「プラグインマーケットプレイスを追加」の画面とプラグインの詳細の画面の操作（人が行った）、`~/.codex/config.toml` の `[marketplaces.*]` と `~/.codex/plugins/cache/` の読み取り（Claude が行った）、公式 docs の [Package your plugin](https://developers.openai.com/plugins/build/plugins)。Windows 11。試したのは commit `386725f`。
 
 版を上げて push する前に、Codex で候補を試すための事実を書く。GitHub から入れた時の振る舞いと、sandbox の中での振る舞いは [codex-sandbox.md](codex-sandbox.md) にある。
@@ -42,7 +42,7 @@ docs（[Package your plugin](https://developers.openai.com/plugins/build/plugins
 - `config.toml` には `[marketplaces.xlwright]`（worktree を指す）と `[plugins."xlwright@xlwright"]` が 1 件ずつあった。写しの `cache/xlwright/xlwright/<版>/` には、直下の `plugin.json` と `.claude-plugin/` の両方が入っていた（Claude が読み取りで確かめた）。
 - 同じ worktree で、同梱の Claude Code 2.1.326 の `claude plugin validate` を、プラグインのフォルダと repo のルートに流すと、どちらも通った。読まれたのは `.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` で、出た警告（アイコンが無い）は足す前の repo と同じだった。
 
-## GitHub から入れた時（2026-11-19）
+## GitHub から入れた時
 
 2026-11-19 に版を上げて push した後に、Codex タブの「プラグインマーケットプレイスを追加」に `lazysf/xlwright` を入れて足し、xlwright を入れた（2026-11-19、人の操作）。
 
@@ -52,6 +52,8 @@ docs（[Package your plugin](https://developers.openai.com/plugins/build/plugins
 
 同じ日に次の版を push した後に、候補を外した Codex へ、同じ手順で GitHub から入れ直した（2026-11-19、人の操作）。人が詳細の画面で、push した版の番号を見た。写しは `~/.codex/plugins/cache/xlwright/xlwright/<版>/` で、repo の `plugins/xlwright/` と一致した。違いは、Git に入らない `evals/results/` だけだった（Claude が確かめた）。
 
+2026-11-20 に `0.2.0`（commit `0dac807`）を push した後、Codex から marketplace を消し、同じ手順で GitHub から入れ直した（人の操作）。`config.toml` には、`[marketplaces.xlwright]`（`source_type = "git"`、`source` は repo の GitHub の URL）と `[plugins."xlwright@xlwright"]`（`enabled = true`）が 1 件ずつあった。`[marketplaces.xlwright]` に `ref` の行は無かった。写しの `~/.codex/plugins/cache/xlwright/xlwright/0.2.0/` は、repo の `plugins/xlwright/` と一致した。違いは、Git に入らない `evals/results/` だけだった（どれも Claude が確かめた）。
+
 今の 2 つの marketplace のファイルには、表示名で見分ける目印が無いので、GitHub から入れた時にどちらが読まれたかは画面では分からない。手元のフォルダから入れた時と同じく、`.agents/plugins/marketplace.json` が読まれたと見ている。
 
 ## 未確認
@@ -59,6 +61,6 @@ docs（[Package your plugin](https://developers.openai.com/plugins/build/plugins
 - 候補の右端の `xlwright` が何を表すか。プラグインを外していたので、project の名前と見ているが確かめていない。
 - プラグイン版の xlwright も入れた時に、リンクのスキルと 2 件並ぶか。docs は、同じ `name` のスキルを合わせずに両方出す、と書く。
 - `SKILL.md` の `description` を変えた時に、再起動せずに候補へ反映されるか。
-- 入れ直しの代わりに、marketplace の更新（`codex plugin marketplace upgrade` や画面の操作）で写しが新しくなるか。
+- 入れ直しの代わりに、marketplace の更新（`codex plugin marketplace upgrade` や画面の操作）で写しが新しくなるか。入っている版より小さい版を push した時も同じく確かめていない。
 - `codex exec` が、app で入れたプラグインのスキルを読み込むか。
 - GitHub の marketplace と手元の marketplace を、名前を分けずに並べて置けるか。今回は、足した後に GitHub の項目が残っていなかった。

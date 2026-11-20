@@ -1,6 +1,6 @@
 # プラグインとして入れた時の振る舞い
 
-- Date: 2026-11-19
+- Date: 2026-11-20
 - 出典: Claude Desktop の Code タブの設定の「プラグイン」の画面と `/plugin` の操作、同梱の Claude Code 2.1.321 の `claude plugin list`、`claude plugin marketplace add --help`、`claude plugin update`、`installed_plugins.json` とキャッシュのフォルダ、導入先での `skills/xlwright/tests/Test-XlWright.ps1` の実行（commit `9cf0254`）、Claude Code の docs（<https://code.claude.com/docs/en/plugins>、<https://code.claude.com/docs/en/skills>、<https://code.claude.com/docs/en/discover-plugins>、<https://code.claude.com/docs/en/plugins/loading>、<https://code.claude.com/docs/en/plugins-reference>）、主要なプラグインの repo の manifest と workflow（2026-11-13 の main）、release-please-action の README（<https://github.com/googleapis/release-please-action>）と GitHub の docs（<https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes>）（2026-11-16）
 
 利用者と同じ手順で入れて確かめた事実と、README の入れ方と版を今の形にしている理由を書く。入れ方そのものは [README](../../README.md) を正本とする。
@@ -26,6 +26,7 @@
 - 同梱の CLI で `claude plugin update xlwright@xlwright` を流すと、入っている版が `689ca7f5a64a` から `000448a646ae` に切り替わった。アプリを再起動すると、新しいセッションは新しい版を読み込んだ。Desktop の画面だけで更新を済ませる手段は、見つからなかった。
 - `plugin.json` に `version` を書いた commit（`4373f8a`）を push した後、同梱の CLI で `claude plugin update xlwright@xlwright` を流すと、入っている版が `000448a646ae` から `0.1.0` に切り替わった。キャッシュには版 `0.1.0` のフォルダができ、中身は `plugins/xlwright/` と一致した。前の版のフォルダには `.orphaned_at` が置かれた。続けてもう一度流すと、`already at the latest version (0.1.0)` と出て、何も変わらなかった。
 - 2026-11-19 に版を上げて push した後、同梱の CLI で `claude plugin update xlwright@xlwright` を流すと（人の操作）、`installed_plugins.json` の版は push した版、`gitCommitSha` は push した先頭の commit になった。キャッシュのその版のフォルダは、`plugins/xlwright/` と一致した。違いは、Claude Code が置く `.in_use` だけだった（Claude が確かめた）。新しいセッションで `/xlwright:xlwright` が読み込まれたことは、人が確かめた。
+- 2026-11-20 に `0.2.0`（commit `0dac807`）を push した後、marketplace を消して入れ直した（人の操作）。`installed_plugins.json` の版は `0.2.0`、`gitCommitSha` は `0dac807`、scope は user になった。キャッシュの `0.2.0` のフォルダは、`plugins/xlwright/` と一致した。違いは、Claude Code が置く `.in_use` と、Git に入らない `evals/results/` だけだった。キャッシュの中で、前に入っていた版のフォルダは消えていた。`0.1.0` とハッシュの名前の 3 つのフォルダは残っていた（どれも Claude が確かめた）。
 
 ## 入れ方と版を今の形にしている理由
 
@@ -50,6 +51,7 @@
 - 入れる前に、Code タブで `/plugin install xlwright@xlwright` を送る形。
 - `marketplace add`、`install`、`marketplace update` のほかの `/plugin` のサブコマンドを、Code タブで送る形。
 - 詳細の画面の「更新」が押せるようになる条件。marketplace を取り直した後も、再起動した後も押せなかった。`version` を上げた時に押せるようになるかは見ていない（`0.1.0` への切り替えは CLI で行った）。
+- 入っている版より小さい版を push した時に、`claude plugin update` で切り替わるか。2026-11-20 は、marketplace を消して入れ直した。
 - Code タブで、marketplace の自動更新を有効にする操作があるか。docs は `/plugin` の Marketplaces の画面の「Enable auto-update」を挙げるが、Desktop の画面では見ていない。
 - CI でタグを付けるだけで、利用者の版が変わらないか。docs の版の決め方にタグが出てこないことからの推測で、試していない。
 - GitHub が自動で作る Release のノートに、PR を通さずに main へ push した commit が載るか。docs は merge した PR だけを挙げている。載らなければ、main へ直接 push するこの repo では使えない。

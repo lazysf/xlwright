@@ -42,6 +42,7 @@ powershell.exe -NoProfile -File "<skill>/scripts/Find-CellError.ps1" -Path <work
 - ワークシートの使っている範囲を全部読む。非表示のシートと保護したシートも読む。グラフシートは読まない。
 - `-Sheet Data,Summary` のように名前を渡すと、そのワークシートだけを読む。ワークシートでない名前や無い名前は、失敗になる。
 - `-MaxErrors`（既定 1000）を超えた分は `Errors` に入れず、数だけを `Count` に足す。
+- 同じ検査は、ScriptBlock の中で `Find-ExcelCellError -Excel $xl -Workbook $wb`（`-Sheet`、`-MaxErrors` も同じ）で呼べる（SKILL.md の「まとめて確かめる」）。開いている Excel が持つ値を読むので、同じ ScriptBlock で書いた数式の結果も、保存の前に見える。
 - 結果は UTF-8 の JSON で `-OutFile` に書く。終了コードは、読めた時に 0（エラーのセルがあっても 0）、ブックが無い時や開けない時に 1。
 
   | 項目 | 中身 |

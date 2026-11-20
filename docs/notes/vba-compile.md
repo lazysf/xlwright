@@ -5,7 +5,7 @@
 
 VBA のコンパイルには、COM の直接の API が無い。VBE のメニューの「VBAProject のコンパイル」を `CommandBars` から実行すると、Windows PowerShell 5.1 と `Use-ExcelWorkbook`（非表示の Excel）でもコンパイルでき、エラーの文言と場所を読めた。
 
-実装は `plugins/xlwright/skills/xlwright/scripts/Test-VbaCompile.ps1` を正本とする。使い方は `plugins/xlwright/skills/xlwright/references/vba.md` にある。
+実装は `plugins/xlwright/skills/xlwright/scripts/XlWright.psm1` の `Test-ExcelVbaCompile` を正本とする。`Test-VbaCompile.ps1` はこれを呼ぶ。使い方は `plugins/xlwright/skills/xlwright/references/vba.md` にある。
 
 同じ方法を .NET から確かめた記録が、`mcp` ブランチの `docs/notes/test-copy.md` と `docs/notes/dialog-probe.md` にある。
 

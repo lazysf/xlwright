@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `XlWright.psm1` に `Import-ExcelVba`、`Test-ExcelVbaCompile`、`Find-ExcelCellError` を足した。`Import-Vba.ps1`、`Test-VbaCompile.ps1`、`Find-CellError.ps1` と同じ処理を、`Invoke-ExcelScript.ps1` に渡す ScriptBlock の中で呼べる。取り込み、コンパイル、マクロの試験、エラー値のセルの検査を、1 回の Excel の起動で済ませられる。スクリプトは呼ぶたびに Excel を起動して閉じ、測った端末では 1 回に約 4 秒かかっていた。3 つのスクリプトの引数、出力、終了コードは変わらない。
+
 ### Changed
 
 - `Publish-Workbook.ps1` が、配布用のブックから個人の情報（作成者、最終の編集者、管理者、会社、コメントの作成者、保存したフォルダのパス）を消す。出力の後に読み戻し、残っていれば失敗する。作業ブックは変えない。消さない時は `-KeepPersonalInformation` を付ける。今までは、作業ブックの情報がそのまま配布用のブックに残っていた。

@@ -22,6 +22,9 @@ The result is written as UTF-8 JSON to -OutFile:
 - Error and Warnings.
 
 Exit code is 0 when the workbook was read, also when errors were found, and 1 when it could not be read.
+
+The work is done by Find-ExcelCellError in XlWright.psm1, which a script block can also call to check the cells
+in the same Excel instance as other steps.
 #>
 param(
     [Parameter(Mandatory)][string]$Path,
@@ -35,7 +38,6 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'XlWright.psm1') -Force
-Add-Type -AssemblyName Microsoft.VisualBasic
 # powershell.exe -File passes "a,b" as one string, so split it here.
 $Sheet = @($Sheet | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 
@@ -50,63 +52,7 @@ try {
     # Only plain values leave the block; a COM reference that outlives the workbook keeps Excel from exiting.
     $found = Use-ExcelWorkbook -Path $full -TimeoutSeconds $TimeoutSeconds -WarningVariable +warnings -ScriptBlock {
         param($xl, $wb)
-        $worksheets = @(foreach ($item in $wb.Sheets) {
-            # -4167 is xlWorksheet. The type of a chart sheet is not a sheet type, so the class is checked too.
-            if ([Microsoft.VisualBasic.Information]::TypeName($item) -eq 'Worksheet' -and [int]$item.Type -eq -4167) { $item }
-        })
-        if ($Sheet.Count -gt 0) {
-            $known = @($worksheets | ForEach-Object { $_.Name })
-            $missing = @($Sheet | Where-Object { $known -notcontains $_ })
-            if ($missing.Count -gt 0) {
-                throw ('Not a worksheet of the workbook: ' + ($missing -join ', ') + '. Worksheets: ' + ($known -join ', ') + '.')
-            }
-            $worksheets = @($worksheets | Where-Object { $Sheet -contains $_.Name })
-        }
-
-        $calculation = @{ -4105 = 'automatic'; -4135 = 'manual'; 2 = 'semiautomatic' }[[int]$xl.Calculation]
-        if (-not $calculation) { $calculation = 'other' }
-        $total = 0
-        $listed = 0
-        $sheets = @(foreach ($worksheet in $worksheets) {
-            $used = $worksheet.UsedRange
-            $rowCount = $used.Rows.Count
-            $columnCount = $used.Columns.Count
-            # Bounds the size of one Value2 array also for a wide sheet.
-            $blockRows = [Math]::Max(1, [Math]::Min(10000, [Math]::Floor(200000 / $columnCount)))
-            $count = 0
-            $errors = New-Object System.Collections.Generic.List[object]
-            for ($start = 1; $start -le $rowCount; $start += $blockRows) {
-                $block = $used.Rows.Item($start).Resize([Math]::Min($blockRows, $rowCount - $start + 1))
-                $rows = Read-ExcelRange -Range $block
-                for ($r = 0; $r -lt $rows.Count; $r++) {
-                    $row = $rows[$r]
-                    for ($c = 0; $c -lt $row.Count; $c++) {
-                        if ($row[$c] -isnot [Collections.IDictionary]) { continue }
-                        $count++
-                        if ($listed -ge $MaxErrors) { continue }
-                        $listed++
-                        $cell = $block.Cells.Item($r + 1, $c + 1)
-                        $entry = [ordered]@{
-                            Address = $cell.Address($false, $false); Error = $row[$c].Error; Kind = 'constant'
-                            Formula = $null; SpillParent = $null
-                        }
-                        if ($cell.HasFormula) {
-                            $entry.Kind = 'formula'
-                            $entry.Formula = [string]$cell.Formula2
-                        }
-                        # SpillParent fails for a cell outside a spill, so HasSpill is checked first.
-                        elseif ($cell.HasSpill -eq $true) {
-                            $entry.Kind = 'spill'
-                            $entry.SpillParent = $cell.SpillParent.Address($false, $false)
-                        }
-                        $errors.Add($entry)
-                    }
-                }
-            }
-            $total += $count
-            [ordered]@{ Name = $worksheet.Name; Count = $count; Errors = $errors.ToArray() }
-        })
-        [ordered]@{ Count = $total; Truncated = ($listed -lt $total); Calculation = $calculation; Sheets = $sheets }
+        Find-ExcelCellError -Excel $xl -Workbook $wb -Sheet $Sheet -MaxErrors $MaxErrors
     }
     foreach ($key in @($found.Keys)) { $result[$key] = $found[$key] }
 }

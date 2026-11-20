@@ -9,6 +9,7 @@
   - [vba-compile.md](./notes/vba-compile.md): VBA のコンパイルを COM から起こしてエラーを読む方法と、その実測。
   - [macro-dialog.md](./notes/macro-dialog.md): マクロの実行中に出たダイアログを見つけて閉じる方法と、その実測。
   - [vba-roundtrip.md](./notes/vba-roundtrip.md): 取り込んだ VBA を書き出した時に、正本と変わる所と、`git diff --no-index` で比べた時の出力の実測。
+  - [vba-one-session.md](./notes/vba-one-session.md): VBA の取り込み、コンパイル、マクロの実行を 1 つの Excel で続けて行えるかの実測と、`Import-ExcelVba` などの関数に分けた理由。
   - [vba-prune.md](./notes/vba-prune.md): ブックから VBA のコンポーネントを消す時に COM でできることの実測。
   - [vba-references.md](./notes/vba-references.md): VBA の参照設定が書き出しと取り込みで引き継がれないことの実測。
   - [publish-addin.md](./notes/publish-addin.md): 配布の出力をアドイン（`.xlam`）にする方法と、作業ブックをブックのままにする理由と、その実測。
@@ -20,6 +21,7 @@
   - [cell-error.md](./notes/cell-error.md): エラー値のセルを `SpecialCells` と `Value2` で列挙する方法の比較と、`Find-CellError.ps1` の形にした理由。
   - [screenshot.md](./notes/screenshot.md): ブックの見た目を画像にする方法（ウィンドウの `PrintWindow` と `Range.CopyPicture`）の比較と、その実測。
   - [userform-screenshot.md](./notes/userform-screenshot.md): 表示した UserForm を、画面に出さずに画像にする方法の実測。
+  - [dev-cycle-timing.md](./notes/dev-cycle-timing.md): ツールのブックを作る 1 周（シート、VBA の取り込み、コンパイル、マクロ、読み戻し、エラー値のセル）で、スクリプトの呼び出しごとに時間がどこに掛かるかの実測。
   - [feature-review.md](./notes/feature-review.md): スキルが持つ機能と持たない機能を、目的に照らして今の形にしている理由。
   - [skill-description.md](./notes/skill-description.md): スキルの `description` を今の形にしている理由と、選ばれる範囲の実測。
   - [eval.md](./notes/eval.md): この repo で `claude plugin eval` がどう振る舞うかと、case を今の形にしている理由。

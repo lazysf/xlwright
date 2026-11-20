@@ -49,7 +49,7 @@ $CasesByFile = [ordered]@{
     'scripts/XlWright.psm1' = '*'
     # Most cases use it to set up their workbooks.
     'scripts/Import-Vba.ps1' = '*'
-    'scripts/Invoke-ExcelScript.ps1' = 'invoke-excelscript', 'timeout', 'range', 'userform', 'workbook-summary', 'macro-dialog'
+    'scripts/Invoke-ExcelScript.ps1' = 'invoke-excelscript', 'timeout', 'range', 'userform', 'workbook-summary', 'macro-dialog', 'one-session'
     'scripts/Export-Vba.ps1' = 'cells-and-vba', 'userform'
     'scripts/Test-VbaCompile.ps1' = 'vba-compile', 'vba-compile-error'
     'scripts/Add-CustomUI.ps1' = 'input-rejected', 'workbook-summary', 'ribbon', 'ribbon-layout', 'publish'
@@ -420,6 +420,33 @@ Invoke-Case 'vba-compile' {
     [void](New-EmptyBook $plain)
     $p = Invoke-Compile $plain
     Assert 'workbook without VBA: compiled' ($p.Exit -eq 0 -and $p.Json.Compiled -eq $true) ($p.Json | ConvertTo-Json -Compress)
+}
+
+# Import, compile, macro and the error cells through the functions of XlWright.psm1, in one Invoke-ExcelScript.ps1 call.
+Invoke-Case 'one-session' {
+    $dir = New-CaseDir 'one-session'
+    Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $dir 'vba') -Recurse
+    $book = New-EmptyBook (Join-Path $dir 'book.xlsm')
+    $r = Invoke-Runner $book 'one-session' @('-EnableMacros', '-Save')
+    # @() so that a failed call, whose Result is null, still reaches the checks below.
+    $v = @($r.Json.Result)[0]
+    $detail = $r.Json | ConvertTo-Json -Compress -Depth 8
+    Assert 'exit 0' ($r.Exit -eq 0) $r.Output
+    Assert 'imported in the same call' ((@($v.Imported) -join ',') -eq 'imported: CalcOptions,replaced document module: ThisWorkbook,imported: Util') $detail
+    Assert 'compiled in the same call' ($v.Compiled -eq $true -and $null -eq $v.CompileError) $detail
+    Assert 'macro of the imported module ran' ($v.Sum -eq 5) $detail
+    $errorCells = @($v.Errors.Sheets | ForEach-Object { $_.Errors } | ForEach-Object { $_.Address + ' ' + $_.Error + ' ' + $_.Kind })
+    Assert 'error cell found in the same call' ($v.Errors.Count -eq 1 -and ($errorCells -join ',') -eq 'A1 #DIV/0! formula') $detail
+    Assert 'no warnings' (@($r.Json.Warnings).Count -eq 0) (@($r.Json.Warnings) -join ' | ')
+    $saved = Use-ExcelWorkbook -Path $book -ScriptBlock {
+        param($xl, $wb)
+        [ordered]@{
+            Components = @($wb.VBProject.VBComponents | ForEach-Object { $_.Name + ':' + $_.Type } | Sort-Object) -join ','
+            A1 = $wb.Worksheets.Item(1).Range('A1').Formula
+        }
+    }
+    Assert 'saved: the imported components' ($saved.Components -eq 'CalcOptions:2,Sheet1:100,ThisWorkbook:100,Util:1') $saved.Components
+    Assert 'saved: the cell written after the macro' ($saved.A1 -eq '=1/0') $saved.A1
 }
 
 function New-BookWithMacros([string]$Dir, [string]$Source) {
@@ -1086,6 +1113,16 @@ if ($Full) {
             Assert ($case.Name + ': message read') ([string]$c.Json.CompileError.Message -ne '') $detail
             Assert ($case.Name + ': place read') ($c.Json.CompileError.Module -eq 'Broken' -and $c.Json.CompileError.Line -eq 5 -and $c.Json.CompileError.Column -eq $case.Column) $detail
             Assert ($case.Name + ': workbook unchanged by the check') ((Get-FileHashText $book) -eq $hash) 'hash changed'
+
+            # In one session: the error is read, and Excel still runs a macro of a module that compiles.
+            $same = Use-ExcelWorkbook -Path $book -EnableMacros -ScriptBlock {
+                param($xl, $wb)
+                $compile = Test-ExcelVbaCompile -Excel $xl -Workbook $wb
+                [ordered]@{ Compile = $compile; Seven = Invoke-ExcelMacro -Excel $xl -Name 'Good.Seven' }
+            }
+            $sameDetail = $same | ConvertTo-Json -Compress -Depth 4
+            Assert ($case.Name + ': one session: error read') ($same.Compile.Compiled -eq $false -and $same.Compile.CompileError.Module -eq 'Broken' -and $same.Compile.CompileError.Line -eq 5) $sameDetail
+            Assert ($case.Name + ': one session: a macro runs after the compile error') ($same.Seven -eq 7) $sameDetail
         }
     }
 

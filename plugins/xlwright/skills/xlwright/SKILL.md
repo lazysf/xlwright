@@ -110,7 +110,7 @@ Excel は既定で、VBA とブックイベントを無効にし、外部ブッ�
 VBA とリボンを持つブックを一から作る時は、次の順に進める。各手順の詳細は上の表の reference にある。
 
 1. `Invoke-ExcelScript.ps1 -Create -Save` でブックを作り、シートの値・数式・書式を入れる。
-2. `vba/` に VBA のソースを書き、`Import-Vba.ps1` で取り込む。取り込んだら `Test-VbaCompile.ps1` でコンパイルを確かめる。
+2. `vba/` に VBA のソースを書き、`Import-Vba.ps1` で取り込む。取り込んだら `Test-VbaCompile.ps1` でコンパイルを確かめる。直しては確かめる繰り返しでは、取り込み、コンパイル、マクロの試験、読み戻しを 1 回の呼び出しにまとめる（「検証」の「まとめて確かめる」）。
 3. ブックを閉じた状態で、`ribbon/customUI14.xml` を `Add-CustomUI.ps1` で埋め込む。
 4. `Invoke-ExcelScript.ps1` で開き直し、シートと VBA を読み戻す。リボンは `Test-RibbonLayout.ps1` で見え方を XML と照らし、`Invoke-RibbonButton.ps1` で押して確かめる。
 5. 配布する場合は、最後に `Publish-Workbook.ps1` で出力し、ロックを読み戻す。
@@ -172,6 +172,41 @@ Invoke-ExcelMacro -Excel $xl -Name 'Util.AddNums' -ArgumentList 2, 3
 - **VBA**: 変更したコンポーネントの名前・種別・コードを読み戻す。`Test-VbaCompile.ps1` でコンパイルし、構文エラーや宣言の無い変数が無いことを確かめる（[VBA の編集ルールと入出力](references/vba.md)）。実行してよいマクロは `Invoke-ExcelMacro` で動かし、戻り値を確かめる（「マクロを動かす」）。確かめる場合が多い時も、ScriptBlock の中で `Invoke-ExcelMacro` を並べて呼ぶ。確かめるためだけの VBA は、`vba/` にも作業ブックにも残さない。`Publish-Workbook.ps1` は作業ブックの写しに `vba/` を取り込み、取り込みは正本に無いコンポーネントを消さないので、どちらに残したコードも配布ブックに入る。要る時は、一時フォルダに取ったブックの写しに足す。ThisWorkbook に置いた関数は、`$xl.Run` で呼ぶと（ブック名で修飾しても）空が返る。`[System.__ComObject].InvokeMember('FuncName', [Reflection.BindingFlags]::InvokeMethod, $null, $wb, $null)` で Workbook のメンバーとして呼ぶと値が返る。
 - **リボンとボタン**: `Test-RibbonLayout.ps1` でタブ・グループ・ボタンの並び、大きさ、有効無効、表示非表示を XML と照らし、タブの画像でアイコンを見る。`Invoke-RibbonButton.ps1` で実際に押し、出たダイアログの文言を確かめる（[リボン](references/ribbon.md)）。
 
+### まとめて確かめる
+
+スクリプトは呼ぶたびに Excel を起動して閉じ、測った端末では 1 回に約 4 秒かかった。ブックを開いて作業する時間は、そのうち 0.5 秒ほど。取り込み、コンパイル、マクロの試験、読み戻し、エラー値のセルの検査は、`Invoke-ExcelScript.ps1` の 1 回の呼び出しにまとめる。ScriptBlock の中では、各スクリプトと同じ処理を関数で呼べる。
+
+```powershell
+# check.ps1（UTF-8）。ブックの隣の vba/ を取り込み、同じ Excel で確かめる
+param($xl, $wb)
+$imported = @(Import-ExcelVba -Workbook $wb -SourceDir (Join-Path $wb.Path 'vba'))
+$compile = Test-ExcelVbaCompile -Excel $xl -Workbook $wb
+$result = [ordered]@{ Imported = $imported; Compile = $compile }
+if ($compile.Compiled) {
+    $result.Sum = Invoke-ExcelMacro -Excel $xl -Name 'Util.AddNums' -ArgumentList 2, 3
+    $result.Cells = Read-ExcelRange -Range $wb.Worksheets.Item(1).Range('A1:B2')
+    $result.Errors = Find-ExcelCellError -Excel $xl -Workbook $wb
+}
+$result
+```
+
+```powershell
+powershell.exe -NoProfile -File "<skill>/scripts/Invoke-ExcelScript.ps1" -Path <workbook> -Script <check.ps1> -OutFile <result.json> -EnableMacros -Save
+```
+
+| 関数 | 同じ処理のスクリプト | 返すもの |
+| --- | --- | --- |
+| `Import-ExcelVba -Workbook $wb -SourceDir <vba>` | `Import-Vba.ps1` | `imported: <名前>` などの行。保存はしない |
+| `Test-ExcelVbaCompile -Excel $xl -Workbook $wb` | `Test-VbaCompile.ps1` | `Compiled` と `CompileError` |
+| `Find-ExcelCellError -Excel $xl -Workbook $wb` | `Find-CellError.ps1` | `Count`、`Truncated`、`Calculation`、`Sheets` |
+
+- 同じ呼び出しで読むのは、保存する前の Excel の中の状態。直しては確かめる繰り返しの間はこれで足りる。編集を終えたら、上のとおり `-Save` なしで開き直して、保存された結果を読み戻す。
+- 取り込みを残すには `-Save` を付ける。コンパイルエラーは例外にならず `Compiled` が `false` で返るので、`-Save` を付けていれば取り込んだコードは保存される。別々のスクリプトで取り込んでからコンパイルした時と同じ。
+- コンパイルエラーの時は、VBE とダイアログが画面に短い間出る。閉じた後も、同じ Excel でエラーの無いモジュールのマクロは動いた。エラーのあるモジュールのマクロを動かした時は確かめていない。
+- `-EnableMacros` は、マクロを動かす時だけ付ける。動かしてよいマクロの範囲は「マクロが動くことへの注意」のとおり。
+- 閉じたブックが要る手順（`Add-CustomUI.ps1`）と、Excel を表示する手順（リボンの確認、`Save-WorkbookScreenshot.ps1`、配布）は、まとめられない。別の呼び出しにする。
+- 引数と結果の項目は、同じ処理のスクリプトの説明（[VBA の編集ルールと入出力](references/vba.md)、[COM 編集の詳細](references/com.md)の「エラー値のセルを探す」）のとおり。
+
 ## 動作確認
 
 スクリプトが手元の Excel で動くかは、`tests/Test-XlWright.ps1` で確かめる。各項目は一時フォルダに新しいブックを作って、期待値と照合する。一時フォルダの外は変えない。Excel が動いている時と `AccessVBOM` が `1` でない時は、何もせずに終了コード 2 で止まる。
@@ -180,7 +215,7 @@ Invoke-ExcelMacro -Excel $xl -Name 'Util.AddNums' -ArgumentList 2, 3
 powershell.exe -NoProfile -File "<skill>/tests/Test-XlWright.ps1" -OutFile <result.json>
 ```
 
-- 既定の項目は Excel を表示しない。セルと VBA、`Invoke-ExcelScript.ps1`、範囲の読み書き、VBA のコンパイル、マクロの実行、上限、呼び出し元が殺された時、不正な入力の拒否（VBA のソース、リボンの XML、配布の失敗）、見張りが立てられない時、前提の確認、ブックの概要、エラー値のセルの列挙、UserForm を確かめる。5 分ほどかかる。
+- 既定の項目は Excel を表示しない。セルと VBA、`Invoke-ExcelScript.ps1`、範囲の読み書き、VBA のコンパイル、マクロの実行、上限、呼び出し元が殺された時、不正な入力の拒否（VBA のソース、リボンの XML、配布の失敗）、見張りが立てられない時、前提の確認、ブックの概要、エラー値のセルの列挙、1 回の呼び出しでまとめた確認、UserForm を確かめる。5 分ほどかかる。
 - `-Full` を付けると、コンパイルエラーの検出、マクロが出すダイアログの扱い、リボンの押下（同名の組み合わせ、閉じられないダイアログを含む）、リボンの見え方の照合、配布ブックの出力、ブックと UserForm の見た目の画像も確かめる。Excel と VBE が画面に出るので、先に人へ伝え、出たウィンドウを操作しないよう頼む。これらの項目は、Excel が前面を取らないことも確かめる。
 - `-Case timeout,userform` のように、名前を指定した項目だけを流せる。
 - 終了コードは、0 がすべて合格、1 が不合格あり、2 が前提を満たさない・Excel が残って止まった。一時フォルダは合否によらず最後に消す。不合格の理由は出力と `-OutFile` に残る。試験のブックを調べたい時は、`-KeepTemp` を付けて流し直すと残り、場所を出力する。

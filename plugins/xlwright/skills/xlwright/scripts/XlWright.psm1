@@ -8,6 +8,8 @@ and Workbook objects. New-ExcelWorkbook creates a new empty workbook file. Invok
 inside that script block and handles the dialogs the macro shows. Get-ExcelPrerequisite checks, without
 starting Excel, what stands in the way of opening a workbook.
 Read-ExcelRange and Write-ExcelRange read and write the cells of a range in one call.
+Import-ExcelVba, Test-ExcelVbaCompile and Find-ExcelCellError do the work of Import-Vba.ps1, Test-VbaCompile.ps1
+and Find-CellError.ps1 inside a script block, so that several steps share one Excel instance.
 
 Use-ExcelWorkbook disables VBA macros and workbook events by default and opens without updating
 external workbook links. Use -EnableMacros for an intentional macro test. Event handlers such as
@@ -852,5 +854,352 @@ function Write-ExcelRange {
     }
 }
 
+# The bodies of Import-Vba.ps1, Test-VbaCompile.ps1 and Find-CellError.ps1. Called in one script block, they share
+# one Excel instance: every start and exit of Excel takes about 4 s (docs/notes/dev-cycle-timing.md).
+
+# The folders of a VBA source directory (the layout in SKILL.md) and the component type each one holds.
+$script:VbaFolderTypes = @{ standard = 1; classes = 2; forms = 3; documents = 100 }
+$script:VbaExtensions = @{ 1 = '.bas'; 2 = '.cls'; 3 = '.frm'; 100 = '.cls' }
+
+# Reads and checks the sources without Excel, so that a bad source fails before any code of the workbook changes.
+# Returns Sources (File, Name, Text, ImportBytes, Sidecar, Type) and References (the entries of references.json).
+function Read-VbaSource([string]$SourceDir) {
+    $cp932 = [Text.Encoding]::GetEncoding(932, [Text.EncoderFallback]::ExceptionFallback,
+        [Text.DecoderFallback]::ExceptionFallback)
+    if (Get-ChildItem -LiteralPath $SourceDir -File | Where-Object { $_.Extension -in '.bas', '.cls', '.frm', '.frx' }) {
+        throw "Place VBA files in standard/, classes/, documents/, or forms/, not directly in $SourceDir"
+    }
+    $sourceFolders = @(Get-ChildItem -LiteralPath $SourceDir -Directory |
+        Where-Object { $script:VbaFolderTypes.ContainsKey($_.Name) })
+    $files = @(foreach ($folder in $sourceFolders) {
+        Get-ChildItem -LiteralPath $folder.FullName -File | Where-Object { $_.Extension -in '.bas', '.cls', '.frm' }
+    })
+    if ($files.Count -eq 0) { throw "No .bas / .cls / .frm files in VBA component directories under $SourceDir" }
+
+    $strictUtf8 = New-Object System.Text.UTF8Encoding($false, $true)
+    $sources = @(foreach ($f in $files) {
+        $bytes = [IO.File]::ReadAllBytes($f.FullName)
+        try { $text = $strictUtf8.GetString($bytes) }
+        catch { throw ("Invalid UTF-8 in " + $f.FullName) }
+        if ($text.StartsWith([string][char]0xFEFF, [StringComparison]::Ordinal) -or $text.Contains("`r")) {
+            throw ("Expected UTF-8 without BOM and LF line endings in " + $f.FullName)
+        }
+        $text = $text.Replace("`n", "`r`n")
+        try { $importBytes = $cp932.GetBytes($text) }
+        catch { throw ("Cannot encode as CP932: " + $f.FullName) }
+        if (![string]::Equals($cp932.GetString($importBytes), $text, [StringComparison]::Ordinal)) {
+            throw ("Cannot round-trip through CP932: " + $f.FullName)
+        }
+        $m = [regex]::Match($text, '(?m)^Attribute VB_Name = "([^"]+)"\r$')
+        if (-not $m.Success) { throw ("No Attribute VB_Name in " + $f.Name) }
+        $name = $m.Groups[1].Value
+        $type = $script:VbaFolderTypes[$f.Directory.Name]
+        if ($f.Extension -ne $script:VbaExtensions[$type] -or $f.BaseName -ne $name) {
+            throw ("Unexpected extension or VB_Name in " + $f.FullName)
+        }
+        $sidecar = $null
+        if ($type -eq 3) {
+            $designer = $text.Substring(0, $m.Index)
+            if ($designer -match '(?m)^[ \t]*OleObjectBlob[ \t]*=') {
+                $blob = [regex]::Match($designer, '(?m)^[ \t]*OleObjectBlob[ \t]*=[ \t]*"([^"]+)":[0-9A-Fa-f]+[ \t]*\r$')
+                $sidecarName = $f.BaseName + '.frx'
+                if (!$blob.Success -or $blob.Groups[1].Value -ne $sidecarName) {
+                    throw ("Expected a reference to " + $sidecarName + " in " + $f.FullName)
+                }
+                $sidecar = Join-Path $f.DirectoryName $sidecarName
+                if (!(Test-Path -LiteralPath $sidecar -PathType Leaf)) {
+                    throw ("Missing UserForm resource: " + $sidecar)
+                }
+            }
+        }
+        [pscustomobject]@{
+            File = $f.Name
+            Name = $name
+            Text = $text
+            ImportBytes = $importBytes
+            Sidecar = $sidecar
+            Type = $type
+        }
+    })
+
+    $duplicate = $sources | Group-Object Name | Where-Object Count -gt 1
+    if ($duplicate) { throw ("Duplicate VB_Name: " + ($duplicate.Name -join ', ')) }
+
+    $expectedReferences = @()
+    $referencesFile = Join-Path $SourceDir 'references.json'
+    if (Test-Path -LiteralPath $referencesFile -PathType Leaf) {
+        try { $parsed = $strictUtf8.GetString([IO.File]::ReadAllBytes($referencesFile)) | ConvertFrom-Json }
+        catch { throw ("Invalid references.json: " + $referencesFile + ": " + $_.Exception.Message) }
+        $expectedReferences = @(foreach ($entry in @($parsed.References)) {
+            if ($null -eq $entry -or $entry.Name -isnot [string] -or $entry.Guid -isnot [string] -or
+                $entry.Guid -notmatch '^\{[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}$') {
+                throw ("Expected References with a Name and a Guid for each entry in " + $referencesFile)
+            }
+            $entry
+        })
+    }
+    [pscustomobject]@{ Sources = $sources; References = $expectedReferences }
+}
+
+function Import-ExcelVba {
+    <#
+    .SYNOPSIS
+    Imports the UTF-8 (no BOM), LF .bas / .cls / .frm files of a source directory into an open workbook.
+
+    .DESCRIPTION
+    The rules are those of Import-Vba.ps1, which calls this function and then saves the workbook. This function
+    does not save: run it in a script block of Use-ExcelWorkbook with -Save, or in Invoke-ExcelScript.ps1 with -Save.
+    All sources are checked before any code of the workbook changes.
+
+    Outputs one line per component: "imported: <name>" or "replaced document module: <name>".
+    A reference in references.json that the workbook does not have is written as a warning.
+    #>
+    [CmdletBinding()]
+    param(
+        # The Workbook given to the script block.
+        [Parameter(Mandatory)]$Workbook,
+        # The folder with standard/, classes/, documents/ and forms/ (and references.json).
+        [Parameter(Mandatory)][string]$SourceDir
+    )
+    $read = Read-VbaSource $SourceDir
+    $tmpDir = Join-Path ([IO.Path]::GetTempPath()) ('vba-import-' + [guid]::NewGuid())
+    New-Item -ItemType Directory -Path $tmpDir | Out-Null
+    try {
+        $components = $Workbook.VBProject.VBComponents
+        $existingByName = @{}
+        foreach ($component in $components) { $existingByName[$component.Name] = $component }
+        foreach ($s in $read.Sources) {
+            $existing = $existingByName[$s.Name]
+            if ($null -ne $existing -and $existing.Type -ne $s.Type) {
+                throw ("Component type mismatch for " + $s.Name + ": workbook " + $existing.Type + ", source " + $s.Type)
+            }
+            if ($s.Type -eq 100 -and $null -eq $existing) {
+                throw ("No document module named " + $s.Name + " in the workbook")
+            }
+        }
+        foreach ($s in $read.Sources) {
+            $existing = $existingByName[$s.Name]
+            if ($s.Type -eq 100) {
+                $lines = $s.Text -split "`r`n"
+                $i = 0
+                if ($lines[0] -eq 'VERSION 1.0 CLASS') {
+                    while ($i -lt $lines.Count -and $lines[$i] -ne 'END') { $i++ }
+                    $i++
+                }
+                while ($i -lt $lines.Count -and $lines[$i] -like 'Attribute *') { $i++ }
+                $code = ''
+                if ($i -lt $lines.Count) { $code = ($lines[$i..($lines.Count - 1)] -join "`r`n").TrimEnd("`r", "`n") }
+                $cm = $existing.CodeModule
+                if ($cm.CountOfLines -gt 0) { $cm.DeleteLines(1, $cm.CountOfLines) }
+                if ($code.Length -gt 0) { $cm.AddFromString($code) }
+                "replaced document module: " + $s.Name
+                continue
+            }
+            $tmp = Join-Path $tmpDir $s.File
+            [IO.File]::WriteAllBytes($tmp, $s.ImportBytes)
+            if ($s.Sidecar) {
+                [IO.File]::Copy($s.Sidecar, [IO.Path]::ChangeExtension($tmp, '.frx'))
+            }
+            if ($null -ne $existing) { $components.Remove($existing) }
+            $c = $components.Import($tmp)
+            if ($c.Name -ne $s.Name -or $c.Type -ne $s.Type) {
+                throw ("Imported " + $s.File + " as " + $c.Name + " (type " + $c.Type + "), expected " +
+                    $s.Name + " (type " + $s.Type + ")")
+            }
+            "imported: " + $s.Name
+        }
+        # The keys of this hashtable are not case-sensitive, and neither are GUIDs.
+        $present = @{}
+        foreach ($r in $Workbook.VBProject.References) { $present[[string]$r.Guid] = $true }
+        foreach ($e in $read.References) {
+            if (-not $present.ContainsKey($e.Guid)) {
+                Write-Warning ("Reference not in the workbook: " + $e.Name + " " + $e.Guid +
+                    "; code that uses it does not compile until it is added")
+            }
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-ExcelVbaCompile {
+    <#
+    .SYNOPSIS
+    Compiles the VBA project of an open workbook and returns the compile error, if any.
+
+    .DESCRIPTION
+    Makes the project the active one in the VBE and executes the VBE command "Compile VBAProject" (command bar
+    control 578); there is no COM method for compiling. The outcome is read from what the VBE does next:
+    - The control becomes disabled: the project compiled.
+    - A dialog (#32770) of this Excel instance appears: a compile error. Its text and the selection of the active
+      code pane (the place of the error) are recorded, the dialog is closed with WM_CLOSE and the VBE window,
+      which the error makes visible on the screen, is hidden again.
+    - Neither within -DialogTimeoutSeconds: an exception, not a pass.
+
+    Returns Compiled (true / false) and CompileError (Message, Module, Line, Column; null when it compiled). Only
+    the error the VBE shows is reported; the place is null when the VBE has no active code pane. A locked project
+    is not compiled and throws. If the dialog cannot be closed, this Excel instance is stopped by its PID and start
+    time and an exception is thrown; its Data['CompileResult'] holds what was read. Excel stays usable after a
+    compile error, also for macros of the modules that compile (docs/notes/vba-one-session.md).
+    #>
+    [CmdletBinding()]
+    param(
+        # The Excel.Application given to the script block.
+        [Parameter(Mandatory)]$Excel,
+        # The Workbook given to the script block.
+        [Parameter(Mandatory)]$Workbook,
+        # How long to wait for the compile to finish or the error dialog to appear.
+        [ValidateRange(1, 3600)][int]$DialogTimeoutSeconds = 5
+    )
+    $result = [ordered]@{ Compiled = $null; CompileError = $null }
+    $excelPid = Get-ExcelProcessId $Excel
+    $excelStartTicks = [XlWright.ExcelProcess]::StartTicks($excelPid)
+    $project = $Workbook.VBProject
+    if ($project.Protection -ne 0) { throw 'The VBA project is locked and cannot be compiled from outside.' }
+    $vbe = $Excel.VBE
+    # Only the active project is compiled.
+    $vbe.ActiveVBProject = $project
+    $control = $vbe.CommandBars.FindControl(1, 578)  # msoControlButton, "Compile VBAProject"
+    if ($null -eq $control) { throw 'The VBE command "Compile VBAProject" (578) was not found.' }
+    # A disabled control means the project is already in the compiled state; Execute would fail.
+    if (-not $control.Enabled) { $result.Compiled = $true; return $result }
+
+    $vbeWasVisible = [bool]$vbe.MainWindow.Visible
+    $control.Execute()
+    # Execute returns at once; the error dialog appears a moment later.
+    $dialog = [IntPtr]::Zero
+    $deadline = (Get-Date).AddSeconds($DialogTimeoutSeconds)
+    do {
+        $dialog = [XlWright.Dialog]::Find([uint32]$excelPid)
+        if ($dialog -ne [IntPtr]::Zero) { break }
+        if (-not $control.Enabled) { $result.Compiled = $true; return $result }
+        Start-Sleep -Milliseconds 100
+    } while ((Get-Date) -lt $deadline)
+    if ($dialog -eq [IntPtr]::Zero) {
+        throw "The compile could not be confirmed: no error dialog and the project is not in the compiled state after $DialogTimeoutSeconds s."
+    }
+
+    $place = [ordered]@{ Message = [XlWright.Dialog]::Message($dialog); Module = $null; Line = $null; Column = $null }
+    $pane = $vbe.ActiveCodePane
+    if ($null -ne $pane) {
+        $startLine = 0; $startColumn = 0; $endLine = 0; $endColumn = 0
+        $pane.GetSelection([ref]$startLine, [ref]$startColumn, [ref]$endLine, [ref]$endColumn)
+        if ($startLine -gt 0) {
+            $place.Module = $pane.CodeModule.Parent.Name
+            $place.Line = $startLine
+            $place.Column = $startColumn
+        }
+    }
+    $result.Compiled = $false
+    $result.CompileError = $place
+
+    [void][XlWright.Dialog]::PostMessage($dialog, [XlWright.Dialog]::WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)
+    if (-not [XlWright.Dialog]::WaitClosed($dialog, 3000)) {
+        # The instance is blocked in a modal state; closing the workbook would hang. Stop only this instance:
+        # same PID and start time.
+        $stuck = 'The compile error dialog could not be closed.'
+        $message = switch ([string][XlWright.ExcelProcess]::StopIfSame($excelPid, $excelStartTicks)) {
+            'Stopped' { "$stuck Stopped the Excel instance of this script (PID $excelPid)." }
+            'Gone' { "$stuck The Excel instance of this script (PID $excelPid) had already exited." }
+            default { "$stuck Excel PID $excelPid could not be stopped as the instance of this script. Report it to the user." }
+        }
+        $failure = New-Object System.InvalidOperationException($message)
+        $failure.Data['CompileResult'] = $result
+        throw $failure
+    }
+    if (-not $vbeWasVisible) { $vbe.MainWindow.Visible = $false }
+    $result
+}
+
+function Find-ExcelCellError {
+    <#
+    .SYNOPSIS
+    Lists the cells of an open workbook whose value is an error (#REF!, #NAME?, #DIV/0! and the others).
+
+    .DESCRIPTION
+    Nothing is changed or recalculated: the values are those Excel holds now. The used range of every worksheet is
+    read with Range.Value2 in blocks of rows (Range.SpecialCells is not used; docs/notes/cell-error.md). Hidden and
+    protected sheets are read too; chart sheets are not.
+
+    Returns Count (the error cells found), Truncated (true when Errors lists fewer than Count), Calculation
+    ("automatic", "manual", "semiautomatic" or "other") and Sheets in the order of the workbook: Name, Count, Errors.
+    Each error: Address (e.g. "B3"), Error (e.g. "#REF!"), Kind ("formula", "constant", or "spill" for a cell that
+    a formula elsewhere spills into), Formula (Range.Formula2 of a formula cell, otherwise null) and SpillParent
+    (the address of the spilling formula, only for Kind "spill").
+    #>
+    [CmdletBinding()]
+    param(
+        # The Excel.Application given to the script block.
+        [Parameter(Mandatory)]$Excel,
+        # The Workbook given to the script block.
+        [Parameter(Mandatory)]$Workbook,
+        # Only these worksheets. A name that is not a worksheet of the workbook fails.
+        [string[]]$Sheet = @(),
+        # Errors lists at most this many cells over all sheets; Count still counts all of them.
+        [ValidateRange(0, 1000000)][int]$MaxErrors = 1000
+    )
+    Add-Type -AssemblyName Microsoft.VisualBasic
+    $Sheet = @($Sheet)
+    $worksheets = @(foreach ($item in $Workbook.Sheets) {
+        # -4167 is xlWorksheet. The type of a chart sheet is not a sheet type, so the class is checked too.
+        if ([Microsoft.VisualBasic.Information]::TypeName($item) -eq 'Worksheet' -and [int]$item.Type -eq -4167) { $item }
+    })
+    if ($Sheet.Count -gt 0) {
+        $known = @($worksheets | ForEach-Object { $_.Name })
+        $missing = @($Sheet | Where-Object { $known -notcontains $_ })
+        if ($missing.Count -gt 0) {
+            throw ('Not a worksheet of the workbook: ' + ($missing -join ', ') + '. Worksheets: ' + ($known -join ', ') + '.')
+        }
+        $worksheets = @($worksheets | Where-Object { $Sheet -contains $_.Name })
+    }
+
+    $calculation = @{ -4105 = 'automatic'; -4135 = 'manual'; 2 = 'semiautomatic' }[[int]$Excel.Calculation]
+    if (-not $calculation) { $calculation = 'other' }
+    $total = 0
+    $listed = 0
+    $sheets = @(foreach ($worksheet in $worksheets) {
+        $used = $worksheet.UsedRange
+        $rowCount = $used.Rows.Count
+        $columnCount = $used.Columns.Count
+        # Bounds the size of one Value2 array also for a wide sheet.
+        $blockRows = [Math]::Max(1, [Math]::Min(10000, [Math]::Floor(200000 / $columnCount)))
+        $count = 0
+        $errors = New-Object System.Collections.Generic.List[object]
+        for ($start = 1; $start -le $rowCount; $start += $blockRows) {
+            $block = $used.Rows.Item($start).Resize([Math]::Min($blockRows, $rowCount - $start + 1))
+            $rows = Read-ExcelRange -Range $block
+            for ($r = 0; $r -lt $rows.Count; $r++) {
+                $row = $rows[$r]
+                for ($c = 0; $c -lt $row.Count; $c++) {
+                    if ($row[$c] -isnot [Collections.IDictionary]) { continue }
+                    $count++
+                    if ($listed -ge $MaxErrors) { continue }
+                    $listed++
+                    $cell = $block.Cells.Item($r + 1, $c + 1)
+                    $entry = [ordered]@{
+                        Address = $cell.Address($false, $false); Error = $row[$c].Error; Kind = 'constant'
+                        Formula = $null; SpillParent = $null
+                    }
+                    if ($cell.HasFormula) {
+                        $entry.Kind = 'formula'
+                        $entry.Formula = [string]$cell.Formula2
+                    }
+                    # SpillParent fails for a cell outside a spill, so HasSpill is checked first.
+                    elseif ($cell.HasSpill -eq $true) {
+                        $entry.Kind = 'spill'
+                        $entry.SpillParent = $cell.SpillParent.Address($false, $false)
+                    }
+                    $errors.Add($entry)
+                }
+            }
+        }
+        $total += $count
+        [ordered]@{ Name = $worksheet.Name; Count = $count; Errors = $errors.ToArray() }
+    })
+    [ordered]@{ Count = $total; Truncated = ($listed -lt $total); Calculation = $calculation; Sheets = $sheets }
+}
+
 Export-ModuleMember -Function Use-ExcelWorkbook, New-ExcelWorkbook, Get-ExcelProcessId, Invoke-ExcelMacro,
-    Get-ExcelPrerequisite, Read-ExcelRange, Write-ExcelRange, Assert-WorkbookExtension
+    Get-ExcelPrerequisite, Read-ExcelRange, Write-ExcelRange, Assert-WorkbookExtension, Import-ExcelVba,
+    Test-ExcelVbaCompile, Find-ExcelCellError

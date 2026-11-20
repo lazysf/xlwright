@@ -39,6 +39,7 @@ powershell.exe -NoProfile -File "<skill>/scripts/Import-Vba.ps1" -Path <workbook
   - 警告が出たら、ユーザーに参照設定の名前を示して確認を取ってから足す。足すのは、`Invoke-ExcelScript.ps1 -Save` に渡す ScriptBlock で `[void]$wb.VBProject.References.AddFromGuid('<Guid>', <Major>, <Minor>)` を呼ぶ形でよい。Scripting Runtime では、確認のダイアログを出さずに足せた。参照先が端末に無い時、版が違う時の振る舞いは確かめていない。足した後に `Test-VbaCompile.ps1` を流す。
   - 新しく書くコードで参照設定を避けたい時は、`CreateObject("Scripting.Dictionary")` と `As Object` の遅延バインディングで書けば、参照設定なしでコンパイルが通る。
 - 文書モジュールの差し替えは、先頭のヘッダーと `Attribute` 行だけを除く。プロシージャの中の `Attribute` 行（`VB_Description` など）は扱わない。
+- 同じ取り込みは、ScriptBlock の中で `Import-ExcelVba -Workbook $wb -SourceDir <dir>` で呼べる。保存はしないので、`Invoke-ExcelScript.ps1` に `-Save` を付ける。コンパイルやマクロの試験と同じ Excel で続けられる（SKILL.md の「まとめて確かめる」）。
 - 変更したコンポーネントだけを反映する場合は、対象ファイルを種別ごとの配置を保って別の作業先へコピーし、そのルートを `-SourceDir` に渡す。UserForm は付随する `.frx` もコピーする。
 - シートとブックのモジュールを直接編集する場合は、`Worksheet.CodeName` または `Workbook.CodeName` で既存の `VBComponent` を取得し、その `CodeModule` に書く。
 - 既存のブックから書き出したコードには、接続先、ID、認証情報が入っていることがある。commit する前に中身を確かめる。
@@ -107,4 +108,5 @@ powershell.exe -NoProfile -File "<skill>/scripts/Test-VbaCompile.ps1" -Path <wor
 - コンパイルエラーがある時だけ、VBE のウィンドウとダイアログが画面に短い間出る。スクリプトが閉じて隠す。
 - 検査そのものの失敗は `Error` に入る。VBA プロジェクトがロックされている時、`-DialogTimeoutSeconds`（既定 5）の間にコンパイルの済んだ状態にもならずダイアログも出なかった時など。後者は合格として扱わない。大きなプロジェクトでこの失敗が出たら、秒数を延ばす。
 - VBA の無いブック（`.xlsx` を含む）は `Compiled` が `true` になる。
+- 同じ検査は、ScriptBlock の中で `Test-ExcelVbaCompile -Excel $xl -Workbook $wb` で呼べる（SKILL.md の「まとめて確かめる」）。`Compiled` と `CompileError` を返し、検査そのものの失敗は例外になる。マクロを有効にして開いた Excel でも、取り込んだ直後でも、マクロを動かした後でも、エラーを見つけられた。
 - 確かめたのは、標準モジュールにエラーが 1 つある場合。エラーが複数ある時、文書モジュールや UserForm にエラーがある時、VBA プロジェクトがロックされている時、日本語以外の表示言語の Excel では確かめていない。

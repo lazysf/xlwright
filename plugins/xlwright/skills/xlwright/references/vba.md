@@ -12,8 +12,8 @@
 
 ## 識別子
 
-- モジュール名（`Attribute VB_Name`）は31文字以内にする。プロシージャや変数などの一般識別子は255文字以内にする。
-- 識別子は文字で始める。空白、ピリオド、`!`、`@`、`&`、`$`、`#` を含めない。予約語と同一スコープでの名前の衝突を避ける。
+- モジュール名（`Attribute VB_Name`）は31文字以内にする。32 文字の名前を標準モジュールの `VBComponent.Name` に入れると、`0x800AC3D4` で拒否された。プロシージャや変数などの一般識別子は255文字以内にする。
+- 識別子は文字で始める。空白、ピリオド、`!`、`@`、`&`、`$`、`#` を含めない。予約語と同一スコープでの名前の衝突を避ける。255 文字の上限とこの規則は、[Visual Basic naming rules](https://learn.microsoft.com/en-us/office/vba/language/concepts/getting-started/visual-basic-naming-rules) にある。
 - `Option Explicit` はモジュールの宣言部に置く。
 - モジュール名は役割が分かる名前にする（例: リボンの callback を置くなら `RibbonCallbacks`）。`Ribbon` のように、変数名（`IRibbonUI` を入れる変数など）やプロシージャ名とぶつかりやすい名前は避ける。
 
@@ -32,7 +32,7 @@ powershell.exe -NoProfile -File "<skill>/scripts/Import-Vba.ps1" -Path <workbook
 ```
 
 - **Export**: 標準モジュールは `standard/<名前>.bas`、クラスは `classes/<名前>.cls`、文書モジュールは `documents/<名前>.cls`、UserForm は `forms/` に `.frm` と付随する `.frx` で書き出す。コードの無い文書モジュールは省く。今回書き出さなかったファイルが出力先に残っていれば警告する。Excel が一時出力した CP932・CRLF のファイルを UTF-8（BOM なし）・LF に変換する。参照設定（VBE の「ツール」→「参照設定」）は、出力先の `references.json` に書く（下の「参照設定」）。
-- **Import**: `-SourceDir` の `standard/`、`classes/`、`documents/`、`forms/` から種別を決める。ブックを開く前に、すべてのファイルが UTF-8（BOM なし）・LF で、CP932 に文字を失わず変換できることを確認する。VBE へは CP932・CRLF の一時ファイルを渡す（LF の `.cls` を VBE へ直接渡すと、標準モジュールとして認識された実測がある）。同名・同種別の標準モジュール、クラス、UserForm は削除してから取り込む。文書モジュールは既存のコードを差し替え、対象ブックに同名の文書モジュールが無い場合は止まる。取り込み元に含まれないコンポーネントはブックに残る。最後に Excel で保存する。途中で失敗した時は、保存せずに閉じる。
+- **Import**: `-SourceDir` の `standard/`、`classes/`、`documents/`、`forms/` から種別を決める。ブックを開く前に、すべてのファイルが UTF-8（BOM なし）・LF で、CP932 に文字を失わず変換できることを確認する。VBE へは CP932・CRLF の一時ファイルを渡す（元にしたスキルの repo で、LF の `.cls` を VBE へ直接渡すと標準モジュールとして認識された。この repo では確かめていない）。同名・同種別の標準モジュール、クラス、UserForm は削除してから取り込む。文書モジュールは既存のコードを差し替え、対象ブックに同名の文書モジュールが無い場合は止まる。取り込み元に含まれないコンポーネントはブックに残る。最後に Excel で保存する。途中で失敗した時は、保存せずに閉じる。
 - **参照設定**: 書き出しのファイルには参照設定が出ず、取り込みでも足されない。参照設定の要るコード（`Dim d As Scripting.Dictionary` など）は、正本から作り直したブックではコンパイルが通らない。そこで、`references.json` に参照設定を残し、取り込みで照らす。
   - `references.json` は `{"References": [{"Name", "Description", "Guid", "Major", "Minor"}, ...]}` の形で、`VBProject.References` の順に並ぶ。外せない VBA と Excel は書かない。新しいブックにも最初からある `stdole` と `Office` は書く。端末で変わる `FullPath` は書かない。ほかのブックへの参照は `Guid` を持たないので書かず、参照先の `FullPath` を `Not recorded in references.json: <FullPath>` と警告する。アドイン（`.xlam`）への参照も同じに扱うが、確かめたのは `.xlsm` への参照だけ。
   - 取り込みは、ブックを開く前に `references.json` の形を確かめ、各項目に `Name` と `Guid` が無ければ止まる。取り込んだ後に、ブックに無い参照設定（`Guid` で照らし、版は比べない）を `Reference not in the workbook: <Name> <Guid>` と警告する。参照設定は足しも外しもしない。`references.json` が無い正本は照らさない。

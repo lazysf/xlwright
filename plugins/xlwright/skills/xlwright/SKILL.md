@@ -57,7 +57,7 @@ Excel は既定で、VBA とブックイベントを無効にし、外部ブッ�
 | VBA モジュール、UserForm | COM（`Export-Vba.ps1` / `Import-Vba.ps1`） | `vbaProject.bin` の生成を Excel に任せられる |
 | リボン（customUI） | zip を直接編集（`Add-CustomUI.ps1`） | COM にリボンを定義する API が無い |
 
-順序は **COM の編集 → ブックを閉じる → customUI の埋め込み → COM で開き直して検証**。openpyxl など Excel 以外のツールで保存しない（リボンの関連付けが消える。[リボン](references/ribbon.md)）。
+順序は **COM の編集 → ブックを閉じる → customUI の埋め込み → COM で開き直して検証**。openpyxl など Excel 以外のツールで保存しない（リボンの関連付けが消えた例がある。[リボン](references/ribbon.md)）。
 
 ## 扱うブックの形式
 
@@ -102,7 +102,7 @@ Excel は既定で、VBA とブックイベントを無効にし、外部ブッ�
 | UserForm の作成・変更 | [UserForm の作成と編集](references/userform.md) |
 | リボンの変更、見え方とボタンの動作確認 | [リボン](references/ribbon.md) |
 | VBA をロックした配布ブック（`.xlsm`、`.xlsb`）かアドイン（`.xlam`）の出力 | [配布ブックの出力](references/publish.md) |
-| ツールの作業で複数のブックを順に扱う、ひな形のシートを別ブックからコピーする | [COM 編集の詳細](references/com.md) |
+| ツールの作業で複数のブックを順に扱う | [COM 編集の詳細](references/com.md)の「モジュールを直接使う」 |
 | Excel が起動しない、実行が拒否される | [実行環境と起動の失敗](references/troubleshooting.md) |
 
 編集後はブックを開き直し、「検証」で変更した箇所を確認する。
@@ -173,7 +173,7 @@ Invoke-ExcelMacro -Excel $xl -Name 'Util.AddNums' -ArgumentList 2, 3
 編集した後は、`-Save` なしでブックを開き直して読み戻す。書いたつもりの値ではなく、Excel が保存した結果を見る。動かしてよいマクロの範囲は「マクロが動くことへの注意」のとおり。
 
 - **シート**: `Value2`、`Formula`、`Text`（表示形式が適用された文字列）を読む。数式は Excel が再計算した値で確かめる。数式を書いた・行や列やシートを消した後は、`Find-CellError.ps1` で `#REF!` や `#NAME?` のセルが無いかを調べる（[COM 編集の詳細](references/com.md)の「エラー値のセルを探す」）。書式、条件付き書式、列幅、グラフ、ボタンの見た目は、`Save-WorkbookScreenshot.ps1` で画像にして見る（同じく「見た目を画像にする」）。
-- **VBA**: 変更したコンポーネントの名前・種別・コードを読み戻す。`Test-VbaCompile.ps1` でコンパイルし、構文エラーや宣言の無い変数が無いことを確かめる（[VBA の編集ルールと入出力](references/vba.md)）。実行してよいマクロは `Invoke-ExcelMacro` で動かし、戻り値を確かめる（「マクロを動かす」）。確かめる場合が多い時も、ScriptBlock の中で `Invoke-ExcelMacro` を並べて呼ぶ。確かめるためだけの VBA は、`vba/` にも作業ブックにも残さない。`Publish-Workbook.ps1` は作業ブックの写しに `vba/` を取り込み、取り込みは正本に無いコンポーネントを消さないので、どちらに残したコードも配布ブックに入る。要る時は、一時フォルダに取ったブックの写しに足す。ThisWorkbook に置いた関数は、`$xl.Run` で呼ぶと（ブック名で修飾しても）空が返る。`[System.__ComObject].InvokeMember('FuncName', [Reflection.BindingFlags]::InvokeMethod, $null, $wb, $null)` で Workbook のメンバーとして呼ぶと値が返る。
+- **VBA**: 変更したコンポーネントの名前・種別・コードを読み戻す。`Test-VbaCompile.ps1` でコンパイルし、構文エラーや宣言の無い変数が無いことを確かめる（[VBA の編集ルールと入出力](references/vba.md)）。実行してよいマクロは `Invoke-ExcelMacro` で動かし、戻り値を確かめる（「マクロを動かす」）。確かめる場合が多い時も、ScriptBlock の中で `Invoke-ExcelMacro` を並べて呼ぶ。確かめるためだけの VBA は、`vba/` にも作業ブックにも残さない。`Publish-Workbook.ps1` は作業ブックの写しに `vba/` を取り込み、取り込みは正本に無いコンポーネントを消さないので、どちらに残したコードも配布ブックに入る。要る時は、一時フォルダに取ったブックの写しに足す。ThisWorkbook に置いた関数は、`$xl.Run` で（ブック名で修飾しても）呼んでも、`Invoke-ExcelMacro` で呼んでも、`null` が返る。`[System.__ComObject].InvokeMember('FuncName', [Reflection.BindingFlags]::InvokeMethod, $null, $wb, $null)` で Workbook のメンバーとして呼ぶと値が返る。
 - **リボンとボタン**: `Test-RibbonLayout.ps1` でタブ・グループ・ボタンの並び、大きさ、有効無効、表示非表示を XML と照らし、タブの画像でアイコンを見る。`Invoke-RibbonButton.ps1` で実際に押し、出たダイアログの文言を確かめる（[リボン](references/ribbon.md)）。
 
 ### まとめて確かめる

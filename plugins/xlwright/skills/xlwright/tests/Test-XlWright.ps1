@@ -320,6 +320,8 @@ Invoke-Case 'cells-and-vba' {
             Sheet = $ws.Name; A1 = $ws.Range('A1').Value2; B1 = $ws.Range('B1').Formula; B1Value = $ws.Range('B1').Value2
             Add = $xl.Run('AddNums', 2, 3); Greeting = $xl.Run('Greeting')
             Version = [System.__ComObject].InvokeMember('BookVersion', [Reflection.BindingFlags]::InvokeMethod, $null, $wb, $null)
+            RunVersion = $xl.Run('ThisWorkbook.BookVersion')
+            MacroVersion = (Invoke-ExcelMacro -Excel $xl -Name 'ThisWorkbook.BookVersion')
             Components = (@($wb.VBProject.VBComponents | ForEach-Object { $_.Name + ':' + $_.Type }) -join ',')
         }
     }
@@ -333,6 +335,8 @@ Invoke-Case 'cells-and-vba' {
     Assert 'AddNums(2,3) = 5' ($r.Add -eq 5) $r.Add
     Assert 'Japanese string from VBA' ($r.Greeting -eq $S.Greeting) $r.Greeting
     Assert 'ThisWorkbook code replaced' ($r.Version -eq '1.1') $r.Version
+    Assert 'Run on a ThisWorkbook function returns nothing as documented' ($null -eq $r.RunVersion) $r.RunVersion
+    Assert 'Invoke-ExcelMacro on a ThisWorkbook function returns nothing as documented' ($null -eq $r.MacroVersion) $r.MacroVersion
     Assert 'components' ($r.Components -eq 'ThisWorkbook:100,Sheet1:100,CalcOptions:2,Util:1') $r.Components
     $export = Invoke-Script (Join-Path $scripts 'Export-Vba.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'export'))
     Assert 'Export-Vba exit 0' ($export.Exit -eq 0) $export.Output

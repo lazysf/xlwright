@@ -27,7 +27,7 @@ customUI の要素名や属性を間違えても、Excel は何も言わずに�
 
 ## Excel 以外で保存しない
 
-Excel で保存しても customUI は残るため、埋め込んだ後に COM で再編集してよい。openpyxl で保存すると、リボンが読み込まれなくなるので混ぜない。openpyxl 3.1.5 の `keep_vba=True` で確かめた結果、`customUI14.xml` 自体は残るが `_rels/.rels` の関連付けが消え、Excel で開いても `onLoad` が動かなかった。VBA とセルの値は残る。混ぜてしまった場合は、`Add-CustomUI.ps1` をもう一度かければ関連付けが戻り、リボンも読み込まれる。
+Excel で保存しても customUI は残るため、埋め込んだ後に COM で再編集してよい。openpyxl で保存すると、リボンが読み込まれなくなった例があるので混ぜない。元にしたスキルの repo で openpyxl 3.1.5 の `keep_vba=True` を確かめた時は、`customUI14.xml` 自体は残ったが `_rels/.rels` の関連付けが消え、Excel で開いても `onLoad` が動かなかった。VBA とセルの値は残った。混ぜてしまった場合は、`Add-CustomUI.ps1` をもう一度かける。同じ時に、これで関連付けが戻り、リボンも読み込まれた。この repo では、どれも確かめていない。
 
 ## 見え方を XML と照らす
 

@@ -209,7 +209,9 @@ try {
         $message = "The image is $($result.Width) x $($result.Height) px, not the requested $Width x $Height."
         $screenWidth = [XlWright.Screenshot]::GetSystemMetrics(0)   # SM_CXSCREEN
         $screenHeight = [XlWright.Screenshot]::GetSystemMetrics(1)  # SM_CYSCREEN
-        if ($Width -gt $screenWidth -or $Height -gt $screenHeight) {
+        # Only at 100 %: with other scaling these metrics may be scaled for this process while the image is in
+        # pixels of the screen, so the comparison would not hold; the warning about the scaling stands instead.
+        if ($dpi -eq 96 -and ($Width -gt $screenWidth -or $Height -gt $screenHeight)) {
             $message += " Excel makes a window larger than the screen ($screenWidth x $screenHeight px) smaller."
         }
         $warnings += $message

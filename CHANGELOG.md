@@ -8,6 +8,7 @@
 
 - Excel のオプション「アドインのユーザー インターフェイス エラーを表示する」がオンの時に、誤りのあるリボン XML のブックで `Test-RibbonLayout.ps1` と `Invoke-RibbonButton.ps1` が `WindowState` の `0x800AC472` で失敗していた。ブックを閉じる処理も拒まれ、Excel は強制的に止められていた。Excel が出すダイアログを閉じ、その文言（誤りの行と説明）を `Error` に入れて止まるようにした。
 - `Save-WorkbookScreenshot.ps1` で画面より大きい `-Width` / `-Height` を指定すると、画像は黙って縮んでいた。縮んだ時は `Warnings` に出すようにした。文書の「画像も同じ大きさになる」も直した。
+- `Test-Prerequisite.ps1 -Vba` が、sandbox などで `AccessVBOM` のレジストリを読めなかった時にも「値が 1 でない」と報告し、人に設定の変更を頼むよう案内していた。読めなかった時は別の問題として、設定ではなく権限の引き上げを求めるようにした。
 
 ### Added
 

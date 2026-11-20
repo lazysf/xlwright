@@ -682,6 +682,28 @@ Invoke-Case 'prerequisite' {
         $r = Get-ExcelPrerequisite -Vba
         Assert 'AccessVBOM 1 by user policy, 0 by machine policy: no problem' ($r.Ready -eq $true -and $r.AccessVBOM.Value -eq 1 -and $r.AccessVBOM.Enabled -eq $true) ($r | ConvertTo-Json -Compress -Depth 6)
     }
+    # A key that cannot be read (e.g. in a sandbox) is not the setting: the problem asks for the rights, not the setting.
+    & $mocked 'Get-ItemProperty' { throw (New-Object System.UnauthorizedAccessException 'simulated: registry access denied') } {
+        $sheet = Get-ExcelPrerequisite
+        $vba = Get-ExcelPrerequisite -Vba
+        Assert 'AccessVBOM unreadable without -Vba: not a problem' ($sheet.Ready -eq $true -and $null -eq $sheet.AccessVBOM.Value -and $sheet.AccessVBOM.Enabled -eq $false) ($sheet | ConvertTo-Json -Compress -Depth 6)
+        Assert 'AccessVBOM unreadable with -Vba: asks for the rights, not the setting' ($vba.Ready -eq $false -and @($vba.Problems).Count -eq 1 -and
+            [string]$vba.Problems[0] -like 'AccessVBOM could not be read (*simulated: registry access denied*do not ask the user to change the setting*') ($vba | ConvertTo-Json -Compress -Depth 6)
+    }
+    & $mocked 'Get-ItemProperty' {
+        param($Path)
+        if ($Path -like '*\Policies\*') { throw (New-Object System.UnauthorizedAccessException 'simulated: policy key denied') }
+        [pscustomobject]@{ AccessVBOM = 1 }
+    } {
+        $r = Get-ExcelPrerequisite -Vba
+        Assert 'policy keys unreadable, 1 by the user: not taken as enabled' ($r.Ready -eq $false -and $r.AccessVBOM.Value -eq 1 -and $r.AccessVBOM.Enabled -eq $false -and
+            [string]$r.Problems[0] -like 'AccessVBOM could not be read (*Policies*') ($r | ConvertTo-Json -Compress -Depth 6)
+    }
+    & $mocked 'Get-ItemProperty' { throw (New-Object System.Management.Automation.PSArgumentException 'simulated: no such value') } {
+        $r = Get-ExcelPrerequisite -Vba
+        Assert 'AccessVBOM not set anywhere: the setting is asked for' ($r.Ready -eq $false -and $null -eq $r.AccessVBOM.Value -and
+            @($r.Problems).Count -eq 1 -and [string]$r.Problems[0] -like 'AccessVBOM is not 1*') ($r | ConvertTo-Json -Compress -Depth 6)
+    }
     & $mocked 'Invoke-CimMethod' { throw 'simulated: access denied' } {
         $r = Get-ExcelPrerequisite
         Assert 'WMI call throws: a problem with the reason' ($r.Ready -eq $false -and $r.Wmi.Ok -eq $false -and $r.Wmi.Error -eq 'simulated: access denied' -and [string]$r.Problems[0] -like '*cannot be used: simulated: access denied*') ($r | ConvertTo-Json -Compress -Depth 6)

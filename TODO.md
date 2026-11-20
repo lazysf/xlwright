@@ -10,11 +10,7 @@
 
 理由が、今の機能の穴か、スキルが選ばれる範囲の誤りに当たるものです。上から順に進めます。
 
-- [ ] `Test-Prerequisite.ps1` が、`AccessVBOM` を読めなかった時も「1 ではない」と案内する。
-  - 記載: 2026-11-20（外部の実機調査。Codex の sandbox の中）
-  - 理由: `Get-ExcelPrerequisite`（`XlWright.psm1`）は、レジストリを `-ErrorAction SilentlyContinue` で読む。読み取りの失敗も未設定も `null` になり、Problems は人に設定を頼むよう案内する。sandbox の中でこれを読んだ AI が、端末の設定が無効だと取り違えた。sandbox の中では COM と WMI もどのみち拒まれる（`docs/notes/codex-sandbox.md`）ので、害は案内の誤りに限られる。
-  - 足りる形: Problems の文言を、1 でないか読めなかった、とすること。読めない時は、先に sandbox の外での実行を求めるよう書くこと。
-  - やらないこと: 読み取りの失敗を `Value` と分けて返すこと。この端末では読み取りの拒否を再現できず、試験を書けない。
+今は、この節に残っている項目はありません。
 
 ## 依頼が来るまで保留
 

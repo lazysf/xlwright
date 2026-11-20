@@ -520,7 +520,8 @@ function Get-ExcelPrerequisite {
     A problem is: a running Excel, a process that cannot be started through WMI (one hidden "cmd.exe /c exit"
     is started to find out, the way the watchdog is), with -Vba an AccessVBOM that is not 1, and with -Path a
     workbook that does not exist, is not in a format this skill handles, or has an owner file (~$<name>) next to it,
-    i.e. is open somewhere.
+    i.e. is open somewhere. An AccessVBOM key that cannot be read (not one that is missing) is a problem of its own
+    with -Vba, which asks for the rights to read it rather than for the setting.
     The Git state of the workbook is reported but is never a problem.
     #>
     [CmdletBinding()]
@@ -546,14 +547,24 @@ function Get-ExcelPrerequisite {
     # A value set by policy is taken before the one the user set in the Trust Center. The order of the two policy keys,
     # and that a policy value wins at all, is not in the Microsoft documentation and was not checked on a machine with
     # a policy (docs/notes/prerequisite.md).
+    # A missing key or value is "not set". Any other failure is a key that could not be read, e.g. in a sandbox:
+    # a policy above the value found is then unknown, so the value is not taken as enabled.
     $value = $null
+    $readError = $null
     foreach ($key in 'HKCU:\Software\Policies\Microsoft\Office\16.0\Excel\Security',
         'HKLM:\Software\Policies\Microsoft\Office\16.0\Excel\Security', 'HKCU:\Software\Microsoft\Office\16.0\Excel\Security') {
-        $value = (Get-ItemProperty -Path $key -Name AccessVBOM -ErrorAction SilentlyContinue).AccessVBOM
+        try { $value = (Get-ItemProperty -Path $key -Name AccessVBOM -ErrorAction Stop).AccessVBOM }
+        catch [System.Management.Automation.ItemNotFoundException], [System.Management.Automation.PSArgumentException] { }
+        catch { if (-not $readError) { $readError = $key + ': ' + $_.Exception.Message } }
         if ($null -ne $value) { break }
     }
-    $enabled = $value -eq 1
-    if ($Vba -and -not $enabled) {
+    $enabled = ($value -eq 1) -and -not $readError
+    if ($Vba -and $readError) {
+        $problems.Add('AccessVBOM could not be read (' + $readError + '). This is a permission or sandbox problem, ' +
+            'not the setting: ask to run outside the sandbox or with the needed rights first; do not ask the user to ' +
+            'change the setting for this.')
+    }
+    elseif ($Vba -and -not $enabled) {
         $problems.Add('AccessVBOM is not 1, so VBA cannot be read or changed. Ask the user to trust access to the ' +
             'VBA project object model; do not change the setting yourself.')
     }

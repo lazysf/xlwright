@@ -9,7 +9,7 @@
 | `Ready` | `Problems` が空なら `true` | - |
 | `Problems` | 理由と次にすることを、1 件 1 文で | - |
 | `Excel` | `Running` と、`Processes`（`Id`、`StartTime`、`WindowTitle`） | Excel が動いている |
-| `AccessVBOM` | `Value`（レジストリの値。ポリシーのキー（`HKCU`、`HKLM` の順）を先に読み、利用者の設定のキーは最後。どれにも無ければ `null`）と `Enabled` | `-Vba` を付けていて、値が `1` でない |
+| `AccessVBOM` | `Value`（レジストリの値。ポリシーのキー（`HKCU`、`HKLM` の順）を先に読み、利用者の設定のキーは最後。どれにも無ければ `null`）と `Enabled` | `-Vba` を付けていて、値が `1` でない。キーを読めなかった時（sandbox など）は別の問題になり、設定ではなく権限の引き上げを求める。その時、読めたほかの値が `1` でも `Enabled` は `false` |
 | `Wmi` | `Ok` と `Error` | WMI からプロセスを作れない |
 | `Workbook` | `Path`、`Exists`、`OpenElsewhere`、`Git`。`-Path` が無ければ `null` | ブックが無い。扱わない形式のブック（SKILL.md の「扱うブックの形式」）。ブックがほかで開かれている |
 | `Workbook.Git` | `Available`（git が使える）、`InRepository`、`Tracked`、`Uncommitted`。分からない項目は `null` | 問題にしない |

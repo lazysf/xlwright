@@ -1416,8 +1416,30 @@ namespace XlWrightTest {
         $default = & $shoot 'default' @()
         Assert 'default: exit 0, no error, the active sheet from A1' ($default.Exit -eq 0 -and $null -eq $default.Json.Error -and
             $default.Json.Path -eq $book -and $default.Json.Sheet -eq 'Main' -and [string]$default.Json.VisibleRange -like 'A1:*') $default.Text
-        Assert 'default: 1280 x 800 PNG' ($default.Json.Width -eq 1280 -and $default.Json.Height -eq 800 -and $default.Json.ImageFile -eq $default.Png -and
-            (Test-Path -LiteralPath $default.Png)) $default.Text
+        # Excel makes a window larger than the screen smaller (docs/notes/screenshot.md). Which screen sets the
+        # limit with several monitors has not been checked; the primary one is taken.
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+        $screen = [System.Windows.Forms.SystemInformation]::PrimaryMonitorSize
+        $shrunk = @($default.Json.Warnings | Where-Object { $_ -like '*not the requested*' })
+        if ($screen.Width -ge 1280 -and $screen.Height -ge 800) {
+            Assert 'default: 1280 x 800 PNG, no size warning' ($default.Json.Width -eq 1280 -and $default.Json.Height -eq 800 -and $shrunk.Count -eq 0 -and
+                $default.Json.ImageFile -eq $default.Png -and (Test-Path -LiteralPath $default.Png)) $default.Text
+        }
+        else {
+            Assert 'default on a screen smaller than 1280 x 800: smaller PNG, size warning' ($default.Json.Width -le 1280 -and $default.Json.Height -le 800 -and
+                $shrunk.Count -eq 1 -and $default.Json.ImageFile -eq $default.Png -and (Test-Path -LiteralPath $default.Png)) $default.Text
+        }
+        $tallHeight = $screen.Height + 200
+        $tall = & $shoot 'taller-than-screen' @('-Height', [string]$tallHeight)
+        $tallSize = $null
+        if (Test-Path -LiteralPath $tall.Png) {
+            $tallImage = New-Object System.Drawing.Bitmap($tall.Png)
+            try { $tallSize = @($tallImage.Width, $tallImage.Height) } finally { $tallImage.Dispose() }
+        }
+        Assert 'taller than the screen: exit 0, a smaller image, the reason in Warnings' ($tall.Exit -eq 0 -and $tall.Json.Height -lt $tallHeight -and
+            @($tall.Json.Warnings | Where-Object { $_ -like '*not the requested*larger than the screen*' }).Count -eq 1) $tall.Text
+        Assert 'taller than the screen: Width and Height are the size of the PNG' ($tallSize -and $tallSize[0] -eq $tall.Json.Width -and
+            $tallSize[1] -eq $tall.Json.Height) (($tallSize -join ' x ') + ' ' + $tall.Text)
         # A hidden Excel window is drawn black: the fill shows only if the window was really shown.
         Assert 'default: the magenta fill of Main drawn, not the green of Far' ($default.Colors -and $default.Colors[0] -gt 500 -and $default.Colors[1] -eq 0) ($default.Colors -join ',')
 

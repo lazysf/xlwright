@@ -33,7 +33,8 @@ param(
     [string]$Sheet,
     # A cell or range of -Sheet (or of the active sheet) to scroll to the top left, e.g. A100.
     [string]$Range,
-    # The window size in pixels.
+    # The window size in pixels. Excel makes a window larger than the screen smaller; the image then has
+    # the smaller size and Warnings says so.
     [ValidateRange(400, 8000)][int]$Width = 1280,
     [ValidateRange(300, 8000)][int]$Height = 800,
     # Let macros and events run, e.g. Workbook_Open or a ribbon onLoad that changes what is shown.
@@ -202,6 +203,17 @@ try {
         [ordered]@{ Sheet = [string]$target.Name; VisibleRange = $visible; UserForm = $shownForm; ImageFile = $image; Width = $size[0]; Height = $size[1] }
     }
     foreach ($key in @($shot.Keys)) { $result[$key] = $shot[$key] }
+    # Excel makes a window larger than the screen smaller when Width and Height are set, while still hidden
+    # (docs/notes/screenshot.md). The image is still usable, so this is a warning.
+    if (-not $UserForm -and ($result.Width -ne $Width -or $result.Height -ne $Height)) {
+        $message = "The image is $($result.Width) x $($result.Height) px, not the requested $Width x $Height."
+        $screenWidth = [XlWright.Screenshot]::GetSystemMetrics(0)   # SM_CXSCREEN
+        $screenHeight = [XlWright.Screenshot]::GetSystemMetrics(1)  # SM_CYSCREEN
+        if ($Width -gt $screenWidth -or $Height -gt $screenHeight) {
+            $message += " Excel makes a window larger than the screen ($screenWidth x $screenHeight px) smaller."
+        }
+        $warnings += $message
+    }
 }
 catch {
     $result.Error = $_.Exception.Message

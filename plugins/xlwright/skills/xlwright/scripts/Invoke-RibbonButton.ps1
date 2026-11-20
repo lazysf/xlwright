@@ -11,6 +11,8 @@ through their MSAA default action, which unlike UI Automation does not bring Exc
 a visible window; whether the ribbon is built for a hidden one has not been checked. The workbook is
 closed without saving. Workbook_Open does not run (see XlWright.psm1), the button's own macro does.
 The tab and the button must be uniquely named in their respective search scopes.
+When Excel rejects the customUI XML and the option "Show add-in user interface errors" is on, the dialog that
+gives the reason is closed and its texts are put in Error; with the option off, the tab is not found.
 
 In a MsgBox both the message and the buttons are exposed as Pane elements, so they cannot be told
 apart by control type. Each entry of Dialogs lists them all, e.g. ["OK", "<message>"].

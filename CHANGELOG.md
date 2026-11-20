@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Excel のオプション「アドインのユーザー インターフェイス エラーを表示する」がオンの時に、誤りのあるリボン XML のブックで `Test-RibbonLayout.ps1` と `Invoke-RibbonButton.ps1` が `WindowState` の `0x800AC472` で失敗していた。ブックを閉じる処理も拒まれ、Excel は強制的に止められていた。Excel が出すダイアログを閉じ、その文言（誤りの行と説明）を `Error` に入れて止まるようにした。
+
 ### Added
 
 - `Publish-Workbook.ps1` が、VBA をロックしたアドイン（`.xlam`）を出力できる。`-FileName` の拡張子を `.xlam` にする（`-FileName tool.xlam`）。作業ブックの形式は変わらない。

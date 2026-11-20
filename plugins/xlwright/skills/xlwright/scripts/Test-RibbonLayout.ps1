@@ -28,6 +28,10 @@ Separators are not exposed by UI Automation and are ignored.
 A group that Excel collapsed into one button for lack of width is listed in Collapsed and its controls
 are not compared. The window is maximized to avoid this.
 
+When Excel rejects the XML, the custom tabs are reported missing (exit 1). With the Excel option "Show add-in
+user interface errors" on, Excel shows the reason in a dialog instead: the dialog is closed and its texts are
+put in Error (exit 2), e.g. the line and the attribute that Excel rejected.
+
 The result is written as UTF-8 JSON to -OutFile.
 Exit code: 0 everything matched, 1 a mismatch was found, 2 the check could not be done (Error).
 #>

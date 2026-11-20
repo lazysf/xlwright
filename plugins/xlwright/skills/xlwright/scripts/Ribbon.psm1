@@ -30,6 +30,33 @@ namespace XlWright
         static extern int AccessibleChildren(IAccessible container, int start, int count,
             [Out] object[] children, out int obtained);
 
+        public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+        [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc proc, IntPtr lParam);
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int size);
+
+        // The top-level windows with this class that belong to the process of the window.
+        public static IntPtr[] FindProcessWindows(IntPtr window, string className)
+        {
+            uint processId;
+            GetWindowThreadProcessId(window, out processId);
+            List<IntPtr> found = new List<IntPtr>();
+            EnumWindows(delegate(IntPtr hWnd, IntPtr lParam)
+            {
+                uint owner;
+                GetWindowThreadProcessId(hWnd, out owner);
+                if (owner == processId)
+                {
+                    System.Text.StringBuilder name = new System.Text.StringBuilder(256);
+                    GetClassName(hWnd, name, name.Capacity);
+                    if (name.ToString() == className) found.Add(hWnd);
+                }
+                return true;
+            }, IntPtr.Zero);
+            return found.ToArray();
+        }
+
         const uint ObjIdClient = 0xFFFFFFFC;  // OBJID_CLIENT
         const int MaxDepth = 20;
         const int MaxVisited = 20000;
@@ -102,11 +129,44 @@ namespace XlWright
 # Maximizes the window: a narrow window makes Excel collapse groups and hide their buttons.
 # A width (in points) gives a normal window of that width instead; the tests use it to make groups collapse.
 function Set-RibbonWindow($Xl, [int]$Width) {
-    if ($Width -gt 0) {
-        $Xl.WindowState = -4143  # xlNormal
-        $Xl.Width = $Width
+    try {
+        if ($Width -gt 0) {
+            $Xl.WindowState = -4143  # xlNormal
+            $Xl.Width = $Width
+        }
+        else { $Xl.WindowState = -4137 }  # xlMaximized
     }
-    else { $Xl.WindowState = -4137 }  # xlMaximized
+    catch {
+        $hresult = $_.Exception.GetBaseException().HResult
+        if ($hresult -ne [int]0x800AC472) { throw }
+        $text = Close-CustomUIErrorDialog $Xl
+        if ($null -eq $text) { throw }
+        throw ('Excel rejected the custom UI XML: ' + $text)
+    }
+}
+
+# With the Excel option "Show add-in user interface errors" on, Excel shows a rejected customUI in a
+# NUIDialog and refuses COM calls (0x800AC472) while it is open; closing it lets the workbook close
+# (docs/notes/ribbon-ui-error-dialog.md). Returns the texts of the dialog, or $null if there is none.
+function Close-CustomUIErrorDialog($Xl, [double]$TimeoutSeconds = 3) {
+    $hwnd = [IntPtr]$Xl.Hwnd
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        $dialogs = @([XlWright.RibbonMsaa]::FindProcessWindows($hwnd, 'NUIDialog'))
+        if ($dialogs.Count -gt 0) { break }
+        Start-Sleep -Milliseconds 300
+    } while ((Get-Date) -lt $deadline)
+    if ($dialogs.Count -eq 0) { return $null }
+    $texts = @()
+    foreach ($handle in $dialogs) {
+        $dialog = $AE::FromHandle($handle)
+        $names = @(foreach ($e in $dialog.FindAll($Scope::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) {
+            if ($e.Current.Name) { $e.Current.Name.Trim() }
+        })
+        $texts += ($names -join ' | ')
+        $dialog.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
+    }
+    $texts -join ' || '
 }
 
 # A group that Excel collapsed for lack of width is one drop-down (MenuItem) carrying the group label

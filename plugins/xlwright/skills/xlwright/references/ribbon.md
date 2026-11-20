@@ -23,6 +23,8 @@ Backstage（`<backstage>`）と右クリックのメニュー（`<contextMenus>`
 
 customUI の要素名や属性を間違えても、Excel は何も言わずにリボンを無視する。無視されたことは、`Test-RibbonLayout.ps1` でタブが `missing` になることで分かる（下の「見え方を XML と照らす」）。どの要素が誤りかを見るには、Excel のオプション「詳細設定 → 全般 → アドインのユーザー インターフェイス エラーを表示する」が要る。これはユーザーの設定なので、必要ならユーザーに頼む。
 
+このオプションがオンだと、Excel は誤りをダイアログに出し、ダイアログが開いている間は COM の呼び出しを拒む。`Test-RibbonLayout.ps1` と `Invoke-RibbonButton.ps1` は、このダイアログを閉じ、その文言（行、列、誤りの説明）を `Error` に入れて止まる。`Error` は `Excel rejected the custom UI XML:` で始まる。同じ XML でも、オプションがオフならタブが `missing`（`Test-RibbonLayout.ps1` は終了コード 1）、オンなら `Error`（終了コード 2）になる。
+
 ## Excel 以外で保存しない
 
 Excel で保存しても customUI は残るため、埋め込んだ後に COM で再編集してよい。openpyxl で保存すると、リボンが読み込まれなくなるので混ぜない。openpyxl 3.1.5 の `keep_vba=True` で確かめた結果、`customUI14.xml` 自体は残るが `_rels/.rels` の関連付けが消え、Excel で開いても `onLoad` が動かなかった。VBA とセルの値は残る。混ぜてしまった場合は、`Add-CustomUI.ps1` をもう一度かければ関連付けが戻り、リボンも読み込まれる。
@@ -35,7 +37,7 @@ Excel で保存しても customUI は残るため、埋め込んだ後に COM �
 powershell.exe -NoProfile -File "<skill>/scripts/Test-RibbonLayout.ps1" -Path <workbook> -OutFile <result.json> -ScreenshotDir <既存のフォルダ>
 ```
 
-終了コードは、0 が一致、1 が食い違いあり、2 が確かめられなかった（customUI が無い、簡易表示のリボンなど。理由は `Error`）。
+終了コードは、0 が一致、1 が食い違いあり、2 が確かめられなかった（customUI が無い、簡易表示のリボン、Excel がダイアログで XML を拒んだ、など。理由は `Error`）。
 
 | 照らすもの | 対象 |
 | --- | --- |

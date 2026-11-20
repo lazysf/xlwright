@@ -1247,6 +1247,11 @@ if ($Full) {
         $badJson = Join-Path $dir 'rejected.json'
         $bad = Invoke-Script $layout @('-Path', $book, '-OutFile', $badJson, '-FindTimeoutSeconds', '5')
         $badRes = [IO.File]::ReadAllText($badJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        $badClickJson = Join-Path $dir 'rejected-click.json'
+        $badClick = Invoke-Script (Join-Path $scripts 'Invoke-RibbonButton.ps1') @('-Path', $book, '-TabLabel', $S.Tab, '-ButtonLabel', $S.Button, '-OutFile', $badClickJson, '-FindTimeoutSeconds', '5')
+        $badClickRes = [IO.File]::ReadAllText($badClickJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        $left = Wait-NoExcel 20
+        Assert 'rejected XML: no Excel left' ($left.Count -eq 0) ('PIDs ' + ($left -join ','))
         $add = Invoke-Script (Join-Path $scripts 'Add-CustomUI.ps1') @('-Path', $book, '-XmlPath', (Join-Path $data 'ribbon\collapse.xml'))
         Assert 'collapse.xml: embed exit 0' ($add.Exit -eq 0) $add.Output
         # Maximized: nothing collapses, and a group holding only a menu with the group label is not taken for collapsed.
@@ -1265,7 +1270,17 @@ if ($Full) {
         $click = Invoke-Script (Join-Path $scripts 'Invoke-RibbonButton.ps1') @('-Path', $book, '-TabLabel', 'Wide', '-ButtonLabel', 'G6-4', '-OutFile', $clickJson, '-FindTimeoutSeconds', '5', '-WindowWidth', '420')
         $clickRes = [IO.File]::ReadAllText($clickJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
         Assert 'narrow: click names the collapsed groups' ($click.Exit -eq 1 -and -not $clickRes.Clicked -and [string]$clickRes.Error -like '*collapsed for lack of width:*G6*') ($clickRes | ConvertTo-Json -Compress)
-        Assert 'rejected XML: exit 1, tab missing' ($bad.Exit -eq 1 -and @($badRes.Mismatches | Where-Object { $_.Path -eq $S.Tab -and $_.Actual -eq 'missing' }).Count -eq 1) ($badRes | ConvertTo-Json -Compress -Depth 8)
+        # Which of the two results comes depends on the Excel option "Show add-in user interface errors",
+        # which the tests do not change (docs/notes/ribbon-ui-error-dialog.md).
+        $badDetail = $badRes | ConvertTo-Json -Compress -Depth 8
+        if ($bad.Exit -eq 2) {
+            Assert 'rejected XML, error dialog: exit 2, the reason from the dialog' ([string]$badRes.Error -like "Excel rejected the custom UI XML:*'sise'*") $badDetail
+            Assert 'rejected XML, error dialog: the click reports the reason' ($badClick.Exit -eq 1 -and -not $badClickRes.TabFound -and [string]$badClickRes.Error -like "Excel rejected the custom UI XML:*'sise'*") ($badClickRes | ConvertTo-Json -Compress)
+        }
+        else {
+            Assert 'rejected XML: exit 1, tab missing' ($bad.Exit -eq 1 -and @($badRes.Mismatches | Where-Object { $_.Path -eq $S.Tab -and $_.Actual -eq 'missing' }).Count -eq 1) $badDetail
+            Assert 'rejected XML: the click does not find the tab' ($badClick.Exit -eq 1 -and -not $badClickRes.TabFound -and [string]$badClickRes.Error -like 'Not found: tab*') ($badClickRes | ConvertTo-Json -Compress)
+        }
     }
 
     Invoke-Case 'publish' -WatchForeground {

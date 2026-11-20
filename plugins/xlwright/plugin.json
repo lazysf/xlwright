@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "xlwright",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Excel を土台にしたツール（マクロ、UserForm、カスタムリボンを持つブック）を、Windows 版 Excel と PowerShell COM で作って確かめるスキル。VBA をロックした配布ブックも出力する。",
   "author": {
     "name": "lazysf"

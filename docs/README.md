@@ -15,6 +15,7 @@
   - [vba-one-session.md](./notes/vba-one-session.md): VBA の取り込み、コンパイル、マクロの実行を 1 つの Excel で続けて行えるかの実測と、`Import-ExcelVba` などの関数に分けた理由。
   - [vba-prune.md](./notes/vba-prune.md): ブックから VBA のコンポーネントを消す時に COM でできることの実測。
   - [vba-references.md](./notes/vba-references.md): VBA の参照設定が書き出しと取り込みで引き継がれないことの実測。
+  - [addin-ribbon-close.md](./notes/addin-ribbon-close.md): `.xlam` を閉じた後にリボンのタブが残って見える 2 つの理由（前面にないウィンドウ、`OnTime` で閉じ直すアドイン）の実測。
   - [publish-addin.md](./notes/publish-addin.md): 配布の出力をアドイン（`.xlam`）にする方法と、作業ブックをブックのままにする理由と、その実測。
   - [publish-personal-info.md](./notes/publish-personal-info.md): 配布ブックに残る個人の情報の場所と、`RemovePersonalInformation` で消える範囲の実測。
   - [xlsb.md](./notes/xlsb.md): `.xlsb` をスキルのスクリプトに順に通した実測。

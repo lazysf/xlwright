@@ -368,6 +368,7 @@ try {
 
     Use-ExcelWorkbook -Path $Path -Visible -EnableMacros -ScriptBlock {
         param($xl, $wb)
+        $excelPid = Get-ExcelProcessId $xl
         Set-RibbonWindow $xl $WindowWidth
         $win = $AE::FromHandle([IntPtr]$xl.Hwnd)
 
@@ -384,6 +385,8 @@ try {
             if ($missing.Count -eq 0) { break }
             Start-Sleep -Milliseconds 300
         } while ((Get-Date) -lt $deadline)
+        # Tabs that never came may be a rejected XML whose dialog came after Set-RibbonWindow.
+        if ($missing.Count -gt 0) { Assert-NoCustomUIError $excelPid }
         if ($tabs.Count -eq 0) { throw 'No ribbon tab found. Is the ribbon collapsed or hidden?' }
 
         if ($fromScratch) {

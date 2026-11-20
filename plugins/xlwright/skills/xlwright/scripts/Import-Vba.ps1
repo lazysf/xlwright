@@ -18,7 +18,7 @@ Imports UTF-8 (no BOM), LF .bas / .cls / .frm files and saves the workbook.
   workbook. Each listed reference that the workbook does not have (matched by Guid, the version is not
   compared) is reported as a warning after the import; no reference is added or removed.
 
-The work is done by Import-ExcelVba in XlWright.psm1, which a script block can also call to import, compile
+The work is that of Import-ExcelVba in XlWright.psm1, which a script block can also call to import, compile
 and run macros in one Excel instance.
 
 Output: one line per component: "imported: <name>" or "replaced document module: <name>".
@@ -29,13 +29,13 @@ param(
     [Parameter(Mandatory)][string]$SourceDir
 )
 $ErrorActionPreference = 'Stop'
-Import-Module (Join-Path $PSScriptRoot 'XlWright.psm1') -Force
+$xlModule = Import-Module (Join-Path $PSScriptRoot 'XlWright.psm1') -Force -PassThru
 
-# Bad sources fail here, before Excel starts. Read-VbaSource is not exported, so it is called in the module scope;
-# Import-ExcelVba reads the sources again inside the session.
-[void](& (Get-Module XlWright) { param($dir) Read-VbaSource $dir } $SourceDir)
+# Bad sources fail here, before Excel starts. The steps of Import-ExcelVba are not exported, so they are called in
+# the scope of the module just imported; the sources read here are the ones imported.
+$read = & $xlModule { param($dir) Read-VbaSource $dir } $SourceDir
 
 Use-ExcelWorkbook -Path $Path -Save -ScriptBlock {
     param($xl, $wb)
-    Import-ExcelVba -Workbook $wb -SourceDir $SourceDir
+    & $xlModule { param($workbook, $sources) Import-VbaSource -Workbook $workbook -Read $sources } $wb $read
 }

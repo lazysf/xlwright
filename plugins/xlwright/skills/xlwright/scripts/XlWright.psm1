@@ -50,7 +50,7 @@ public delegate bool EnumProc(System.IntPtr hWnd, System.IntPtr lParam);
 [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(System.IntPtr hWnd, System.Text.StringBuilder text, int count);
 
 // Raised with every change of the members; see Assert-TypeRevision.
-public const int Revision = 2;
+public const int Revision = 3;
 
 public const uint WM_CLOSE = 0x10;
 public const uint BM_CLICK = 0xF5;
@@ -83,6 +83,9 @@ static System.IntPtr FindWindowOf(uint processId, string className) {
 // These dialogs are not owned by the Excel window (a compile error dialog is owned by the VBE window),
 // so they are looked up among the top-level windows of the process.
 public static System.IntPtr Find(uint processId) { return FindWindowOf(processId, "#32770"); }
+
+// Other top-level windows of the process, e.g. the NUIDialog that reports a rejected customUI (Ribbon.psm1).
+public static System.IntPtr FindVisible(uint processId, string className) { return FindWindowOf(processId, className); }
 
 public static bool IsEditorVisible(uint processId) {
     return FindWindowOf(processId, "wndclass_desked_gsk") != System.IntPtr.Zero;
@@ -185,7 +188,7 @@ function Assert-TypeRevision([type]$Type, [int]$Revision) {
             $Revision + ") is loaded in this PowerShell session. Run the script in a new powershell.exe.")
     }
 }
-Assert-TypeRevision ([XlWright.Dialog]) 2
+Assert-TypeRevision ([XlWright.Dialog]) 3
 Assert-TypeRevision ([XlWright.ExcelProcess]) 1
 
 function Get-ExcelProcessId($Xl) {
@@ -442,6 +445,23 @@ $script:MacroDialogWatcher = {
     }
 }
 
+# Through InvokeMember, a value wrapped in a PSObject (e.g. a string from Join-Path or Get-Content) fails a String
+# parameter with DISP_E_TYPEMISMATCH; through $Excel.Run(...) it does not (docs/notes/macro-arguments.md). An array
+# argument, which becomes a Variant array, is unwrapped item by item too. The items are replaced in place, not
+# returned through the pipeline, which would unroll the arrays.
+function Expand-ComArgument([object[]]$Items) {
+    for ($i = 0; $i -lt $Items.Length; $i++) {
+        $item = $Items[$i]
+        if ($item -is [psobject]) { $item = $item.psobject.BaseObject }
+        if ($item -is [object[]]) {
+            # A copy, so that the array of the caller is not changed.
+            $item = [object[]]$item.Clone()
+            Expand-ComArgument $item
+        }
+        $Items[$i] = $item
+    }
+}
+
 function Invoke-ExcelMacro {
     <#
     .SYNOPSIS
@@ -483,15 +503,10 @@ function Invoke-ExcelMacro {
     $ps = [PowerShell]::Create()
     [void]$ps.AddScript($script:MacroDialogWatcher.ToString()).AddArgument($state)
     $async = $ps.BeginInvoke()
-    # Through InvokeMember, a value wrapped in a PSObject (e.g. a string from Join-Path or Get-Content) fails a String
-    # parameter with DISP_E_TYPEMISMATCH; through $Excel.Run(...) it does not (docs/notes/macro-arguments.md).
     # A loop rather than the pipeline, which would unroll an argument that is an array.
     $arguments = New-Object object[] $ArgumentList.Count
-    for ($i = 0; $i -lt $ArgumentList.Count; $i++) {
-        $argument = $ArgumentList[$i]
-        if ($argument -is [psobject]) { $argument = $argument.psobject.BaseObject }
-        $arguments[$i] = $argument
-    }
+    for ($i = 0; $i -lt $ArgumentList.Count; $i++) { $arguments[$i] = $ArgumentList[$i] }
+    Expand-ComArgument $arguments
     $value = $null
     $failure = $null
     try {
@@ -873,6 +888,8 @@ $script:VbaExtensions = @{ 1 = '.bas'; 2 = '.cls'; 3 = '.frm'; 100 = '.cls' }
 # Reads and checks the sources without Excel, so that a bad source fails before any code of the workbook changes.
 # Returns Sources (File, Name, Text, ImportBytes, Sidecar, Type) and References (the entries of references.json).
 function Read-VbaSource([string]$SourceDir) {
+    # [IO.File] resolves a relative path against the process directory, which Set-Location does not change.
+    $SourceDir = (Resolve-Path -LiteralPath $SourceDir -ErrorAction Stop).ProviderPath
     $cp932 = [Text.Encoding]::GetEncoding(932, [Text.EncoderFallback]::ExceptionFallback,
         [Text.DecoderFallback]::ExceptionFallback)
     if (Get-ChildItem -LiteralPath $SourceDir -File | Where-Object { $_.Extension -in '.bas', '.cls', '.frm', '.frx' }) {
@@ -956,7 +973,7 @@ function Import-ExcelVba {
     Imports the UTF-8 (no BOM), LF .bas / .cls / .frm files of a source directory into an open workbook.
 
     .DESCRIPTION
-    The rules are those of Import-Vba.ps1, which calls this function and then saves the workbook. This function
+    The rules are those of Import-Vba.ps1, which does the same work and then saves the workbook. This function
     does not save: run it in a script block of Use-ExcelWorkbook with -Save, or in Invoke-ExcelScript.ps1 with -Save.
     All sources are checked before any code of the workbook changes.
 
@@ -970,7 +987,14 @@ function Import-ExcelVba {
         # The folder with standard/, classes/, documents/ and forms/ (and references.json).
         [Parameter(Mandatory)][string]$SourceDir
     )
-    $read = Read-VbaSource $SourceDir
+    Import-VbaSource -Workbook $Workbook -Read (Read-VbaSource $SourceDir)
+}
+
+# Imports what Read-VbaSource read. Import-Vba.ps1 calls it with the sources it read before starting Excel, so that
+# they are read once.
+function Import-VbaSource {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Workbook, [Parameter(Mandatory)]$Read)
     $tmpDir = Join-Path ([IO.Path]::GetTempPath()) ('vba-import-' + [guid]::NewGuid())
     New-Item -ItemType Directory -Path $tmpDir | Out-Null
     try {

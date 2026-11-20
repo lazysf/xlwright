@@ -82,7 +82,12 @@ try {
         Set-RibbonWindow $xl $WindowWidth
         $win = $AE::FromHandle([IntPtr]$xl.Hwnd)
 
-        $tab = Find-RibbonTab $win $TabLabel $FindTimeoutSeconds
+        try { $tab = Find-RibbonTab $win $TabLabel $FindTimeoutSeconds }
+        catch {
+            # A tab that never came may be a rejected XML whose dialog came after Set-RibbonWindow.
+            Assert-NoCustomUIError $excelPid
+            throw
+        }
         $result.TabFound = $true
         $tabRoot = [System.Windows.Automation.TreeWalker]::RawViewWalker.GetParent($tab)
         if (!$tabRoot -or $tabRoot.Current.ControlType -ne $ControlType::Tab) {

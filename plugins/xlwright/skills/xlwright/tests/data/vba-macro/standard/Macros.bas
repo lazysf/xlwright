@@ -11,6 +11,10 @@ Private Function JoinNames(wb As Workbook, a As String, b As String) As String
     JoinNames = wb.Name & "|" & a & "|" & b
 End Function
 
+Private Function JoinArray(items As Variant) As String
+    JoinArray = Join(items, "|")
+End Function
+
 Public Sub CountCall()
     calls = calls + 1
 End Sub

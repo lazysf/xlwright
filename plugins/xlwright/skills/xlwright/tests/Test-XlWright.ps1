@@ -55,7 +55,7 @@ $CasesByFile = [ordered]@{
     'scripts/Export-Vba.ps1' = 'cells-and-vba', 'userform', 'macros-off'
     'scripts/Test-VbaCompile.ps1' = 'vba-compile', 'vba-compile-error', 'macros-off'
     'scripts/Add-CustomUI.ps1' = 'input-rejected', 'workbook-summary', 'ribbon', 'ribbon-layout', 'publish'
-    'scripts/Ribbon.psm1' = 'ribbon', 'ribbon-layout', 'publish'
+    'scripts/Ribbon.psm1' = 'ribbon', 'ribbon-layout', 'publish', 'ribbon-dialog-check'
     'scripts/Invoke-RibbonButton.ps1' = 'ribbon', 'ribbon-layout'
     'scripts/Test-RibbonLayout.ps1' = 'ribbon-layout', 'publish'
     'scripts/Publish-Workbook.ps1' = 'input-rejected', 'publish'
@@ -386,6 +386,17 @@ Invoke-Case 'cells-and-vba' {
         @($wb.VBProject.VBComponents | ForEach-Object { $_.Name + ':' + $_.Type } | Sort-Object) -join ','
     }
     Assert 'partial import: the components that are not in the sources stay' ($names -eq 'CalcOptions:2,Extra:1,Sheet1:100,ThisWorkbook:100,Util:1') $names
+    # A relative -SourceDir after Set-Location, which does not change the process directory that [IO.File] uses.
+    Push-Location -LiteralPath $dir
+    try {
+        $relative = Use-ExcelWorkbook -Path $book -ScriptBlock {
+            param($xl, $wb)
+            $lines = @(Import-ExcelVba -Workbook $wb -SourceDir 'partial' -WarningVariable referenceWarnings -WarningAction SilentlyContinue)
+            [ordered]@{ Lines = $lines -join ','; Warnings = @($referenceWarnings | ForEach-Object { [string]$_ }) -join ' | ' }
+        }
+    }
+    finally { Pop-Location }
+    Assert 'relative -SourceDir: imported, the missing reference warned' ($relative.Lines -eq 'imported: Extra' -and $relative.Warnings -like 'Reference not in the workbook: Scripting *') ($relative | ConvertTo-Json -Compress)
 
     # A reference to another project has no Guid, and Import-Vba.ps1 rejects an entry without one,
     # so recording it would make the export impossible to import again.
@@ -497,6 +508,8 @@ Invoke-Case 'macro' {
             Sum = Invoke-ExcelMacro -Excel $xl -Name 'Macros.AddThree' -ArgumentList 1, 2, 3
             Wrapped = ($a -is [psobject]) -and ($b -is [psobject])
             Joined = Invoke-ExcelMacro -Excel $xl -Name 'Macros.JoinNames' -ArgumentList $wb, $a, $b
+            # One argument that is an array of wrapped strings: VBA receives a Variant array.
+            JoinedArray = Invoke-ExcelMacro -Excel $xl -Name 'Macros.JoinArray' -ArgumentList (, @($a, $b))
             Calls = Invoke-ExcelMacro -Excel $xl -Name 'Macros.CallCount'
             Slow = Invoke-ExcelMacro -Excel $xl -Name 'Macros.Slow'
         }
@@ -505,6 +518,7 @@ Invoke-Case 'macro' {
     Assert 'arguments passed, value returned' ($r.Sum -eq 6) $r.Sum
     Assert 'wrapped strings: the arguments are wrapped' $r.Wrapped $r.Wrapped
     Assert 'wrapped strings: passed to String parameters of a Private function' ($r.Joined -eq ((Split-Path -Leaf $book) + '|a\b|c')) $r.Joined
+    Assert 'wrapped strings in an array argument: passed as a Variant array' ($r.JoinedArray -eq 'a\b|c') $r.JoinedArray
     Assert 'Sub ran twice' ($r.Calls -eq 2) $r.Calls
     Assert 'a macro that takes time is waited for' ($r.Slow -eq 7) $r.Slow
 }
@@ -693,13 +707,34 @@ Invoke-Case 'stop-own-process' {
         $flat -like '*XlWright.DialogofanotherversionofXlWright.psm1*newpowershell.exe*') $output
 }
 
+# The check for the customUI error dialog, on a process that has none. A hidden powershell.exe stands in for Excel.
+# The dialog itself is checked in ribbon-layout, with the Excel option that shows it.
+Invoke-Case 'ribbon-dialog-check' {
+    Import-Module (Join-Path $scripts 'Ribbon.psm1') -Force
+    $child = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 60' -WindowStyle Hidden -PassThru
+    try {
+        $failure = $null
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        try { Assert-NoCustomUIError $child.Id } catch { $failure = $_.Exception.Message }
+        $watch.Stop()
+        Assert 'no dialog: no error' ($null -eq $failure) $failure
+        Assert 'no dialog, no wait: returns at once' ($watch.Elapsed.TotalSeconds -lt 2) ([string]$watch.Elapsed.TotalSeconds + ' s')
+        $failure = $null
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        try { Assert-NoCustomUIError $child.Id 1 } catch { $failure = $_.Exception.Message }
+        $watch.Stop()
+        Assert 'no dialog, 1 s wait: no error after the wait' ($null -eq $failure -and $watch.Elapsed.TotalSeconds -ge 0.9) ([string]$failure + ' ' + $watch.Elapsed.TotalSeconds + ' s')
+    }
+    finally { if (-not $child.HasExited) { Stop-Process -Id $child.Id -Force -ErrorAction SilentlyContinue } }
+}
+
 # -Changed: which cases the changed files select. No Excel is started.
 Invoke-Case 'changed-selection' {
     $show = { param($r) 'All=' + $r.All + ' Cases=' + (@($r.Cases) -join ',') }
     $r = Resolve-ChangedCase @('scripts\Find-CellError.ps1')
     Assert 'a listed script: its cases' ((& $show $r) -eq 'All=False Cases=cell-error,macros-off,publish') (& $show $r)
     $r = Resolve-ChangedCase @('scripts/Ribbon.psm1', 'scripts/Test-RibbonLayout.ps1')
-    Assert 'two scripts: their cases once each, sorted' ((& $show $r) -eq 'All=False Cases=publish,ribbon,ribbon-layout') (& $show $r)
+    Assert 'two scripts: their cases once each, sorted' ((& $show $r) -eq 'All=False Cases=publish,ribbon,ribbon-dialog-check,ribbon-layout') (& $show $r)
     foreach ($file in 'scripts/XlWright.psm1', 'scripts/New-Thing.ps1', 'tests/Test-XlWright.ps1', 'tests/data/vba/standard/Util.bas') {
         $r = Resolve-ChangedCase @('scripts/Find-CellError.ps1', $file)
         Assert ('every case for ' + $file) ((& $show $r) -eq 'All=True Cases=') (& $show $r)

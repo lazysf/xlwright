@@ -14,7 +14,7 @@
 
 利用側のコード（ブックのイベント、`OnTime`）を持たない `.xlam` で確かめた。
 
-1. `.xlsm` に、MsgBox を出す callback の標準モジュールと、ボタン 1 つのカスタムタブ `AddinTab` を埋め込む。Excel で開き、`SaveAs(<path>, 55)` で `.xlam` にする（[publish-addin.md](./publish-addin.md) と同じ変換。ロックはしない）。
+1. `.xlsm` に、MsgBox を出す callback の標準モジュールと、ボタン 1 つのカスタムタブ `AddinTab` を埋め込む。Excel で開き、`SaveAs(<path>, 55)` で `.xlam` にする（[export-addin.md](./export-addin.md) と同じ変換。ロックはしない）。
 2. `Use-ExcelWorkbook -Visible -EnableMacros` で空の `host.xlsx` を開き、その Excel の中で次を順に行う。`.xlam` は `Workbooks.Open` で開き、`Close($false)` で閉じる。
 3. 各段階の後に、表示中のウィンドウごとに `Get-RibbonTabs`（`Ribbon.psm1`）で `AddinTab` の有無を見る。2 回続けて同じ結果になるまで、最大 3 秒待つ。
 4. 同じ手順を、新しい Excel で 2 回流した。閉じた後に前面を入れ替える段階を足して、もう 2 回流した。

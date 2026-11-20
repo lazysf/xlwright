@@ -3,7 +3,7 @@
 - Date: 2026-11-20
 - 出典: 一時フォルダの新しいブックで、`Workbook.RemovePersonalInformation` と `Workbook.RemoveDocumentInformation` を当てて保存し、COM と zip の中身を読んだ実測。Excel 16.0.20527.20196（Microsoft 365）、Windows 11、Windows PowerShell 5.1.26100.9818。値は記録せず、空か、合成の値か、それ以外かだけを見た。
 
-`Publish-Workbook.ps1` は、配布用の写しに `Workbook.RemovePersonalInformation = $true` を立ててから保存する。フラグはファイルに残るので、後のロックの保存でも消えたままになる。作業ブックには立てない。作業ブックの保存でも作成者などが消え、開発中のブックの扱いが変わるため。
+`Export-Workbook.ps1` は、配布用の写しに `Workbook.RemovePersonalInformation = $true` を立ててから保存する。フラグはファイルに残るので、後のロックの保存でも消えたままになる。作業ブックには立てない。作業ブックの保存でも作成者などが消え、開発中のブックの扱いが変わるため。
 
 `RemoveDocumentInformation(xlRDIDocumentProperties)`（`8`）は、タイトルまで消すので使わない。`RemoveDocumentInformation(xlRDIRemovePersonalInformation)`（`4`）は、`RemovePersonalInformation` を `true` にするのと同じ結果だった。`xlRDIAll`（`99`）は、ほかの内容まで消し得るので試していない。定数は Microsoft Learn の `XlRemoveDocInfoType` による。
 
@@ -29,7 +29,7 @@
 - そのブックを開いて編集し、保存し直しても、上の項目は空のままだった。
 - そのブックを `SaveAs` で `.xlam`（`55`）と `.xlsb`（`50`）にしても、空のままだった。`.xlsb` の `xl/comments1.bin` にも、ログインのユーザー名は無かった（UTF-8 と UTF-16 で探した）。処理しない `.xlsb` では、`person.xml` に作成者が残っていた。
 - `.xlam` でマクロ（`AddNums`）が動いた。
-- `Publish-Workbook.ps1` で `.xlsm`、`.xlam`、`.xlsb` を出力すると、`Lock-VbaProject.ps1` の保存の後も、作成者、最終の編集者、管理者、会社は空で、`RemovePersonalInformation` は `true`、メモの作成者はログインのユーザー名でなかった。`.xlsm` の `xl/workbook.xml` に `absPath` は無かった。作業ブックの値は残った（`Test-XlWright.ps1 -Full -Case publish`。この試験のブックにスレッド形式のコメントは無い）。
+- `Publish-Workbook.ps1`（今の `Export-Workbook.ps1`）で `.xlsm`、`.xlam`、`.xlsb` を出力すると、`Lock-VbaProject.ps1` の保存の後も、作成者、最終の編集者、管理者、会社は空で、`RemovePersonalInformation` は `true`、メモの作成者はログインのユーザー名でなかった。`.xlsm` の `xl/workbook.xml` に `absPath` は無かった。作業ブックの値は残った（`Test-XlWright.ps1 -Full -Case publish`。この試験のブックにスレッド形式のコメントは無い）。
 
 ## 未確認
 

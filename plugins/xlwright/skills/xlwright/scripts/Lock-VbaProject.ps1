@@ -1,13 +1,13 @@
-# Locks a closed, disposable publish copy and verifies the saved project.
-# Outputs the names (never the values) of the personal items left in the saved copy; Publish-Workbook.ps1 rejects
+# Locks a closed, disposable export copy and verifies the saved project.
+# Outputs the names (never the values) of the personal items left in the saved copy; Export-Workbook.ps1 rejects
 # the copy or warns on them. Reading them in the session that verifies the lock saves one start of Excel.
 param([Parameter(Mandatory)][string]$Path)
 $ErrorActionPreference = 'Stop'
 
-# The password is thrown away, so a work book locked by mistake could not be unlocked. Only the publish copy
-# that Publish-Workbook.ps1 makes (.excel-publish-<id>.<ext>) is taken, before the workbook is opened.
-if (-not ([IO.Path]::GetFileName($Path)).StartsWith('.excel-publish-', [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Lock-VbaProject.ps1 locks only the publish copy made by Publish-Workbook.ps1; use Publish-Workbook.ps1: $Path"
+# The password is thrown away, so a work book locked by mistake could not be unlocked. Only the export copy
+# that Export-Workbook.ps1 makes (.excel-export-<id>.<ext>) is taken, before the workbook is opened.
+if (-not ([IO.Path]::GetFileName($Path)).StartsWith('.excel-export-', [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Lock-VbaProject.ps1 locks only the export copy made by Export-Workbook.ps1; use Export-Workbook.ps1: $Path"
 }
 
 Import-Module (Join-Path $PSScriptRoot 'XlWright.psm1')
@@ -122,7 +122,7 @@ $null = Use-ExcelWorkbook -Path $Path -Visible -Save -ScriptBlock {
     $project = $vbe = $vbeWindow = $commandBars = $properties = $null
     try {
         $project = $wb.VBProject
-        if ($project.Protection -ne 0) { throw 'The publish copy must have an unlocked VBA project.' }
+        if ($project.Protection -ne 0) { throw 'The export copy must have an unlocked VBA project.' }
         $vbe = $xl.VBE
         $vbeWindow = $vbe.MainWindow
         $vbeWindow.Visible = $true
@@ -164,7 +164,7 @@ $null = Use-ExcelWorkbook -Path $Path -Visible -Save -ScriptBlock {
 Use-ExcelWorkbook -Path $Path -ScriptBlock {
     param($xl, $wb)
     if ($wb.VBProject.Protection -ne 1) {  # vbext_pp_locked
-        throw 'The saved VBA project is not locked. The publish copy was rejected.'
+        throw 'The saved VBA project is not locked. The export copy was rejected.'
     }
     $flags = [Reflection.BindingFlags]
     $properties = $wb.BuiltinDocumentProperties
@@ -175,7 +175,7 @@ Use-ExcelWorkbook -Path $Path -ScriptBlock {
         if (![string]::IsNullOrEmpty([string]$value)) { $name }
     }
     # Only RemovePersonalInformation replaces the comment authors and drops the saved folder path
-    # (docs/notes/publish-personal-info.md), so without it they are taken as kept.
+    # (docs/notes/export-personal-info.md), so without it they are taken as kept.
     if (!$wb.RemovePersonalInformation) {
         $comments = 0
         # An Excel without threaded comments has no CommentsThreaded. PowerShell reads a COM property that does not

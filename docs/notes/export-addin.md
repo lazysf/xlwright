@@ -1,9 +1,9 @@
 # 配布の出力をアドイン（.xlam）にする
 
 - Date: 2026-11-19
-- 出典: 一時フォルダの新しいブックで `Import-Vba.ps1`、`Add-CustomUI.ps1`、`Lock-VbaProject.ps1`、`Test-RibbonLayout.ps1` を流した実測と、`Test-XlWright.ps1 -Full -Case publish`。Excel 16.0.20527.20196（Microsoft 365）、Windows 11、Windows PowerShell 5.1.26100.9818。
+- 出典: 一時フォルダの新しいブックで `Import-Vba.ps1`、`Add-CustomUI.ps1`、`Lock-VbaProject.ps1`、`Test-RibbonLayout.ps1` を流した実測と、`Test-XlWright.ps1 -Full -Case publish`（今の `export`）。Excel 16.0.20527.20196（Microsoft 365）、Windows 11、Windows PowerShell 5.1.26100.9818。
 
-`Publish-Workbook.ps1` は、作業ブックを `.xlsm`（か `.xlsb`）のまま扱い、出力の時だけ `.xlam` に変える。アドインは作業中にシートを見せないので、開発と確かめる作業はブックの方が扱いやすい。アドインで欲しいのは配る成果物だけ、と利用者に確かめた。
+`Export-Workbook.ps1` は、作業ブックを `.xlsm`（か `.xlsb`）のまま扱い、出力の時だけ `.xlam` に変える。アドインは作業中にシートを見せないので、開発と確かめる作業はブックの方が扱いやすい。アドインで欲しいのは配る成果物だけ、と利用者に確かめた。
 
 変換は、取り込みとリボンの埋め込みを済ませた一時コピーを Excel で開き、`Workbook.SaveAs(<path>, 55)`（`xlOpenXMLAddIn`）で保存する。ロックはその後に `.xlam` に掛ける。ロックの確認が、配る `.xlam` そのものを読むようにするため。
 

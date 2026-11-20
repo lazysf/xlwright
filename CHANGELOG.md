@@ -7,14 +7,15 @@
 ### Added
 
 - `XlWright.psm1` に `Import-ExcelVba`、`Test-ExcelVbaCompile`、`Find-ExcelCellError` を足した。`Import-Vba.ps1`、`Test-VbaCompile.ps1`、`Find-CellError.ps1` と同じ処理を、`Invoke-ExcelScript.ps1` に渡す ScriptBlock の中で呼べる。取り込み、コンパイル、マクロの試験、エラー値のセルの検査を、1 回の Excel の起動で済ませられる。スクリプトは呼ぶたびに Excel を起動して閉じ、測った端末では 1 回に約 4 秒かかっていた。3 つのスクリプトの引数、出力、終了コードは変わらない。
-- 動作確認の試験（`tests/Test-XlWright.ps1`）に項目を足した。既定の項目は、ブックを開いてもマクロと `Workbook_Open` が動かないことを確かめる。`New-ExcelWorkbook` と `-Create` が既にあるブックを上書きしないことも確かめる。`Publish-Workbook.ps1` が、同名の出力、作業ブックと同じ場所の出力、`.xlsm` と `.xlsb` 以外の作業ブックを拒否することも確かめる。`-Full` の項目は、`-Force` で出力が置き換わることを確かめる。
+- 動作確認の試験（`tests/Test-XlWright.ps1`）に項目を足した。既定の項目は、ブックを開いてもマクロと `Workbook_Open` が動かないことを確かめる。`New-ExcelWorkbook` と `-Create` が既にあるブックを上書きしないことも確かめる。`Export-Workbook.ps1` が、同名の出力、作業ブックと同じ場所の出力、`.xlsm` と `.xlsb` 以外の作業ブックを拒否することも確かめる。`-Full` の項目は、`-Force` で出力が置き換わることを確かめる。
 
 ### Changed
 
-- `SKILL.md` に、スクリプトが受け付ける形を書いた。`Import-Vba.ps1` が受け付けるのは UTF-8（BOM なし）・LF のファイルだけで、`Publish-Workbook.ps1` が読むのはブックの隣の `vba/` と `ribbon/customUI14.xml` だけ。利用する repo の規則がこれと合わない時は、迂回せずにユーザーに伝える。今までは、repo の規則を優先するとだけ書いていた。
+- 配布ブックを出力するスクリプト `Publish-Workbook.ps1` を `Export-Workbook.ps1` に改めた。スクリプトは作業ブックを更新して配布用の写しを手元の `dist/` などへ書き出すだけで、人に届ける操作はしないため、名前と合っていなかった。引数と出力は変わらない。旧名のスクリプトは残さないので、`Publish-Workbook.ps1` を呼ぶ手順は書き換える。配布の reference も `references/publish.md` から `references/export.md` に移した。
+- `SKILL.md` に、スクリプトが受け付ける形を書いた。`Import-Vba.ps1` が受け付けるのは UTF-8（BOM なし）・LF のファイルだけで、`Export-Workbook.ps1` が読むのはブックの隣の `vba/` と `ribbon/customUI14.xml` だけ。利用する repo の規則がこれと合わない時は、迂回せずにユーザーに伝える。今までは、repo の規則を優先するとだけ書いていた。
 - `SKILL.md` に、references にしか無かった安全の規則を移した。Excel のオプションの変更とアドインの導入は、ユーザーに頼む。接続文字列はユーザーに確かめてから読む。書き出したコードは commit の前に確かめる。画面の画像は、ブックにも Git にも入れない。
 - UserForm の実行時の確認は、一時フォルダに取った写しで、`Invoke-ExcelMacro` を使って行うと書いた（`references/userform.md`）。今までは `$xl.Run` で呼ぶと書いていて、フォームがダイアログを出すと上限まで止まるおそれがあった。
-- `Lock-VbaProject.ps1` は、`Publish-Workbook.ps1` が作る配布の写し（名前が `.excel-publish-` で始まるファイル）だけを受け付け、ほかのブックはブックを開く前に拒否する。ロックのパスワードは捨てるので、作業ブックに直接当てるとロックを外せなくなっていた。配布は今までどおり `Publish-Workbook.ps1` で行う。
+- `Lock-VbaProject.ps1` は、`Export-Workbook.ps1` が作る配布の写し（名前が `.excel-export-` で始まるファイル）だけを受け付け、ほかのブックはブックを開く前に拒否する。ロックのパスワードは捨てるので、作業ブックに直接当てるとロックを外せなくなっていた。配布は今までどおり `Export-Workbook.ps1` で行う。
 - リボンの文書（`references/ribbon.md`）に、実機で確かめた事実を書いた。`Invoke-RibbonButton.ps1` は toggleButton を押せるが、menu、menu の中の項目、dropDown は押せない。リボンの表示が「タブのみを表示する」の時、`Test-RibbonLayout.ps1` の照合は通るが、`-ScreenshotDir` の画像にリボンが写らない。「全画面表示モード」の時は、どちらのスクリプトもタブが見つからずに止まる。どちらの時も、ユーザーにリボンの表示を確かめてもらう。
 - リボンの文書（`references/ribbon.md`）に、`.xlam` を閉じた後の振る舞いを書いた。閉じた時に前面になかったブックのウィンドウにはタブが残り、そのウィンドウを前面にすると消える。`.xlam` のマクロへの `Application.OnTime` は予約した時刻に動かないことがあり、`OnTime` で閉じ直すアドインは開いたままになる。タブが消えたかは、アドインが閉じたかを確かめ、確かめるウィンドウを前面にしてから見る。
 - 新しく作るツールの置き場を決めた。repo の `src/excel/<ツール名>/` に、ブック `workbook.xlsm` と `vba/`、`ribbon/` を置き、配布用のブックは repo 直下の `dist/` に `<ツール名>.xlsm` として出力する。既にあるブックは、頼まれない限り移さない。利用する repo に置き場の規則があれば、そちらを優先する。スクリプトの引数と振る舞いは変わらない。今までは、ブックのフォルダの中の形だけを決め、そのフォルダを repo のどこに置くかは決めていなかった。
@@ -22,7 +23,7 @@
 - 元にしたスキルから写した記述のうち、この repo で確かめていないものに、そう書いた。openpyxl で保存した時のリボン、`0x80080005` での起動の失敗、LF の `.cls` を VBE へ直接渡した時の扱い、日本語のモジュール名とパスが当たる。PowerShell 7 での振る舞いは確かめていないので、書くのをやめた。
 - sandbox で Excel を起動できなかった例を、Codex の sandbox で確かめた結果に替えた。スクリプトの実行が `AuthorizationManager` の検査で止まり、Excel の起動も `0x80070005` で拒否された。
 - ThisWorkbook に置いた関数は、`$xl.Run` だけでなく `Invoke-ExcelMacro` でも `null` が返ると書いた。値を読む時は、今までどおり `InvokeMember` で Workbook のメンバーとして呼ぶ。モジュール名の 31 文字の上限は、32 文字の名前が拒否されることを確かめた。
-- `Publish-Workbook.ps1` が、配布用のブックから個人の情報（作成者、最終の編集者、管理者、会社、コメントの作成者、保存したフォルダのパス）を消す。出力の後に読み戻し、残っていれば失敗する。作業ブックは変えない。消さない時は `-KeepPersonalInformation` を付ける。今までは、作業ブックの情報がそのまま配布用のブックに残っていた。
+- `Export-Workbook.ps1` が、配布用のブックから個人の情報（作成者、最終の編集者、管理者、会社、コメントの作成者、保存したフォルダのパス）を消す。出力の後に読み戻し、残っていれば失敗する。作業ブックは変えない。消さない時は `-KeepPersonalInformation` を付ける。今までは、作業ブックの情報がそのまま配布用のブックに残っていた。
 
 ### Removed
 

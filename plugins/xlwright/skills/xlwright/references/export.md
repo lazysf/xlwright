@@ -5,7 +5,7 @@
 VBA をロックした配布用のブックを出力する。閉じたブックをバックアップしてから、操作可能な Windows デスクトップで実行する。VBA の取り込みと保護の確認には `AccessVBOM` が必要なので、SKILL.md の「作業前の確認」に従う。実行中は Excel と VBE が表示されるため、先に一言伝え、処理が終わるまで表示されたウィンドウを操作しない。
 
 ```powershell
-powershell.exe -NoProfile -File "<skill>/scripts/Publish-Workbook.ps1" -Path <ブック> -OutDir <出力先>
+powershell.exe -NoProfile -File "<skill>/scripts/Export-Workbook.ps1" -Path <ブック> -OutDir <出力先>
 ```
 
 ブックのフォルダの `vba/`（必須）と、あれば `ribbon/customUI14.xml` を、一時コピーに順に反映する。その内容を配布用に複製し、VBE の「プロジェクトを表示用にロックする」を設定する。パスワードは出力ごとに生成し、表示・記録しない。配布用コピーを保存して開き直し、ロック済みと確認できてから、作業ブックと配布先を更新する。取り込みやロックに失敗した場合は、元のブックと配布先を更新せずに終了する。

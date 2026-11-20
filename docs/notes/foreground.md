@@ -22,7 +22,7 @@ MSAA で押しても、ボタンのマクロは動き、MsgBox の文言も UI A
 
 人が Windows Terminal で文字を打ち続けている間に `-Full -Case ribbon,ribbon-layout` を流した時も、前面は最後まで Windows Terminal のままで、試験は合格した。打った文字に欠けは無かった（人の目視）。
 
-`plugins/xlwright/skills/xlwright/tests/Test-XlWright.ps1` の `ribbon`、`ribbon-layout`、`publish` は、前面を 50 ms ごとに見て、Excel が一度も前面に来ないことを確かめる。タブの切り替えを `Select()` に戻した写しは `ribbon-layout` で、ボタンの押下を `Invoke()` に戻した写しは `ribbon` で、この確認に落ちた。
+`plugins/xlwright/skills/xlwright/tests/Test-XlWright.ps1` の `ribbon`、`ribbon-layout`、`export` は、前面を 50 ms ごとに見て、Excel が一度も前面に来ないことを確かめる。タブの切り替えを `Select()` に戻した写しは `ribbon-layout` で、ボタンの押下を `Invoke()` に戻した写しは `ribbon` で、この確認に落ちた。
 
 ## 効かなかった方法
 

@@ -17,7 +17,7 @@ Windows では、シェルを許した eval が動かない。シェルは OS �
 
 ## case の選び方
 
-`--case` を 2 回渡す（`--case publish --case sheet-check`）と、後に渡した `sheet-check` だけが流れた（2026-11-19）。エラーも警告も出なかった。`--help` には `--case <glob>` とあるが、複数の case を 1 つの glob で選べるかは試していない。複数の case は、1 つずつ流す。
+`--case` を 2 回渡す（`--case publish --case sheet-check`。`publish` は今の `export`）と、後に渡した `sheet-check` だけが流れた（2026-11-19）。エラーも警告も出なかった。`--help` には `--case <glob>` とあるが、複数の case を 1 つの glob で選べるかは試していない。複数の case は、1 つずつ流す。
 
 ## 判定の結果の読み方
 
@@ -29,15 +29,15 @@ Windows では、シェルを許した eval が動かない。シェルは OS �
 
 2026-11-19 の時点で、`ribbon` の `closed-workbook-and-click` は、回答が採点の基準を満たしているように読めるのに FAIL する。プラグインありでも、判定を haiku にしても sonnet にしても、3 票とも FAIL した。原因は確かめていない。
 
-## publish の grader を条件ごとに分けた理由
+## export の grader を条件ごとに分けた理由
 
-`publish` は、以前は 1 つの `llm` の grader（`publish-steps`）に 6 つの条件を並べていた。この grader は、回答が基準を満たしているように読めるのに FAIL した。
+`export`（当時の名前は `publish`）は、以前は 1 つの `llm` の grader（`publish-steps`）に 6 つの条件を並べていた。この grader は、回答が基準を満たしているように読めるのに FAIL した。
 
 - sonnet で一度 3 票とも PASS した後、続けて 3 回、3 票とも FAIL した（2026-11-18）。
 - 2026-11-19 には、commit `082c510` で haiku と sonnet の判定を 1 回ずつ流し、どちらも FAIL 2 票・PASS 1 票だった。1 つ前の commit `a3e8aab` を sonnet で流すと、3 票とも FAIL だった。
 - どの回の回答も、バックアップ、`AccessVBOM` を人に任せること、ウィンドウが出ると先に伝えること、`Publish-Workbook.ps1` での出力、`VBProject.Protection` の読み戻し（配布用が 1、作業ブックが 0）を含み、パスワードを示していなかった。
 
-判定の理由は残らないので、条件が 1 つの grader では、どの条件で落ちたかが分からない。そこで、1 つの条件を 1 つの grader にした（`prepare-first`、`warn-windows`、`use-publish-script`、`read-back-lock`、`no-password`）。rubric は「回答の手順に〜が入っている」と書き、手順だけを示す回答でよいと明記した。`Publish-Workbook.ps1` を使うかは、judge を呼ばない `regex` で見る。
+判定の理由は残らないので、条件が 1 つの grader では、どの条件で落ちたかが分からない。そこで、1 つの条件を 1 つの grader にした（`prepare-first`、`warn-windows`、`use-export-script`、`read-back-lock`、`no-password`）。rubric は「回答の手順に〜が入っている」と書き、手順だけを示す回答でよいと明記した。`Export-Workbook.ps1` を使うかは、judge を呼ばない `regex` で見る。
 
 分けた後に sonnet の判定で 1 回流すと（2026-11-19、commit `082c510` の上）、プラグインありは 6 つの grader がすべて通り、`llm` の 4 つは 3 票とも PASS だった。プラグインなし（VBE で人がパスワードを決めてロックする手順）は、6 つすべてが FAIL だった。以前の FAIL が、条件を並べたことと、動作として書いた rubric のどちらによるものかは、確かめていない。
 
@@ -54,5 +54,5 @@ Windows では、シェルを許した eval が動かない。シェルは OS �
 ## 未確認
 
 - `ribbon` の FAIL の原因。判定の理由を残す手段は、見つけていない。
-- 分けた後の `publish` の grader が、回を重ねても通り続けるか。流したのは 1 回だけ。
+- 分けた後の `export` の grader が、回を重ねても通り続けるか。流したのは 1 回だけ。
 - 判定の票のぶれが、どのくらいの頻度で起きるか。

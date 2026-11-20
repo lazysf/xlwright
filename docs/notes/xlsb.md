@@ -21,14 +21,14 @@
 | `Find-CellError.ps1` | `Count` が `0` |
 | `Invoke-RibbonButton.ps1` | 押せて、MsgBox の文言を読めた |
 | `Save-WorkbookScreenshot.ps1` | 画像を書いた |
-| `Publish-Workbook.ps1`（出力 `.xlsb`、`.xlsm`、`.xlam`） | どれも `VBProject.Protection` が `1`、`FileFormat` が `50`、`52`、`55`、マクロが動き、customUI が残った |
+| `Publish-Workbook.ps1`（今の `Export-Workbook.ps1`。出力 `.xlsb`、`.xlsm`、`.xlam`） | どれも `VBProject.Protection` が `1`、`FileFormat` が `50`、`52`、`55`、マクロが動き、customUI が残った |
 | `Publish-Workbook.ps1`（`-FileName` なし） | `<フォルダ名>.xlsb` を出力した。作業ブックは `FileFormat` が `50`、`Protection` が `0` のまま |
 | `Test-RibbonLayout.ps1`（配布した `.xlsb`） | 終了コード 0、食い違い 0 |
 | `Publish-Workbook.ps1`（`.xlsm` の作業ブックから `.xlsb` へ） | `FileFormat` が `50`、`Protection` が `1`、マクロが動いた |
 
 UserForm は、試験の `userform` の項目で確かめた。`.xlsm` から書き出したフォーム（`.frm` と `.frx`）を `.xlsb` に取り込むと、デザイン（キャプション、大きさ、コントロール、フレームの中身）は `.xlsm` と同じに読めた。一時の VBA でフォントを変えて保存し、フォームを開くと、初期化の処理とフォントが効いた。`.xlsb` から書き出すと、`.frm` と `.frx` の両方が出た。
 
-`.xlsb` も zip なので、`Add-CustomUI.ps1` と `Get-WorkbookSummary.ps1` は `.xlsm` と同じく zip を直接読み書きする。作業ブックと違う形式で配る時は、`SaveAs` で変換してからロックする（[publish-addin.md](./publish-addin.md)）。
+`.xlsb` も zip なので、`Add-CustomUI.ps1` と `Get-WorkbookSummary.ps1` は `.xlsm` と同じく zip を直接読み書きする。作業ブックと違う形式で配る時は、`SaveAs` で変換してからロックする（[export-addin.md](./export-addin.md)）。
 
 ## 未確認
 

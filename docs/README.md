@@ -16,8 +16,8 @@
   - [vba-prune.md](./notes/vba-prune.md): ブックから VBA のコンポーネントを消す時に COM でできることの実測。
   - [vba-references.md](./notes/vba-references.md): VBA の参照設定が書き出しと取り込みで引き継がれないことの実測。
   - [addin-ribbon-close.md](./notes/addin-ribbon-close.md): `.xlam` を閉じた後にリボンのタブが残って見える 2 つの理由（前面にないウィンドウ、`OnTime` で閉じ直すアドイン）の実測。
-  - [publish-addin.md](./notes/publish-addin.md): 配布の出力をアドイン（`.xlam`）にする方法と、作業ブックをブックのままにする理由と、その実測。
-  - [publish-personal-info.md](./notes/publish-personal-info.md): 配布ブックに残る個人の情報の場所と、`RemovePersonalInformation` で消える範囲の実測。
+  - [export-addin.md](./notes/export-addin.md): 配布の出力をアドイン（`.xlam`）にする方法と、作業ブックをブックのままにする理由と、その実測。
+  - [export-personal-info.md](./notes/export-personal-info.md): 配布ブックに残る個人の情報の場所と、`RemovePersonalInformation` で消える範囲の実測。
   - [xlsb.md](./notes/xlsb.md): `.xlsb` をスキルのスクリプトに順に通した実測。
   - [prerequisite.md](./notes/prerequisite.md): 作業の前提（Excel のプロセス、`AccessVBOM`、WMI、Git）を読み取りだけで調べる方法と、その実測。
   - [workbook-summary.md](./notes/workbook-summary.md): シート、定義名、外部リンク、データ接続、VBA、customUI を COM と zip から読む方法と、その実測。

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Updates a work book from its VBA (and optional ribbon) sources and publishes a VBA-locked copy.
+Updates a work book from its VBA (and optional ribbon) sources and exports a VBA-locked copy.
 
 .DESCRIPTION
 The sources are read from the work book's folder: vba/ (required) and ribbon/customUI14.xml
@@ -60,9 +60,9 @@ if (!$Force -and (Test-Path -LiteralPath $outputPath)) {
     throw "Output already exists: $outputPath. Use -Force to overwrite it."
 }
 
-$publishId = '.excel-publish-' + [guid]::NewGuid().ToString('N')
-$updatedWorkbook = Join-Path $workbook.DirectoryName ($publishId + $workbookExtension)
-$pendingOutput = [IO.Path]::Combine($outputDirectory, $publishId + $outputExtension)
+$exportId = '.excel-export-' + [guid]::NewGuid().ToString('N')
+$updatedWorkbook = Join-Path $workbook.DirectoryName ($exportId + $workbookExtension)
+$pendingOutput = [IO.Path]::Combine($outputDirectory, $exportId + $outputExtension)
 try {
     # Keep the work book intact until the imports and the release lock succeed.
     [IO.File]::Copy($workbook.FullName, $updatedWorkbook)
@@ -76,9 +76,9 @@ try {
     $removePersonalInformation = !$KeepPersonalInformation
     if ($removePersonalInformation -or $outputExtension -ne $workbookExtension) {
         # Excel keeps customUI through SaveAs, and the VBA project of the converted file can be locked like that of
-        # the work book (docs/notes/publish-addin.md). Lock after the conversion so that the check reads the output.
+        # the work book (docs/notes/export-addin.md). Lock after the conversion so that the check reads the output.
         # RemovePersonalInformation is stored in the file, so the save of the lock keeps the output clear. It is set
-        # only before SaveAs, so the work book is not saved with it (docs/notes/publish-personal-info.md).
+        # only before SaveAs, so the work book is not saved with it (docs/notes/export-personal-info.md).
         $format = $outputFormats[$outputExtension]
         Use-ExcelWorkbook -Path $updatedWorkbook -ScriptBlock {
             param($xl, $wb)
@@ -94,14 +94,14 @@ try {
     $personalItems = @(& (Join-Path $PSScriptRoot 'Lock-VbaProject.ps1') -Path $pendingOutput)
     if ($personalItems.Count -gt 0) {
         if ($removePersonalInformation) {
-            throw ('Personal information remains in the publish copy: ' + ($personalItems -join ', ') +
-                '. The publish copy was rejected.')
+            throw ('Personal information remains in the export copy: ' + ($personalItems -join ', ') +
+                '. The export copy was rejected.')
         }
         Write-Warning ('The output keeps personal information: ' + ($personalItems -join ', ') + '.')
     }
     [IO.File]::Replace($updatedWorkbook, $workbook.FullName, [NullString]::Value)
 
-    # Publish within the output directory so a partial copy is never visible.
+    # Move into place within the output directory so a partial copy is never visible.
     if ($Force -and [IO.File]::Exists($outputPath)) {
         [IO.File]::Replace($pendingOutput, $outputPath, [NullString]::Value)
     }

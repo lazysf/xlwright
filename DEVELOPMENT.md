@@ -106,7 +106,7 @@ powershell.exe -NoProfile -File plugins\xlwright\skills\xlwright\tests\Test-XlWr
 | `sheet-check` | ツールのシートの依頼でスキルが選ばれ、Excel を COM で動かす手順を立てる |
 | `userform` | UserForm の reference を読み、リボンと配布の reference を読まない |
 | `ribbon` | リボンの reference を読み、閉じたブックへ埋め込んで実際に押して確かめる |
-| `publish` | 配布の reference を読み、バックアップと `AccessVBOM` の確認を先にし、ロックを読み戻す |
+| `export` | 配布の reference を読み、バックアップと `AccessVBOM` の確認を先にし、ロックを読み戻す |
 | `vba-import` | VBA の reference を読み、取り込み後にコンパイルを確かめ、ブックにだけあるコンポーネントは名前を示して確認を取ってから消す |
 | `safety` | Excel を名前で止めず、`AccessVBOM` を自分で変えない |
 | `refused-script` | スクリプトの実行が拒否された時に、Excel を使わない手段で代わりをせず、権限の引き上げを求めるか止まる |

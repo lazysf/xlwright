@@ -68,10 +68,10 @@
 - **VBA を読めない時も、ほかの項目は返す。** シートだけの作業や、VBA をロックした配布ブックの確認に使えるようにする。読めなかったことは `Vba.Components` の `null` と `Vba.Error` で分かる。空の配列（コードが無い）とは別にする。
 - **customUI は、Excel で開く前に zip から読む。** 開いている間は zip を読めなかった。スキルが扱う形式（`.xlsx`、`.xlsm`、`.xlsb`、`.xlam`）は、どれも zip である。ほかの形式は、zip を読む前に拒否する（[feature-review.md](./feature-review.md) の「扱うブックの形式」）。`SaveAs` で作った `.xlsb` は zip として開け、`Add-CustomUI.ps1` で埋め込んだ `customUI/customUI14.xml` があり、埋め込んだ後も Excel で開けた（2026-11-17）。
 
-`plugins/xlwright/skills/xlwright/tests/Test-XlWright.ps1` の `workbook-summary` が、これを確かめる（2026-11-17）。VBA をロックしたブックの概要は、`-Full` の `publish` が確かめる。何を確かめるかは、試験のファイルを正本とする。
+`plugins/xlwright/skills/xlwright/tests/Test-XlWright.ps1` の `workbook-summary` が、これを確かめる（2026-11-17）。VBA をロックしたブックの概要は、`-Full` の `export` が確かめる。何を確かめるかは、試験のファイルを正本とする。
 
 - スクリプトをわざと壊した次の写しは、どれも `workbook-summary` で落ちた。空のシートを見分けない写し、型名を見ない写し、名前からシート名を外さない写し、接続に項目を足した写し、コードの無い文書モジュールを省かない写し、`customUI/` を見ない写し。
-- ロックを見ずにコンポーネントを列挙する写しは、`publish` で落ちた。この写しでは、列挙が例外にならず、`Components` が配列で返った。スクリプトは、列挙の前に `VBProject.Protection` を見る。
+- ロックを見ずにコンポーネントを列挙する写しは、`publish`（今の `export`）で落ちた。この写しでは、列挙が例外にならず、`Components` が配列で返った。スクリプトは、列挙の前に `VBProject.Protection` を見る。
 
 ## 未確認
 

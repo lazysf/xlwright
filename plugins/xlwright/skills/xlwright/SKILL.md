@@ -18,7 +18,7 @@ PowerShell から `Excel.Application` を COM で操作して、Excel を土台�
 - リボンの確認（`Test-RibbonLayout.ps1`、`Invoke-RibbonButton.ps1`）と配布ブックの出力では、Excel や VBE のウィンドウが画面に出る。前面は取らず、人が使っているアプリの後ろに出る。出たウィンドウを人が操作しないよう、始める前に伝える。
 - VBA のコンパイルの検査（`Test-VbaCompile.ps1`）は、コンパイルエラーがある時だけ、VBE のウィンドウとエラーのダイアログが画面に短い間出る。スクリプトが閉じるので、人は操作しない。
 - マクロが出すダイアログ（実行時エラー、コンパイルエラー、MsgBox）は、Excel が非表示でも画面に出る。コンパイルエラーでは VBE のウィンドウも出る。`Invoke-ExcelMacro` が閉じるので、人は操作しない。
-- 利用する repo に、ブックの置き場や VBA ファイルの規則（`AGENTS.md`、`CLAUDE.md` など）があれば、そちらを優先する。無ければ、このスキルの既定に従う。ただし、スクリプトが受け付ける形は決まっている。`Import-Vba.ps1` は UTF-8（BOM なし）・LF のファイルだけを受け付け、`Publish-Workbook.ps1` はブックの隣の `vba/` と `ribbon/customUI14.xml` を読む。repo の規則がこれと合わない時は、迂回せずにユーザーに伝えて、進め方を決める。
+- 利用する repo に、ブックの置き場や VBA ファイルの規則（`AGENTS.md`、`CLAUDE.md` など）があれば、そちらを優先する。無ければ、このスキルの既定に従う。ただし、スクリプトが受け付ける形は決まっている。`Import-Vba.ps1` は UTF-8（BOM なし）・LF のファイルだけを受け付け、`Export-Workbook.ps1` はブックの隣の `vba/` と `ribbon/customUI14.xml` を読む。repo の規則がこれと合わない時は、迂回せずにユーザーに伝えて、進め方を決める。
 
 ## 作業前の確認
 
@@ -109,7 +109,7 @@ Excel は既定で、VBA とブックイベントを無効にし、外部ブッ�
 | VBA の変更（`vba/` の正本を編集して取り込む） | [VBA の編集ルールと入出力](references/vba.md) |
 | UserForm の作成・変更 | [UserForm の作成と編集](references/userform.md) |
 | リボンの変更、見え方とボタンの動作確認 | [リボン](references/ribbon.md) |
-| VBA をロックした配布ブック（`.xlsm`、`.xlsb`）かアドイン（`.xlam`）の出力 | [配布ブックの出力](references/publish.md) |
+| VBA をロックした配布ブック（`.xlsm`、`.xlsb`）かアドイン（`.xlam`）の出力 | [配布ブックの出力](references/export.md) |
 | ツールの作業で複数のブックを順に扱う | [COM 編集の詳細](references/com.md)の「モジュールを直接使う」 |
 | Excel が起動しない、実行が拒否される | [実行環境と起動の失敗](references/troubleshooting.md) |
 
@@ -125,7 +125,7 @@ VBA とリボンを持つブックを一から作る時は、次の順に進め�
 2. `vba/` に VBA のソースを書き、`Import-Vba.ps1` で取り込む。取り込んだら `Test-VbaCompile.ps1` でコンパイルを確かめる。直しては確かめる繰り返しでは、取り込み、コンパイル、マクロの試験、読み戻しを 1 回の呼び出しにまとめる（「検証」の「まとめて確かめる」）。
 3. ブックを閉じた状態で、`ribbon/customUI14.xml` を `Add-CustomUI.ps1` で埋め込む。
 4. `Invoke-ExcelScript.ps1` で開き直し、シートと VBA を読み戻す。リボンは `Test-RibbonLayout.ps1` で見え方を XML と照らし、`Invoke-RibbonButton.ps1` で押して確かめる。
-5. 配布する場合は、最後に `Publish-Workbook.ps1` で `dist/` に出力し、ロックを読み戻す。出力の名前は、フォルダ名に拡張子を付けたもの（`dist/<ツール名>.xlsm`）になる。
+5. 配布する場合は、最後に `Export-Workbook.ps1` で `dist/` に出力し、ロックを読み戻す。出力の名前は、フォルダ名に拡張子を付けたもの（`dist/<ツール名>.xlsm`）になる。
 
 ## COM 編集
 
@@ -181,7 +181,7 @@ Invoke-ExcelMacro -Excel $xl -Name 'Util.AddNums' -ArgumentList 2, 3
 編集した後は、`-Save` なしでブックを開き直して読み戻す。書いたつもりの値ではなく、Excel が保存した結果を見る。動かしてよいマクロの範囲は「マクロが動くことへの注意」のとおり。
 
 - **シート**: `Value2`、`Formula`、`Text`（表示形式が適用された文字列）を読む。数式は Excel が再計算した値で確かめる。数式を書いた・行や列やシートを消した後は、`Find-CellError.ps1` で `#REF!` や `#NAME?` のセルが無いかを調べる（[COM 編集の詳細](references/com.md)の「エラー値のセルを探す」）。書式、条件付き書式、列幅、グラフ、ボタンの見た目は、`Save-WorkbookScreenshot.ps1` で画像にして見る（同じく「見た目を画像にする」）。
-- **VBA**: 変更したコンポーネントの名前・種別・コードを読み戻す。`Test-VbaCompile.ps1` でコンパイルし、構文エラーや宣言の無い変数が無いことを確かめる（[VBA の編集ルールと入出力](references/vba.md)）。実行してよいマクロは `Invoke-ExcelMacro` で動かし、戻り値を確かめる（「マクロを動かす」）。確かめる場合が多い時も、ScriptBlock の中で `Invoke-ExcelMacro` を並べて呼ぶ。確かめるためだけの VBA は、`vba/` にも作業ブックにも残さない。`Publish-Workbook.ps1` は作業ブックの写しに `vba/` を取り込み、取り込みは正本に無いコンポーネントを消さないので、どちらに残したコードも配布ブックに入る。要る時は、一時フォルダに取ったブックの写しに足す。ThisWorkbook に置いた関数は、`$xl.Run` で（ブック名で修飾しても）呼んでも、`Invoke-ExcelMacro` で呼んでも、`null` が返る。`[System.__ComObject].InvokeMember('FuncName', [Reflection.BindingFlags]::InvokeMethod, $null, $wb, $null)` で Workbook のメンバーとして呼ぶと値が返る。
+- **VBA**: 変更したコンポーネントの名前・種別・コードを読み戻す。`Test-VbaCompile.ps1` でコンパイルし、構文エラーや宣言の無い変数が無いことを確かめる（[VBA の編集ルールと入出力](references/vba.md)）。実行してよいマクロは `Invoke-ExcelMacro` で動かし、戻り値を確かめる（「マクロを動かす」）。確かめる場合が多い時も、ScriptBlock の中で `Invoke-ExcelMacro` を並べて呼ぶ。確かめるためだけの VBA は、`vba/` にも作業ブックにも残さない。`Export-Workbook.ps1` は作業ブックの写しに `vba/` を取り込み、取り込みは正本に無いコンポーネントを消さないので、どちらに残したコードも配布ブックに入る。要る時は、一時フォルダに取ったブックの写しに足す。ThisWorkbook に置いた関数は、`$xl.Run` で（ブック名で修飾しても）呼んでも、`Invoke-ExcelMacro` で呼んでも、`null` が返る。`[System.__ComObject].InvokeMember('FuncName', [Reflection.BindingFlags]::InvokeMethod, $null, $wb, $null)` で Workbook のメンバーとして呼ぶと値が返る。
 - **リボンとボタン**: `Test-RibbonLayout.ps1` でタブ・グループ・ボタンの並び、大きさ、有効無効、表示非表示を XML と照らし、タブの画像でアイコンを見る。`Invoke-RibbonButton.ps1` で実際に押し、出たダイアログの文言を確かめる（[リボン](references/ribbon.md)）。
 
 ### まとめて確かめる

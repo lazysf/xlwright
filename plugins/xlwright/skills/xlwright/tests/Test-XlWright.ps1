@@ -5,7 +5,7 @@ Checks the xlwright scripts against the real Excel on this machine.
 .DESCRIPTION
 Every case creates its own workbooks in a new temporary folder and checks explicit expected values.
 Nothing outside that folder is changed. The default cases keep Excel hidden. -Full adds the cases
-that show Excel and the VBE on the screen (VBA compile error, macro dialogs, ribbon click, ribbon layout, publish with VBA lock, screenshot); do not touch
+that show Excel and the VBE on the screen (VBA compile error, macro dialogs, ribbon click, ribbon layout, export with VBA lock, screenshot); do not touch
 those windows while they run. These cases also check that Excel never takes the foreground.
 
 Preconditions: no Excel process is running, and AccessVBOM is 1. Otherwise nothing runs (exit 2).
@@ -42,7 +42,7 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $S = [IO.File]::ReadAllText((Join-Path $data 'strings.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
 
 # The cases that cover each file, by its path in the skill folder: the cases that call the script, directly or
-# through another script (Publish-Workbook.ps1 calls Import-Vba.ps1, Add-CustomUI.ps1 and Lock-VbaProject.ps1).
+# through another script (Export-Workbook.ps1 calls Import-Vba.ps1, Add-CustomUI.ps1 and Lock-VbaProject.ps1).
 # '*' is every case. A file of scripts\
 # that is not listed, Test-XlWright.ps1 and anything in tests\data\ also run every case; other files run none.
 # When a case or a script is added, add it here as well.
@@ -54,18 +54,18 @@ $CasesByFile = [ordered]@{
         'input-rejected', 'screenshot'
     'scripts/Export-Vba.ps1' = 'cells-and-vba', 'userform', 'macros-off'
     'scripts/Test-VbaCompile.ps1' = 'vba-compile', 'vba-compile-error', 'macros-off'
-    'scripts/Add-CustomUI.ps1' = 'input-rejected', 'workbook-summary', 'ribbon', 'ribbon-layout', 'publish'
-    'scripts/Ribbon.psm1' = 'ribbon', 'ribbon-layout', 'publish', 'ribbon-dialog-check'
+    'scripts/Add-CustomUI.ps1' = 'input-rejected', 'workbook-summary', 'ribbon', 'ribbon-layout', 'export'
+    'scripts/Ribbon.psm1' = 'ribbon', 'ribbon-layout', 'export', 'ribbon-dialog-check'
     'scripts/Invoke-RibbonButton.ps1' = 'ribbon', 'ribbon-layout'
-    'scripts/Test-RibbonLayout.ps1' = 'ribbon-layout', 'publish'
-    'scripts/Publish-Workbook.ps1' = 'input-rejected', 'publish'
-    'scripts/Lock-VbaProject.ps1' = 'input-rejected', 'publish'
-    'scripts/Get-WorkbookSummary.ps1' = 'workbook-summary', 'publish', 'macros-off'
-    'scripts/Find-CellError.ps1' = 'cell-error', 'publish', 'macros-off'
+    'scripts/Test-RibbonLayout.ps1' = 'ribbon-layout', 'export'
+    'scripts/Export-Workbook.ps1' = 'input-rejected', 'export'
+    'scripts/Lock-VbaProject.ps1' = 'input-rejected', 'export'
+    'scripts/Get-WorkbookSummary.ps1' = 'workbook-summary', 'export', 'macros-off'
+    'scripts/Find-CellError.ps1' = 'cell-error', 'export', 'macros-off'
     'scripts/Test-Prerequisite.ps1' = 'prerequisite'
     'scripts/Save-WorkbookScreenshot.ps1' = 'screenshot'
 }
-$FullOnlyCases = 'vba-compile-error', 'macro-dialog', 'ribbon', 'ribbon-layout', 'publish', 'screenshot'
+$FullOnlyCases = 'vba-compile-error', 'macro-dialog', 'ribbon', 'ribbon-layout', 'export', 'screenshot'
 
 # Returns the cases that cover the files (paths in the skill folder, with / or \): All when every case is needed.
 function Resolve-ChangedCase([string[]]$Files) {
@@ -371,7 +371,7 @@ Invoke-Case 'cells-and-vba' {
     $referenceNames = @($exportedReferences.References | ForEach-Object { $_.Name + ' ' + $_.Guid }) -join ','
     Assert 'references.json: the references of a new workbook, without the built-in ones' ($referenceNames -eq 'stdole {00020430-0000-0000-C000-000000000046},Office {2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}') $referenceNames
 
-    # Components that are not in the sources stay; Publish-Workbook.ps1 relies on it.
+    # Components that are not in the sources stay; Export-Workbook.ps1 relies on it.
     # A reference in references.json that the workbook lacks is a warning, and only that one.
     $partial = Join-Path $dir 'partial'
     New-Item -ItemType Directory -Path (Join-Path $partial 'standard') | Out-Null
@@ -595,7 +595,7 @@ Invoke-Case 'input-rejected' {
     Assert 'Add-CustomUI rejects malformed XML' ($r.Exit -ne 0) $r.Output
     Assert 'workbook unchanged by rejected ribbon' ((Get-FileHashText $book) -eq $hash) 'hash changed'
 
-    $pubDir = Join-Path $dir 'publish'
+    $pubDir = Join-Path $dir 'export'
     New-Item -ItemType Directory -Path (Join-Path $pubDir 'vba\standard') -Force | Out-Null
     $pubBook = Join-Path $pubDir 'book.xlsm'
     Copy-Item -LiteralPath $book -Destination $pubBook
@@ -603,32 +603,32 @@ Invoke-Case 'input-rejected' {
     $out = Join-Path $dir 'dist'
     # The output folder exists, so that a file left in it would be seen.
     New-Item -ItemType Directory -Path $out | Out-Null
-    $publish = Join-Path $scripts 'Publish-Workbook.ps1'
-    $r = Invoke-Script $publish @('-Path', $pubBook, '-OutDir', $out)
-    Assert 'publish fails on a bad source' ($r.Exit -ne 0 -and $r.Output -like '*without BOM and LF*') $r.Output
-    Assert 'work book unchanged by failed publish' ((Get-FileHashText $pubBook) -eq $hash) 'hash changed'
-    $leftovers = @(Get-ChildItem -LiteralPath $pubDir -File -Force | Where-Object { $_.Name -like '.excel-publish-*' -or $_.Name -like '.customui-*' })
+    $exportWorkbook = Join-Path $scripts 'Export-Workbook.ps1'
+    $r = Invoke-Script $exportWorkbook @('-Path', $pubBook, '-OutDir', $out)
+    Assert 'export fails on a bad source' ($r.Exit -ne 0 -and $r.Output -like '*without BOM and LF*') $r.Output
+    Assert 'work book unchanged by failed export' ((Get-FileHashText $pubBook) -eq $hash) 'hash changed'
+    $leftovers = @(Get-ChildItem -LiteralPath $pubDir -File -Force | Where-Object { $_.Name -like '.excel-export-*' -or $_.Name -like '.customui-*' })
     $leftovers += @(Get-ChildItem -LiteralPath $out -File -Force)
-    Assert 'no output or temporary file after failed publish' ($leftovers.Count -eq 0) (($leftovers | ForEach-Object { $_.Name }) -join ',')
-    $r = Invoke-Script $publish @('-Path', $pubBook, '-OutDir', $out, '-FileName', 'book.xlsx')
-    Assert 'publish rejects an output that is not .xlsm, .xlsb or .xlam' ($r.Exit -ne 0 -and $r.Output -like '*ending in .xlsm, .xlsb or .xlam*') $r.Output
+    Assert 'no output or temporary file after failed export' ($leftovers.Count -eq 0) (($leftovers | ForEach-Object { $_.Name }) -join ',')
+    $r = Invoke-Script $exportWorkbook @('-Path', $pubBook, '-OutDir', $out, '-FileName', 'book.xlsx')
+    Assert 'export rejects an output that is not .xlsm, .xlsb or .xlam' ($r.Exit -ne 0 -and $r.Output -like '*ending in .xlsm, .xlsb or .xlam*') $r.Output
     # These are refused before the work book is copied. The console wraps long lines anywhere, so the
     # messages are compared without white space.
     $existing = Join-Path $out 'book.xlsm'
     [IO.File]::WriteAllText($existing, 'old output', $ascii)
-    $r = Invoke-Script $publish @('-Path', $pubBook, '-OutDir', $out)
-    Assert 'publish refuses an existing output without -Force' ($r.Exit -ne 0 -and ($r.Output -replace '\s+', '') -like '*Outputalreadyexists*-Force*') $r.Output
+    $r = Invoke-Script $exportWorkbook @('-Path', $pubBook, '-OutDir', $out)
+    Assert 'export refuses an existing output without -Force' ($r.Exit -ne 0 -and ($r.Output -replace '\s+', '') -like '*Outputalreadyexists*-Force*') $r.Output
     Assert 'existing output unchanged' ([IO.File]::ReadAllText($existing) -eq 'old output') 'output changed'
-    $r = Invoke-Script $publish @('-Path', $pubBook, '-OutDir', $pubDir)
-    Assert 'publish refuses an output in place of the work book' ($r.Exit -ne 0 -and ($r.Output -replace '\s+', '') -like '*Outputmustbeseparatefromtheworkbook*') $r.Output
+    $r = Invoke-Script $exportWorkbook @('-Path', $pubBook, '-OutDir', $pubDir)
+    Assert 'export refuses an output in place of the work book' ($r.Exit -ne 0 -and ($r.Output -replace '\s+', '') -like '*Outputmustbeseparatefromtheworkbook*') $r.Output
     $plain = Join-Path $pubDir 'plain.xlsx'
     Copy-Item -LiteralPath $pubBook -Destination $plain
-    $r = Invoke-Script $publish @('-Path', $plain, '-OutDir', $out, '-Force')
-    Assert 'publish refuses a work book that is not .xlsm or .xlsb' ($r.Exit -ne 0 -and ($r.Output -replace '\s+', '') -like '*Expectedan.xlsmor.xlsbfile*') $r.Output
-    Assert 'work book unchanged by refused publishes' ((Get-FileHashText $pubBook) -eq $hash) 'hash changed'
-    # The lock throws its password away, so it takes only the publish copy, never a work book.
+    $r = Invoke-Script $exportWorkbook @('-Path', $plain, '-OutDir', $out, '-Force')
+    Assert 'export refuses a work book that is not .xlsm or .xlsb' ($r.Exit -ne 0 -and ($r.Output -replace '\s+', '') -like '*Expectedan.xlsmor.xlsbfile*') $r.Output
+    Assert 'work book unchanged by refused exports' ((Get-FileHashText $pubBook) -eq $hash) 'hash changed'
+    # The lock throws its password away, so it takes only the export copy, never a work book.
     $r = Invoke-Script (Join-Path $scripts 'Lock-VbaProject.ps1') @('-Path', $pubBook)
-    Assert 'Lock-VbaProject refuses a work book' ($r.Exit -ne 0 -and ($r.Output -replace '\s+', '') -like '*locksonlythepublishcopy*') $r.Output
+    Assert 'Lock-VbaProject refuses a work book' ($r.Exit -ne 0 -and ($r.Output -replace '\s+', '') -like '*locksonlytheexportcopy*') $r.Output
     Assert 'work book unchanged by the refused lock' ((Get-FileHashText $pubBook) -eq $hash) 'hash changed'
 
     # Formats outside the skill are rejected before Excel or the zip is touched, whatever the content is.
@@ -732,9 +732,9 @@ Invoke-Case 'ribbon-dialog-check' {
 Invoke-Case 'changed-selection' {
     $show = { param($r) 'All=' + $r.All + ' Cases=' + (@($r.Cases) -join ',') }
     $r = Resolve-ChangedCase @('scripts\Find-CellError.ps1')
-    Assert 'a listed script: its cases' ((& $show $r) -eq 'All=False Cases=cell-error,macros-off,publish') (& $show $r)
+    Assert 'a listed script: its cases' ((& $show $r) -eq 'All=False Cases=cell-error,export,macros-off') (& $show $r)
     $r = Resolve-ChangedCase @('scripts/Ribbon.psm1', 'scripts/Test-RibbonLayout.ps1')
-    Assert 'two scripts: their cases once each, sorted' ((& $show $r) -eq 'All=False Cases=publish,ribbon,ribbon-dialog-check,ribbon-layout') (& $show $r)
+    Assert 'two scripts: their cases once each, sorted' ((& $show $r) -eq 'All=False Cases=export,ribbon,ribbon-dialog-check,ribbon-layout') (& $show $r)
     foreach ($file in 'scripts/XlWright.psm1', 'scripts/New-Thing.ps1', 'tests/Test-XlWright.ps1', 'tests/data/vba/standard/Util.bas') {
         $r = Resolve-ChangedCase @('scripts/Find-CellError.ps1', $file)
         Assert ('every case for ' + $file) ((& $show $r) -eq 'All=True Cases=') (& $show $r)
@@ -1499,8 +1499,8 @@ if ($Full) {
         }
     }
 
-    Invoke-Case 'publish' -WatchForeground {
-        $dir = New-CaseDir 'publish'
+    Invoke-Case 'export' -WatchForeground {
+        $dir = New-CaseDir 'export'
         $book = Join-Path $dir 'book.xlsm'
         [void](New-EmptyBook $book)
         # Synthetic personal information and a note, whose author Excel takes from the user name.
@@ -1512,8 +1512,8 @@ if ($Full) {
         Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $dir 'vba') -Recurse
         New-Item -ItemType Directory -Path (Join-Path $dir 'ribbon') | Out-Null
         Copy-Item -LiteralPath (Join-Path $data 'ribbon\layout.xml') -Destination (Join-Path $dir 'ribbon\customUI14.xml')
-        $pub =Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'))
-        Assert 'publish exit 0' ($pub.Exit -eq 0) $pub.Output
+        $pub =Invoke-Script (Join-Path $scripts 'Export-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'))
+        Assert 'export exit 0' ($pub.Exit -eq 0) $pub.Output
         $dist = Join-Path $dir 'dist\book.xlsm'
         # Not $s: variable names ignore case and $S holds the strings of the ribbon.
         $cleared = { param($p) $p.Author -eq 'empty' -and $p.'Last Author' -eq 'empty' -and $p.Manager -eq 'empty' -and $p.Company -eq 'empty' -and $p.Filter -eq $true -and -not $p.NoteAuthorIsUser }
@@ -1530,7 +1530,7 @@ if ($Full) {
         Assert 'dist: no saved folder path' ($workbookXml.IndexOf('absPath', [StringComparison]::Ordinal) -lt 0) 'absPath present'
 
         # -KeepPersonalInformation keeps the items and names them in a warning.
-        $pub = Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'keep'), '-KeepPersonalInformation')
+        $pub = Invoke-Script (Join-Path $scripts 'Export-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'keep'), '-KeepPersonalInformation')
         $personal = Get-PersonalState (Join-Path $dir 'keep\book.xlsm')
         Assert 'keep: exit 0, values kept' ($pub.Exit -eq 0 -and $personal.Author -eq 'synthetic' -and $personal.Company -eq 'synthetic' -and $personal.Filter -eq $false) ($pub.Output + ($personal | ConvertTo-Json -Compress))
         Assert 'keep: warning names the items' ($pub.Output -like '*keeps personal information: Author, *Manager, Company, comment authors, saved folder path.*') $pub.Output
@@ -1560,12 +1560,12 @@ if ($Full) {
         Assert 'dist: getEnabled callback ran' (@($res.Dynamic | Where-Object { $_.Path -eq $dynPath -and $_.Item -eq 'Enabled' -and $_.Actual -eq $false }).Count -eq 1) ($res.Dynamic | ConvertTo-Json -Compress)
         # -Force replaces the output; the new lock has a new password, so the file differs.
         $distHash = Get-FileHashText $dist
-        $pub = Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'), '-Force')
-        Assert '-Force: publish exit 0, output replaced' ($pub.Exit -eq 0 -and (Get-FileHashText $dist) -ne $distHash) $pub.Output
+        $pub = Invoke-Script (Join-Path $scripts 'Export-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'), '-Force')
+        Assert '-Force: export exit 0, output replaced' ($pub.Exit -eq 0 -and (Get-FileHashText $dist) -ne $distHash) $pub.Output
 
-        # The same work book published as an add-in.
-        $pub = Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'), '-FileName', 'tool.xlam')
-        Assert 'add-in: publish exit 0' ($pub.Exit -eq 0) $pub.Output
+        # The same work book exported as an add-in.
+        $pub = Invoke-Script (Join-Path $scripts 'Export-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'), '-FileName', 'tool.xlam')
+        Assert 'add-in: export exit 0' ($pub.Exit -eq 0) $pub.Output
         $addin = Join-Path $dir 'dist\tool.xlam'
         $r = Use-ExcelWorkbook -Path $addin -EnableMacros -ScriptBlock {
             param($xl, $wb)
@@ -1586,7 +1586,7 @@ if ($Full) {
             $summary.Json.Vba.Locked -eq $true -and (@($summary.Json.CustomUI) -join ',') -eq 'customUI/customUI14.xml') $summary.Text
         $errors = Invoke-FindError $addin
         Assert 'add-in: cell errors read, none found' ($errors.Exit -eq 0 -and $errors.Json.Count -eq 0 -and @($errors.Json.Sheets).Count -eq 1) $errors.Text
-        $leftovers = @(Get-ChildItem -LiteralPath $dir, (Join-Path $dir 'dist') -File -Force | Where-Object { $_.Name -like '.excel-publish-*' })
+        $leftovers = @(Get-ChildItem -LiteralPath $dir, (Join-Path $dir 'dist') -File -Force | Where-Object { $_.Name -like '.excel-export-*' })
         Assert 'add-in: no temporary file left' ($leftovers.Count -eq 0) (($leftovers | ForEach-Object { $_.Name }) -join ',')
 
         # An .xlsb work book named workbook.xlsb: the output takes the folder name and stays an .xlsb.
@@ -1595,8 +1595,8 @@ if ($Full) {
         $binBook = Join-Path $binDir 'workbook.xlsb'
         [void](New-ExcelWorkbook -Path $binBook)
         Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $binDir 'vba') -Recurse
-        $pub = Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $binBook, '-OutDir', (Join-Path $binDir 'dist'))
-        Assert '.xlsb: publish exit 0' ($pub.Exit -eq 0) $pub.Output
+        $pub = Invoke-Script (Join-Path $scripts 'Export-Workbook.ps1') @('-Path', $binBook, '-OutDir', (Join-Path $binDir 'dist'))
+        Assert '.xlsb: export exit 0' ($pub.Exit -eq 0) $pub.Output
         foreach ($p in @(@{ Path = (Join-Path $binDir 'dist\bintool.xlsb'); Protection = 1 }, @{ Path = $binBook; Protection = 0 })) {
             $r = Use-ExcelWorkbook -Path $p.Path -EnableMacros -ScriptBlock {
                 param($xl, $wb)

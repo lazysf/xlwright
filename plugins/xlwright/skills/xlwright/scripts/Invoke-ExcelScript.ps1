@@ -6,7 +6,8 @@ Runs a script file against a workbook through Use-ExcelWorkbook and writes the r
 The script file holds the body of a script block that starts with param($xl, $wb). It is read as UTF-8
 (with or without BOM), so it may contain Japanese text. Whatever the block outputs becomes Result in the
 JSON file. Return plain values (strings, numbers, booleans, hashtables, arrays); COM objects are replaced
-with the text "[COM object]". A two-dimensional array (Range.Value2 of several cells) becomes an array of rows.
+with the text "[COM object]". A two-dimensional array (Range.Value2 of several cells) inside a hashtable becomes an
+array of rows; output directly, the pipeline flattens it to one list of cells.
 
 The JSON has Ok, Result, Error and Warnings. The exit code is 1 when the block or Excel failed.
 With -Create the workbook is first created with New-ExcelWorkbook (it must not exist yet).

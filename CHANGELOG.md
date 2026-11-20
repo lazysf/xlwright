@@ -10,6 +10,9 @@
 
 ### Changed
 
+- `SKILL.md` に、スクリプトが受け付ける形を書いた。`Import-Vba.ps1` が受け付けるのは UTF-8（BOM なし）・LF のファイルだけで、`Publish-Workbook.ps1` が読むのはブックの隣の `vba/` と `ribbon/customUI14.xml` だけ。利用する repo の規則がこれと合わない時は、迂回せずにユーザーに伝える。今までは、repo の規則を優先するとだけ書いていた。
+- `SKILL.md` に、references にしか無かった安全の規則を移した。Excel のオプションの変更とアドインの導入は、ユーザーに頼む。接続文字列はユーザーに確かめてから読む。書き出したコードは commit の前に確かめる。画面の画像は、ブックにも Git にも入れない。
+- UserForm の実行時の確認は、一時フォルダに取った写しで、`Invoke-ExcelMacro` を使って行うと書いた（`references/userform.md`）。今までは `$xl.Run` で呼ぶと書いていて、フォームがダイアログを出すと上限まで止まるおそれがあった。
 - リボンの文書（`references/ribbon.md`）に、実機で確かめた事実を書いた。`Invoke-RibbonButton.ps1` は toggleButton を押せるが、menu、menu の中の項目、dropDown は押せない。リボンの表示が「タブのみを表示する」の時、`Test-RibbonLayout.ps1` の照合は通るが、`-ScreenshotDir` の画像にリボンが写らない。「全画面表示モード」の時は、どちらのスクリプトもタブが見つからずに止まる。どちらの時も、ユーザーにリボンの表示を確かめてもらう。
 - リボンの文書（`references/ribbon.md`）に、`.xlam` を閉じた後の振る舞いを書いた。閉じた時に前面になかったブックのウィンドウにはタブが残り、そのウィンドウを前面にすると消える。`.xlam` のマクロへの `Application.OnTime` は予約した時刻に動かないことがあり、`OnTime` で閉じ直すアドインは開いたままになる。タブが消えたかは、アドインが閉じたかを確かめ、確かめるウィンドウを前面にしてから見る。
 - 新しく作るツールの置き場を決めた。repo の `src/excel/<ツール名>/` に、ブック `workbook.xlsm` と `vba/`、`ribbon/` を置き、配布用のブックは repo 直下の `dist/` に `<ツール名>.xlsm` として出力する。既にあるブックは、頼まれない限り移さない。利用する repo に置き場の規則があれば、そちらを優先する。スクリプトの引数と振る舞いは変わらない。今までは、ブックのフォルダの中の形だけを決め、そのフォルダを repo のどこに置くかは決めていなかった。
@@ -26,6 +29,7 @@
 
 ### Fixed
 
+- `SKILL.md` は、`Invoke-ExcelScript.ps1` に渡す ScriptBlock が返した複数セルの `Value2` が行の配列になると書いていた。そうなるのは hashtable に入れた時だけで、そのまま出力すると 1 列に平らになる（`A1:B2` が `[1,2,3,4]` になった）。文書を直した。
 - `Invoke-ExcelMacro` に、PowerShell の PSObject で包まれた値（`Join-Path` や `Get-Content` が返した文字列など）を `-ArgumentList` で渡すと、`DISP_E_TYPEMISMATCH`（`0x80020005`）で失敗していた。同じ値を `$xl.Run` に渡すと通っていた。中の値を渡すようにした。報告のあったアドインそのものでは確かめていない。
 - Excel のオプション「アドインのユーザー インターフェイス エラーを表示する」がオンの時に、誤りのあるリボン XML のブックで `Test-RibbonLayout.ps1` と `Invoke-RibbonButton.ps1` が `WindowState` の `0x800AC472` で失敗していた。ブックを閉じる処理も拒まれ、Excel は強制的に止められていた。Excel が出すダイアログを閉じ、その文言（誤りの行と説明）を `Error` に入れて止まるようにした。
 - `Save-WorkbookScreenshot.ps1` で画面より大きい `-Width` / `-Height` を指定すると、画像は黙って縮んでいた。縮んだ時は `Warnings` に出すようにした。文書の「画像も同じ大きさになる」も直した。

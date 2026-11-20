@@ -17,5 +17,7 @@ powershell.exe -NoProfile -File "<skill>/scripts/Publish-Workbook.ps1" -Path <�
 - `-FileName` は出力するファイルの名前（拡張子を含む）。省略時は作業ブックと同じ名前になる（`tool/tool.xlsm` なら `tool.xlsm`）。例外として、作業ブックの名前が `workbook.xlsm` か `workbook.xlsb` の時は、ブックのフォルダ名に作業ブックの拡張子を付ける（`tool/workbook.xlsb` なら `tool.xlsb`）。
 - 拡張子で出力の形式が決まる（SKILL.md の「扱うブックの形式」）。`.xlsm` ならマクロ有効ブック、`.xlsb` ならバイナリ形式のブック、`.xlam` ならアドインで出力する（`-FileName tool.xlam`）。作業ブックと違う形式の時は、Excel の `SaveAs` で変換してからロックする。作業ブックの形式は変わらない。アドインの導入（Excel の `アドイン` に足す）は Excel の設定を変えるので、人が行う。
 - 出力先に同名のファイルがある場合は、`-Force` を付けたときだけ上書きする。
+- 配布用のブックからは、個人の情報を消す。消すのは、作成者、最終の編集者、管理者、会社、メモとスレッド形式のコメントの作成者（別の短い名前に置き換わる）、保存したフォルダのパス。タイトル、メモ、コメントは残る。Excel の `Workbook.RemovePersonalInformation` を配布用のブックに立てて保存するので、保存し直しても消えたままになる。作業ブックの情報は変えない。ロックの後に読み戻し、作成者、最終の編集者、管理者、会社のどれかが残っているか、`RemovePersonalInformation` が立っていなければ、出力せずに失敗する。
+- `-KeepPersonalInformation` を付けると消さない。残った項目の名前だけを警告に出す（値は出さない）。
 
 出力後は、配布用のブックの `VBProject.Protection` が `1`、作業ブックが `0` であることを、`Invoke-ExcelScript.ps1` で読み戻して確かめる。リボンがある時は、配布用のブックにも `Test-RibbonLayout.ps1` を当てて、見え方を XML と照らす（[リボン](ribbon.md)）。VBA をロックしたブックでも、リボンは作られ、callback（`getEnabled`）も動いた。`.xlsb` と `.xlam` でも、`Test-RibbonLayout.ps1` でリボンが XML と合った。`.xlam` のボタンを `Invoke-RibbonButton.ps1` で押せるかは確かめていない。

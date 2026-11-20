@@ -8,15 +8,44 @@ The sources are read from the work book's folder: vba/ (required) and ribbon/cus
 the work book's name, or the folder name + the work book's extension when the work book is named
 workbook.xlsm or workbook.xlsb. The extension of the output file name picks the format: .xlsm
 (macro-enabled workbook), .xlsb (binary workbook) or .xlam (add-in). The work book keeps its format.
+
+The output is saved with Workbook.RemovePersonalInformation set, which clears the author, the last author, the
+manager, the company, the comment authors and the saved folder path. The work book keeps them. The output is read
+back and rejected if one of the four properties remains or the flag is not set. -KeepPersonalInformation keeps
+them and names the kept items in a warning.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$OutDir,
     [ValidateNotNullOrEmpty()][string]$FileName,
+    [switch]$KeepPersonalInformation,
     [switch]$Force
 )
 $ErrorActionPreference = 'Stop'
+
+# Returns the names of the personal items in a workbook, never their values.
+function Get-PersonalInformation([string]$Path) {
+    Use-ExcelWorkbook -Path $Path -ScriptBlock {
+        param($xl, $wb)
+        $flags = [Reflection.BindingFlags]
+        $properties = $wb.BuiltinDocumentProperties
+        foreach ($name in 'Author', 'Last Author', 'Manager', 'Company') {
+            # DocumentProperties is late bound: PowerShell's member syntax does not reach Item and Value.
+            $item = [System.__ComObject].InvokeMember('Item', $flags::GetProperty, $null, $properties, [object[]]@($name))
+            $value = [System.__ComObject].InvokeMember('Value', $flags::GetProperty, $null, $item, $null)
+            if (![string]::IsNullOrEmpty([string]$value)) { $name }
+        }
+        # Only RemovePersonalInformation replaces the comment authors and drops the saved folder path
+        # (docs/notes/publish-personal-info.md), so without it they are taken as kept.
+        if (!$wb.RemovePersonalInformation) {
+            $comments = 0
+            foreach ($sheet in $wb.Worksheets) { $comments += $sheet.Comments.Count + $sheet.CommentsThreaded.Count }
+            if ($comments -gt 0) { 'comment authors' }
+            'saved folder path'
+        }
+    }
+}
 
 # The file formats of SaveAs (XlFileFormat) by the extensions an output can have.
 $outputFormats = @{ '.xlsm' = 52; '.xlsb' = 50; '.xlam' = 55 }  # xlOpenXMLWorkbookMacroEnabled, xlExcel12, xlOpenXMLAddIn
@@ -66,13 +95,17 @@ try {
     }
 
     [void][IO.Directory]::CreateDirectory($outputDirectory)
-    if ($outputExtension -ne $workbookExtension) {
+    Import-Module (Join-Path $PSScriptRoot 'XlWright.psm1')
+    $removePersonalInformation = !$KeepPersonalInformation
+    if ($removePersonalInformation -or $outputExtension -ne $workbookExtension) {
         # Excel keeps customUI through SaveAs, and the VBA project of the converted file can be locked like that of
         # the work book (docs/notes/publish-addin.md). Lock after the conversion so that the check reads the output.
-        Import-Module (Join-Path $PSScriptRoot 'XlWright.psm1')
+        # RemovePersonalInformation is stored in the file, so the save of the lock keeps the output clear. It is set
+        # only before SaveAs, so the work book is not saved with it (docs/notes/publish-personal-info.md).
         $format = $outputFormats[$outputExtension]
         Use-ExcelWorkbook -Path $updatedWorkbook -ScriptBlock {
             param($xl, $wb)
+            if ($removePersonalInformation) { $wb.RemovePersonalInformation = $true }
             $wb.SaveAs($pendingOutput, $format)
         }
     }
@@ -80,6 +113,15 @@ try {
         [IO.File]::Copy($updatedWorkbook, $pendingOutput)
     }
     & (Join-Path $PSScriptRoot 'Lock-VbaProject.ps1') -Path $pendingOutput
+    # Read the locked copy: its save is the last one and writes the last author unless it is filtered.
+    $personalItems = @(Get-PersonalInformation $pendingOutput)
+    if ($personalItems.Count -gt 0) {
+        if ($removePersonalInformation) {
+            throw ('Personal information remains in the publish copy: ' + ($personalItems -join ', ') +
+                '. The publish copy was rejected.')
+        }
+        Write-Warning ('The output keeps personal information: ' + ($personalItems -join ', ') + '.')
+    }
     [IO.File]::Replace($updatedWorkbook, $workbook.FullName, [NullString]::Value)
 
     # Publish within the output directory so a partial copy is never visible.

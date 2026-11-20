@@ -252,6 +252,36 @@ function New-EmptyBook([string]$Path) {
     Copy-Fixture ('empty' + [IO.Path]::GetExtension($Path)) $Path { param($p) [void](New-ExcelWorkbook -Path $p) }
 }
 
+# DocumentProperties is late bound: PowerShell's member syntax does not reach Item and Value.
+function Get-DocumentPropertyItem($Workbook, [string]$Name) {
+    [System.__ComObject].InvokeMember('Item', [Reflection.BindingFlags]::GetProperty, $null, $Workbook.BuiltinDocumentProperties, [object[]]@($Name))
+}
+
+function Set-DocumentProperty($Workbook, [string]$Name, [string]$Value) {
+    $item = Get-DocumentPropertyItem $Workbook $Name
+    [void][System.__ComObject].InvokeMember('Value', [Reflection.BindingFlags]::SetProperty, $null, $item, [object[]]@($Value))
+}
+
+# The personal items of a workbook as states (empty, synthetic, other), so that the report never shows a real name.
+function Get-PersonalState([string]$Path) {
+    Use-ExcelWorkbook -Path $Path -ScriptBlock {
+        param($xl, $wb)
+        $state = {
+            param([string]$Value)
+            if ([string]::IsNullOrEmpty($Value)) { 'empty' } elseif ($Value -like 'example-*') { 'synthetic' } else { 'other' }
+        }
+        $r = [ordered]@{}
+        foreach ($name in 'Author', 'Last Author', 'Manager', 'Company') {
+            $item = Get-DocumentPropertyItem $wb $name
+            $r[$name] = & $state ([string][System.__ComObject].InvokeMember('Value', [Reflection.BindingFlags]::GetProperty, $null, $item, $null))
+        }
+        $r.Filter = $wb.RemovePersonalInformation
+        $notes = $wb.Worksheets.Item(1).Comments
+        $r.NoteAuthorIsLogin = $notes.Count -gt 0 -and [string]$notes.Item(1).Author -eq $env:USERNAME
+        [pscustomobject]$r
+    }
+}
+
 function New-BookWithVba([string]$Dir) {
     $source = Join-Path $Dir 'vba'
     Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination $source -Recurse
@@ -1307,12 +1337,37 @@ if ($Full) {
         $dir = New-CaseDir 'publish'
         $book = Join-Path $dir 'book.xlsm'
         [void](New-EmptyBook $book)
+        # Synthetic personal information and a note, whose author Excel takes from the user name.
+        Use-ExcelWorkbook -Path $book -Save -ScriptBlock {
+            param($xl, $wb)
+            foreach ($name in 'Author', 'Manager', 'Company') { Set-DocumentProperty $wb $name ('example-' + $name) }
+            [void]$wb.Worksheets.Item(1).Range('A1').AddComment('note')
+        }
         Copy-Item -LiteralPath (Join-Path $data 'vba') -Destination (Join-Path $dir 'vba') -Recurse
         New-Item -ItemType Directory -Path (Join-Path $dir 'ribbon') | Out-Null
         Copy-Item -LiteralPath (Join-Path $data 'ribbon\layout.xml') -Destination (Join-Path $dir 'ribbon\customUI14.xml')
         $pub =Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'dist'))
         Assert 'publish exit 0' ($pub.Exit -eq 0) $pub.Output
         $dist = Join-Path $dir 'dist\book.xlsm'
+        # Not $s: variable names ignore case and $S holds the strings of the ribbon.
+        $cleared = { param($p) $p.Author -eq 'empty' -and $p.'Last Author' -eq 'empty' -and $p.Manager -eq 'empty' -and $p.Company -eq 'empty' -and $p.Filter -eq $true -and -not $p.NoteAuthorIsLogin }
+        $personal = Get-PersonalState $dist
+        Assert 'dist: personal information cleared' (& $cleared $personal) ($personal | ConvertTo-Json -Compress)
+        $personal = Get-PersonalState $book
+        Assert 'work book: personal information kept' ($personal.Author -eq 'synthetic' -and $personal.Manager -eq 'synthetic' -and $personal.Company -eq 'synthetic' -and $personal.Filter -eq $false) ($personal | ConvertTo-Json -Compress)
+        $zip = [IO.Compression.ZipFile]::OpenRead($dist)
+        try {
+            $reader = New-Object IO.StreamReader($zip.GetEntry('xl/workbook.xml').Open())
+            try { $workbookXml = $reader.ReadToEnd() } finally { $reader.Dispose() }
+        }
+        finally { $zip.Dispose() }
+        Assert 'dist: no saved folder path' ($workbookXml.IndexOf('absPath', [StringComparison]::Ordinal) -lt 0) 'absPath present'
+
+        # -KeepPersonalInformation keeps the items and names them in a warning.
+        $pub = Invoke-Script (Join-Path $scripts 'Publish-Workbook.ps1') @('-Path', $book, '-OutDir', (Join-Path $dir 'keep'), '-KeepPersonalInformation')
+        $personal = Get-PersonalState (Join-Path $dir 'keep\book.xlsm')
+        Assert 'keep: exit 0, values kept' ($pub.Exit -eq 0 -and $personal.Author -eq 'synthetic' -and $personal.Company -eq 'synthetic' -and $personal.Filter -eq $false) ($pub.Output + ($personal | ConvertTo-Json -Compress))
+        Assert 'keep: warning names the items' ($pub.Output -like '*keeps personal information: Author, *Manager, Company, comment authors, saved folder path.*') $pub.Output
         foreach ($p in @(@{ Path = $dist; Protection = 1 }, @{ Path = $book; Protection = 0 })) {
             $r = Use-ExcelWorkbook -Path $p.Path -EnableMacros -ScriptBlock {
                 param($xl, $wb)
@@ -1349,6 +1404,8 @@ if ($Full) {
         Assert 'add-in: saved as an add-in' ($r.IsAddin -eq $true -and $r.FileFormat -eq 55) ($r | ConvertTo-Json -Compress)
         Assert 'add-in: VBA protection 1' ($r.Protection -eq 1) $r.Protection
         Assert 'add-in: macro runs' ($r.Add -eq 9) $r.Add
+        $personal = Get-PersonalState $addin
+        Assert 'add-in: personal information cleared' (& $cleared $personal) ($personal | ConvertTo-Json -Compress)
         $json = Join-Path $dir 'addin-layout.json'
         $layout = Invoke-Script (Join-Path $scripts 'Test-RibbonLayout.ps1') @('-Path', $addin, '-OutFile', $json)
         $res = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8) | ConvertFrom-Json
@@ -1378,6 +1435,8 @@ if ($Full) {
             $label = '.xlsb ' + (Split-Path -Leaf $p.Path)
             Assert ($label + ': binary workbook, VBA protection ' + $p.Protection + ', macro runs') ($r.FileFormat -eq 50 -and $r.Protection -eq $p.Protection -and $r.Add -eq 9) ($r | ConvertTo-Json -Compress)
         }
+        $personal = Get-PersonalState (Join-Path $binDir 'dist\bintool.xlsb')
+        Assert '.xlsb: personal information cleared' (& $cleared $personal) ($personal | ConvertTo-Json -Compress)
     }
 
     Invoke-Case 'screenshot' -WatchForeground {

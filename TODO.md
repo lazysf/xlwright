@@ -16,34 +16,12 @@
 
 使う依頼がまだ無いか、人の手が要るものです。依頼が来たら、理由を確かめ直してから着手します。
 
+項目は優先度の高い順に並べます。実際の利用で起きた事象を、Claude の案より先に置きます。同じ中では、今の機能の誤りや確かめられない穴を、手間を減らすものや新しい機能より先に置きます。
+
 記載に「外部の実機調査」とある項目は、外の環境で xlwright を使った報告から選んだものです。報告の事象は、この端末ではまだ確かめていません。
 
 ほかの項目は、スキルの文書とスクリプトを読んで Claude が出した案で、利用者からの具体的な依頼から生まれたものではありません。各項目の「理由」はその時の推測で、実際の Excel での実現性は確かめていません。スクリプト名とスイッチ名は仮のものです。
 
-- [ ] リボンの画像の埋め込み。`Add-CustomUI.ps1` で `image` 属性と `customUI/images` を扱う。
-  - 記載: 2026-11-16（スキルの文書とスクリプトの見直し）
-  - 理由: 今のアイコンは組み込みの `imageMso` だけ（`references/ribbon.md`）。自前のアイコン（社のロゴ、`imageMso` に無い絵柄）を求められると応じられない。
-  - 待つもの: `imageMso` で足りない依頼。
-  - 足りる形: 人が渡した PNG を、ボタンの `image` 属性から参照できるように埋め込むこと。
-  - やらないこと: アイコンを描くこと、`loadImage` や `getImage` の callback。
-- [ ] リボンの押下の対象を広げる。toggleButton、menu の項目、dropDown。
-  - 記載: 2026-11-16（スキルの文書とスクリプトの見直し）
-  - 理由: `Invoke-RibbonButton.ps1` が探すのは、UI Automation で `Button` に見える要素だけ。toggleButton や menu の中の項目を押せるかは、確かめていない（`references/ribbon.md`）。toggleButton は `Test-RibbonLayout.ps1` で読めているので、`Button` に見えていれば今でも押せる。押せなければ、callback がつながっているかを押して確かめられない。マクロの本体は、callback から分けておけば `Invoke-ExcelMacro` で試せる（`references/ribbon.md`）ので、足りないのは「つながり」の確認だけ。
-  - 待つもの: toggleButton や menu を持つリボンの依頼。来たら、まず今の `Invoke-RibbonButton.ps1` で押せるかを試す。
-  - 足りる形: toggleButton と menu の中のボタンを押せること。dropDown は、使う依頼が来てから考える。
-  - やらないこと: 押した後の状態（toggleButton の押下状態）を callback と照らすこと。
-- [ ] プラグインの icon を足す。
-  - 記載: 2026-11-19（`claude plugin validate` の警告 `ICON_MISSING`）
-  - 理由: icon が無いので、公式のプラグインの一覧に申請すると icon の無い項目になる。一覧には申請しないと決めたので、今は要らない。
-  - 待つもの: 一覧に申請する、または画面で icon を見分けたくなった時。
-  - 足りる形: 一覧の条件（`docs/notes/plugin-install.md`）に合う正方形の PNG を、`.claude-plugin/icon.png` に置くこと。一覧の icon は初めて保存または申請した時に決まるので、申請の前に置く。
-  - やらないこと: icon を描くこと。絵は人が用意する。
-- [ ] 簡易表示のリボンの見分けを確かめる（`references/ribbon.md` の未確認）。
-  - 記載: 2026-11-16（スキルの文書とスクリプトの見直し）
-  - 理由: `Test-RibbonLayout.ps1` は、タブの中身の高さが 60 px 未満の時に簡易表示と見なし、確かめられなかったとして止まる。この見分けは実機で確かめていないので、簡易表示のリボンを見誤っても、今は気づけない。
-  - 待つもの: 人が試せる時。Excel のリボンの表示を変える必要があり、エージェントは変えない。
-  - 足りる形: 確かめた結果を文書に書くこと。直せないものは、確かめた範囲を書く。
-  - やらないこと: 画面の拡大率が 100% 以外での確認。理由は `docs/notes/feature-review.md` の「確かめる画面の拡大率」にある。
 - [ ] `Invoke-ExcelMacro` が `DISP_E_TYPEMISMATCH`（`0x80020005`）で失敗する。
   - 記載: 2026-11-20（外部の実機調査）
   - 理由: 利用側のアドインの Private 関数を `Workbook, String, String` で呼ぶと失敗し、同じ関数は `Application.Run` を直に呼ぶと通った。合成のブックで、同じ形の Private の Enum の戻り値と Public の Long の戻り値を試すと、どちらの呼び方でも通った。
@@ -62,3 +40,27 @@
   - 待つもの: 同じ依頼がもう一度来た時。
   - 足りる形: フォーム名、変えるコントロール、見本のコントロールを受け、変えた後のフォントが見本と同じで、位置、大きさ、タブ順、コードが変わっていないことを返すこと。一時の VBA は、返すブックに残さない。
   - やらないこと: フォント以外のプロパティの一括変更。
+- [ ] リボンの押下の対象を広げる。toggleButton、menu の項目、dropDown。
+  - 記載: 2026-11-16（スキルの文書とスクリプトの見直し）
+  - 理由: `Invoke-RibbonButton.ps1` が探すのは、UI Automation で `Button` に見える要素だけ。toggleButton や menu の中の項目を押せるかは、確かめていない（`references/ribbon.md`）。toggleButton は `Test-RibbonLayout.ps1` で読めているので、`Button` に見えていれば今でも押せる。押せなければ、callback がつながっているかを押して確かめられない。マクロの本体は、callback から分けておけば `Invoke-ExcelMacro` で試せる（`references/ribbon.md`）ので、足りないのは「つながり」の確認だけ。
+  - 待つもの: toggleButton や menu を持つリボンの依頼。来たら、まず今の `Invoke-RibbonButton.ps1` で押せるかを試す。
+  - 足りる形: toggleButton と menu の中のボタンを押せること。dropDown は、使う依頼が来てから考える。
+  - やらないこと: 押した後の状態（toggleButton の押下状態）を callback と照らすこと。
+- [ ] 簡易表示のリボンの見分けを確かめる（`references/ribbon.md` の未確認）。
+  - 記載: 2026-11-16（スキルの文書とスクリプトの見直し）
+  - 理由: `Test-RibbonLayout.ps1` は、タブの中身の高さが 60 px 未満の時に簡易表示と見なし、確かめられなかったとして止まる。この見分けは実機で確かめていないので、簡易表示のリボンを見誤っても、今は気づけない。
+  - 待つもの: 人が試せる時。Excel のリボンの表示を変える必要があり、エージェントは変えない。
+  - 足りる形: 確かめた結果を文書に書くこと。直せないものは、確かめた範囲を書く。
+  - やらないこと: 画面の拡大率が 100% 以外での確認。理由は `docs/notes/feature-review.md` の「確かめる画面の拡大率」にある。
+- [ ] リボンの画像の埋め込み。`Add-CustomUI.ps1` で `image` 属性と `customUI/images` を扱う。
+  - 記載: 2026-11-16（スキルの文書とスクリプトの見直し）
+  - 理由: 今のアイコンは組み込みの `imageMso` だけ（`references/ribbon.md`）。自前のアイコン（社のロゴ、`imageMso` に無い絵柄）を求められると応じられない。
+  - 待つもの: `imageMso` で足りない依頼。
+  - 足りる形: 人が渡した PNG を、ボタンの `image` 属性から参照できるように埋め込むこと。
+  - やらないこと: アイコンを描くこと、`loadImage` や `getImage` の callback。
+- [ ] プラグインの icon を足す。
+  - 記載: 2026-11-19（`claude plugin validate` の警告 `ICON_MISSING`）
+  - 理由: icon が無いので、公式のプラグインの一覧に申請すると icon の無い項目になる。一覧には申請しないと決めたので、今は要らない。
+  - 待つもの: 一覧に申請する、または画面で icon を見分けたくなった時。
+  - 足りる形: 一覧の条件（`docs/notes/plugin-install.md`）に合う正方形の PNG を、`.claude-plugin/icon.png` に置くこと。一覧の icon は初めて保存または申請した時に決まるので、申請の前に置く。
+  - やらないこと: icon を描くこと。絵は人が用意する。

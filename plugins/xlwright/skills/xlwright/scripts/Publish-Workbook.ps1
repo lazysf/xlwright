@@ -24,29 +24,6 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-# Returns the names of the personal items in a workbook, never their values.
-function Get-PersonalInformation([string]$Path) {
-    Use-ExcelWorkbook -Path $Path -ScriptBlock {
-        param($xl, $wb)
-        $flags = [Reflection.BindingFlags]
-        $properties = $wb.BuiltinDocumentProperties
-        foreach ($name in 'Author', 'Last Author', 'Manager', 'Company') {
-            # DocumentProperties is late bound: PowerShell's member syntax does not reach Item and Value.
-            $item = [System.__ComObject].InvokeMember('Item', $flags::GetProperty, $null, $properties, [object[]]@($name))
-            $value = [System.__ComObject].InvokeMember('Value', $flags::GetProperty, $null, $item, $null)
-            if (![string]::IsNullOrEmpty([string]$value)) { $name }
-        }
-        # Only RemovePersonalInformation replaces the comment authors and drops the saved folder path
-        # (docs/notes/publish-personal-info.md), so without it they are taken as kept.
-        if (!$wb.RemovePersonalInformation) {
-            $comments = 0
-            foreach ($sheet in $wb.Worksheets) { $comments += $sheet.Comments.Count + $sheet.CommentsThreaded.Count }
-            if ($comments -gt 0) { 'comment authors' }
-            'saved folder path'
-        }
-    }
-}
-
 # The file formats of SaveAs (XlFileFormat) by the extensions an output can have.
 $outputFormats = @{ '.xlsm' = 52; '.xlsb' = 50; '.xlam' = 55 }  # xlOpenXMLWorkbookMacroEnabled, xlExcel12, xlOpenXMLAddIn
 
@@ -112,9 +89,9 @@ try {
     else {
         [IO.File]::Copy($updatedWorkbook, $pendingOutput)
     }
-    & (Join-Path $PSScriptRoot 'Lock-VbaProject.ps1') -Path $pendingOutput
-    # Read the locked copy: its save is the last one and writes the last author unless it is filtered.
-    $personalItems = @(Get-PersonalInformation $pendingOutput)
+    # The lock reads the locked copy back and names the personal items left in it: its save is the last one and
+    # writes the last author unless it is filtered.
+    $personalItems = @(& (Join-Path $PSScriptRoot 'Lock-VbaProject.ps1') -Path $pendingOutput)
     if ($personalItems.Count -gt 0) {
         if ($removePersonalInformation) {
             throw ('Personal information remains in the publish copy: ' + ($personalItems -join ', ') +

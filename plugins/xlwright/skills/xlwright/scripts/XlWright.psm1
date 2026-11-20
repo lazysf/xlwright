@@ -267,11 +267,11 @@ function Stop-ExcelSession($Session, $Workbook) {
     try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($Session.Xl) } catch { }
     $Session.Xl = $null
 
-    # Quit returns before the process exits. PowerShell often keeps COM wrappers alive that GC does not
-    # reclaim, and Excel then stays for minutes. The workbook is closed by now, so after a short wait
-    # this call stops its own instance (same PID and start time) instead of leaving it behind.
-    # An Excel that was let go exited 2.4 to 3.4 s after Quit; one that was held did not exit in 30 s.
-    # 5 s covers the first and cuts the wait for the second, which was the usual case (2026-11-17).
+    # Quit returns before the process exits, and some instances do not exit for minutes. The workbook is closed
+    # by now, so after a short wait this call stops its own instance (same PID and start time) instead of
+    # leaving it behind. Most instances exited 2.2 to 2.9 s after Quit; the ones that did not exit in 60 s had
+    # started an Office license renewal (docs/notes/excel-quit.md). Those would still be stopped after a longer
+    # wait, only later.
     for ($i = 0; $i -lt 10; $i++) {
         if (-not (Get-Process -Id $Session.ProcessId -ErrorAction SilentlyContinue)) { return }
         Start-Sleep -Milliseconds 500

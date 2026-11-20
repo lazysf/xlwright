@@ -137,7 +137,7 @@ powershell.exe -NoProfile -File "<skill>/scripts/Invoke-ExcelScript.ps1" -Path <
 - `-Save` は、ScriptBlock が例外なしで終わった時だけ保存する。例外が出たら、保存せずに閉じる。
 - `-Visible` はウィンドウを表示する。ユーザーの画面に Excel が出るので、先に一言伝える。
 - `-TimeoutSeconds`（既定 300）を過ぎると、見張りのプロセスがこの呼び出しで起動した Excel だけを止め、`Timed out after ...` のエラーになる。保存していない変更は失われる。見張りは呼び出し元のシェルが timeout などで殺されても残り、上限で Excel を止める。長いマクロを動かす時は、上限を明示して延ばす。
-- ブックを閉じて `Quit` した後、Excel が 5 秒以内に終わらなければ、この呼び出しが起動した Excel（PID と起動時刻で照合）を止める。PowerShell が COM の参照を手放さず、`Quit` の後も Excel が数分残る実測があるため。
+- ブックを閉じて `Quit` した後、Excel が 5 秒以内に終わらなければ、この呼び出しが起動した Excel（PID と起動時刻で照合）を止める。`Quit` の後も Excel が数分残ることがあるため。測った範囲では、起動の時に Office がライセンスの更新を始めた Excel で起きた。
 - 警告で PID が出た時（照合できない、止められない）は、人へ伝える。自分で止める時も、その PID だけを `Stop-Process -Id` で止める。名前（`-Name EXCEL`）では止めない。ユーザーの Excel まで止まる。
 
 ### マクロを動かす

@@ -21,6 +21,7 @@
   - [cell-error.md](./notes/cell-error.md): エラー値のセルを `SpecialCells` と `Value2` で列挙する方法の比較と、`Find-CellError.ps1` の形にした理由。
   - [screenshot.md](./notes/screenshot.md): ブックの見た目を画像にする方法（ウィンドウの `PrintWindow` と `Range.CopyPicture`）の比較と、その実測。
   - [userform-screenshot.md](./notes/userform-screenshot.md): 表示した UserForm を、画面に出さずに画像にする方法の実測。
+  - [excel-quit.md](./notes/excel-quit.md): `Quit` の後に Excel が終わるまでの時間の実測と、終わらなかった Excel が起動の時にしていたこと、`Stop-ExcelSession` が 5 秒待って止める理由。
   - [dev-cycle-timing.md](./notes/dev-cycle-timing.md): ツールのブックを作る 1 周（シート、VBA の取り込み、コンパイル、マクロ、読み戻し、エラー値のセル）で、スクリプトの呼び出しごとに時間がどこに掛かるかの実測。
   - [feature-review.md](./notes/feature-review.md): スキルが持つ機能と持たない機能を、目的に照らして今の形にしている理由。
   - [skill-description.md](./notes/skill-description.md): スキルの `description` を今の形にしている理由と、選ばれる範囲の実測。

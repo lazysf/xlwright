@@ -7,6 +7,10 @@ Public Function AddThree(ByVal a As Long, ByVal b As Long, ByVal c As Long) As L
     AddThree = a + b + c
 End Function
 
+Private Function JoinNames(wb As Workbook, a As String, b As String) As String
+    JoinNames = wb.Name & "|" & a & "|" & b
+End Function
+
 Public Sub CountCall()
     calls = calls + 1
 End Sub

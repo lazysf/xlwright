@@ -8,6 +8,7 @@
   - [ribbon-long-macro.md](./notes/ribbon-long-macro.md): リボンのボタンで長く動くマクロを、`Invoke-RibbonButton.ps1` が待つかの実測。
   - [vba-compile.md](./notes/vba-compile.md): VBA のコンパイルを COM から起こしてエラーを読む方法と、その実測。
   - [macro-dialog.md](./notes/macro-dialog.md): マクロの実行中に出たダイアログを見つけて閉じる方法と、その実測。
+  - [macro-arguments.md](./notes/macro-arguments.md): `Invoke-ExcelMacro` が PSObject で包んだ引数の中の値を渡す理由と、その実測。
   - [vba-roundtrip.md](./notes/vba-roundtrip.md): 取り込んだ VBA を書き出した時に、正本と変わる所と、`git diff --no-index` で比べた時の出力の実測。
   - [vba-one-session.md](./notes/vba-one-session.md): VBA の取り込み、コンパイル、マクロの実行を 1 つの Excel で続けて行えるかの実測と、`Import-ExcelVba` などの関数に分けた理由。
   - [vba-prune.md](./notes/vba-prune.md): ブックから VBA のコンポーネントを消す時に COM でできることの実測。

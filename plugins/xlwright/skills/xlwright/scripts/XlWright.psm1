@@ -483,12 +483,21 @@ function Invoke-ExcelMacro {
     $ps = [PowerShell]::Create()
     [void]$ps.AddScript($script:MacroDialogWatcher.ToString()).AddArgument($state)
     $async = $ps.BeginInvoke()
+    # Through InvokeMember, a value wrapped in a PSObject (e.g. a string from Join-Path or Get-Content) fails a String
+    # parameter with DISP_E_TYPEMISMATCH; through $Excel.Run(...) it does not (docs/notes/macro-arguments.md).
+    # A loop rather than the pipeline, which would unroll an argument that is an array.
+    $arguments = New-Object object[] $ArgumentList.Count
+    for ($i = 0; $i -lt $ArgumentList.Count; $i++) {
+        $argument = $ArgumentList[$i]
+        if ($argument -is [psobject]) { $argument = $argument.psobject.BaseObject }
+        $arguments[$i] = $argument
+    }
     $value = $null
     $failure = $null
     try {
         # InvokeMember passes a variable number of arguments, which $Excel.Run(...) cannot.
         $value = [System.__ComObject].InvokeMember('Run', [Reflection.BindingFlags]::InvokeMethod, $null, $Excel,
-            [object[]](@($Name) + $ArgumentList))
+            [object[]](@($Name) + $arguments))
     }
     catch { $failure = $_ }
     finally {

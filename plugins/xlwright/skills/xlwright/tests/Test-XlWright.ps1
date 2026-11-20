@@ -466,14 +466,21 @@ Invoke-Case 'macro' {
         param($xl, $wb)
         Invoke-ExcelMacro -Excel $xl -Name 'Macros.CountCall'
         Invoke-ExcelMacro -Excel $xl -Name 'Macros.CountCall'
+        # A string from a cmdlet such as Join-Path comes wrapped in a PSObject (docs/notes/macro-arguments.md).
+        $a = Join-Path 'a' 'b'
+        $b = [psobject]'c'
         [ordered]@{
             Sum = Invoke-ExcelMacro -Excel $xl -Name 'Macros.AddThree' -ArgumentList 1, 2, 3
+            Wrapped = ($a -is [psobject]) -and ($b -is [psobject])
+            Joined = Invoke-ExcelMacro -Excel $xl -Name 'Macros.JoinNames' -ArgumentList $wb, $a, $b
             Calls = Invoke-ExcelMacro -Excel $xl -Name 'Macros.CallCount'
             Slow = Invoke-ExcelMacro -Excel $xl -Name 'Macros.Slow'
         }
     }
     Assert 'only the values of the functions are returned' (@($r).Count -eq 1) (@($r).Count)
     Assert 'arguments passed, value returned' ($r.Sum -eq 6) $r.Sum
+    Assert 'wrapped strings: the arguments are wrapped' $r.Wrapped $r.Wrapped
+    Assert 'wrapped strings: passed to String parameters of a Private function' ($r.Joined -eq ((Split-Path -Leaf $book) + '|a\b|c')) $r.Joined
     Assert 'Sub ran twice' ($r.Calls -eq 2) $r.Calls
     Assert 'a macro that takes time is waited for' ($r.Slow -eq 7) $r.Slow
 }

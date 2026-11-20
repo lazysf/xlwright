@@ -2,6 +2,12 @@
 param([Parameter(Mandatory)][string]$Path)
 $ErrorActionPreference = 'Stop'
 
+# The password is thrown away, so a work book locked by mistake could not be unlocked. Only the publish copy
+# that Publish-Workbook.ps1 makes (.excel-publish-<id>.<ext>) is taken, before the workbook is opened.
+if (-not ([IO.Path]::GetFileName($Path)).StartsWith('.excel-publish-', [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Lock-VbaProject.ps1 locks only the publish copy made by Publish-Workbook.ps1; use Publish-Workbook.ps1: $Path"
+}
+
 Import-Module (Join-Path $PSScriptRoot 'XlWright.psm1')
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 if (-not ('VbaProjectLock.Native' -as [type])) {

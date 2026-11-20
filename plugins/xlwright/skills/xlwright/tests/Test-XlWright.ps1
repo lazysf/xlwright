@@ -612,6 +612,10 @@ Invoke-Case 'input-rejected' {
     $r = Invoke-Script $publish @('-Path', $plain, '-OutDir', $out, '-Force')
     Assert 'publish refuses a work book that is not .xlsm or .xlsb' ($r.Exit -ne 0 -and ($r.Output -replace '\s+', '') -like '*Expectedan.xlsmor.xlsbfile*') $r.Output
     Assert 'work book unchanged by refused publishes' ((Get-FileHashText $pubBook) -eq $hash) 'hash changed'
+    # The lock throws its password away, so it takes only the publish copy, never a work book.
+    $r = Invoke-Script (Join-Path $scripts 'Lock-VbaProject.ps1') @('-Path', $pubBook)
+    Assert 'Lock-VbaProject refuses a work book' ($r.Exit -ne 0 -and ($r.Output -replace '\s+', '') -like '*locksonlythepublishcopy*') $r.Output
+    Assert 'work book unchanged by the refused lock' ((Get-FileHashText $pubBook) -eq $hash) 'hash changed'
 
     # Formats outside the skill are rejected before Excel or the zip is touched, whatever the content is.
     $legacy = Join-Path $dir 'legacy.xls'

@@ -10,11 +10,6 @@
 
 理由が、今の機能の穴か、スキルが選ばれる範囲の誤りに当たるものです。上から順に進めます。
 
-- [ ] 試験の `ribbon` の「a macro that runs for 10 seconds」を、時間でなく印のファイルで判定する。
-  - 記載: 2026-11-20（外部の実機調査）
-  - 理由: 今は、何もしないボタンより 3 秒以上長いかで、10 秒のマクロを待ったと判定する。見込む差は約 5 秒で、1 回の測定に拠る（`docs/notes/ribbon-long-macro.md`）。外の環境では差が約 2 秒で落ち、マクロが終わったかは分からなかった。Excel の起動の揺れで、待った時と途中で止まった時の差が埋もれる。
-  - 足りる形: マクロの始めと終わりに印のファイルを書かせ、終わりの印があるかで判定すること。`docs/notes/ribbon-long-macro.md` の実験と同じ方法。
-  - やらないこと: スクリプト（`Invoke-RibbonButton.ps1`）の変更。
 - [ ] `Test-Prerequisite.ps1` が、`AccessVBOM` を読めなかった時も「1 ではない」と案内する。
   - 記載: 2026-11-20（外部の実機調査。Codex の sandbox の中）
   - 理由: `Get-ExcelPrerequisite`（`XlWright.psm1`）は、レジストリを `-ErrorAction SilentlyContinue` で読む。読み取りの失敗も未設定も `null` になり、Problems は人に設定を頼むよう案内する。sandbox の中でこれを読んだ AI が、端末の設定が無効だと取り違えた。sandbox の中では COM と WMI もどのみち拒まれる（`docs/notes/codex-sandbox.md`）ので、害は案内の誤りに限られる。

@@ -1165,9 +1165,7 @@ if ($Full) {
                     $parsed = [IO.File]::ReadAllText($pressJson, [Text.Encoding]::UTF8) | ConvertFrom-Json
                     [pscustomobject]@{ Exit = $run.Exit; Json = $parsed; Detail = ($parsed | ConvertTo-Json -Compress -Depth 5) }
                 }
-                $quietWatch = [Diagnostics.Stopwatch]::StartNew()
                 $quiet = & $press 'Quiet' 'quiet'
-                $quietWatch.Stop()
                 Assert 'English label, no dialog: clicked, no dialog' ($quiet.Exit -eq 0 -and $quiet.Json.Clicked -and @($quiet.Json.Dialogs).Count -eq 0) $quiet.Detail
                 $twice = & $press $S.TwiceButton 'twice'
                 Assert 'two MsgBoxes in a row: both read, in order' ($twice.Exit -eq 0 -and $twice.Json.Clicked -and @($twice.Json.Dialogs).Count -eq 2 -and
@@ -1176,15 +1174,15 @@ if ($Full) {
                 Assert 'disabled button: exit 1, not clicked' ($off.Exit -eq 1 -and -not $off.Json.Clicked -and [string]$off.Json.Error -like "Button '*' is disabled") $off.Detail
                 $group = & $press $S.Group 'group'
                 Assert 'a group named as the button: exit 1, not found, not clicked' ($group.Exit -eq 1 -and -not $group.Json.Clicked -and [string]$group.Json.Error -like 'Not found:*') $group.Detail
-                # The click returns at once; closing the workbook waits for the macro, which runs for 10 seconds.
-                # Compared with the press of Quiet, so that the start of Excel is not counted. Both wait 5 seconds
-                # (DialogTimeoutSeconds) for a dialog, so a macro that is waited for adds about 5 seconds.
-                # A macro that is cut off when the workbook closes adds none (docs/notes/ribbon-long-macro.md).
-                $watch = [Diagnostics.Stopwatch]::StartNew()
+                # The click returns at once; closing the workbook waits for the macro, which runs for 10 seconds
+                # and then writes long-end.txt. A macro that is cut off when the workbook closes never writes it
+                # (docs/notes/ribbon-long-macro.md). The time taken is not compared: the start of Excel varies by
+                # more than the difference.
+                $endMarker = Join-Path $dir 'long-end.txt'
+                Remove-Item -LiteralPath $endMarker -ErrorAction SilentlyContinue
                 $long = & $press $S.LongButton 'long'
-                $watch.Stop()
-                $extra = $watch.Elapsed.TotalSeconds - $quietWatch.Elapsed.TotalSeconds
-                Assert 'a macro that runs for 10 seconds: clicked, waited for' ($long.Exit -eq 0 -and $long.Json.Clicked -and @($long.Json.Dialogs).Count -eq 0 -and $extra -ge 3)($long.Detail + ' ' + [int]$extra + ' s more than Quiet')
+                $ended = Test-Path -LiteralPath $endMarker
+                Assert 'a macro that runs for 10 seconds: clicked, waited for until it ended' ($long.Exit -eq 0 -and $long.Json.Clicked -and @($long.Json.Dialogs).Count -eq 0 -and $ended) ($long.Detail + ' long-end.txt written: ' + $ended)
                 $left = Wait-NoExcel 20
                 Assert 'after the presses: no Excel left' ($left.Count -eq 0) ('PIDs ' + ($left -join ','))
             }

@@ -30,9 +30,15 @@ Public Sub DoneTwice(control As IRibbonControl)
     MsgBox "2 つ目の通知"
 End Sub
 
-' 10 秒動いてから終わる。ブックを閉じる時に待つかを見る
+' 10 秒動いてから終わる。ブックを閉じる時に待つかを見る。
+' 終わった印に、ブックと同じフォルダに long-end.txt を書く
 Public Sub RunLong(control As IRibbonControl)
+    Dim handle As Integer
     Application.Wait Now + TimeSerial(0, 0, 10)
+    handle = FreeFile
+    Open ThisWorkbook.Path & "\long-end.txt" For Output As #handle
+    Print #handle, "end"
+    Close #handle
 End Sub
 
 Public Sub GetOff(control As IRibbonControl, ByRef returnedVal)

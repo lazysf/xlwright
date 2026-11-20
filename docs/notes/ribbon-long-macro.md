@@ -1,6 +1,6 @@
 # リボンのボタンで長く動くマクロを、Invoke-RibbonButton.ps1 は待つか
 
-- Date: 2026-11-18
+- Date: 2026-11-20
 - 出典: 一時フォルダの新しいブックで `Invoke-RibbonButton.ps1` を流した実測。Excel 16.0.20527（Microsoft 365 64-bit）、Windows 11、Windows PowerShell 5.1.26100.9818。
 
 `Invoke-RibbonButton.ps1` は、ボタンを押した後、ダイアログを `-DialogTimeoutSeconds`（既定 5）の間待ち、出なければブックを閉じる。閉じる時に、ダイアログを出さずに動き続けるマクロを待つかは、マクロが `DoEvents` を呼ぶかで変わった。
@@ -22,7 +22,8 @@
 
 - `DoEvents` を呼ぶマクロは、ブックを閉じる時に待たれず、途中で止まった。結果は `Clicked` が true、`Error` が null で、止まったことは結果からは分からない。
 - `DoEvents` を呼ばないマクロは、終わるまで待たれた。
-- `Application.Wait Now + TimeSerial(0, 0, 10)` のマクロも待たれた。試験の `ribbon` の項目で確かめた。押してから戻るまでが、何もしないボタンより約 5 秒長かった（1 回の測定）。`DoEvents` のマクロでは、この差が 0 秒だった。
+- `Application.Wait Now + TimeSerial(0, 0, 10)` のマクロも待たれた。押してから戻るまでが、何もしないボタンより約 5 秒長かった（1 回の測定）。`DoEvents` のマクロでは、この差が 0 秒だった。
+- 試験の `ribbon` の項目は、所要時間でなく印のファイルで判定する。`Application.Wait` で 10 秒待った後に `long-end.txt` を書くマクロを押し、スクリプトが戻った時に印があることを確かめる。所要時間の差は Excel の起動の揺れに埋もれ、外の環境では約 2 秒になって落ちた（人からの報告）。待ちを `DoEvents` のループに替えた写しでは、印が書かれず落ちた（2026-11-20）。
 
 ## 未確認
 

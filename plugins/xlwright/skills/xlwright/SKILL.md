@@ -74,19 +74,23 @@ Excel は既定で、VBA とブックイベントを無効にし、外部ブッ�
 
 ## 対象と作業手順
 
-ブックごとにフォルダを分け、ブックの隣にソースを置く配置を既定とする。各スクリプトの `-Path` には、そのフォルダのブックを渡す。対象が特定できない場合は、作業ブックの場所を確認してから開く。
+新しく作るツールは、repo の `src/excel/<ツール名>/` に置く配置を既定とする。ツールごとにフォルダを分け、ツールが 1 つでもこの形にする。ツールはフォルダ名で見分け、ブックの名前は `workbook.xlsm`（`.xlsb` なら `workbook.xlsb`）にする。ブックの隣にソースを置き、配布用のブックは repo 直下の `dist/` に出力する。各スクリプトの `-Path` には、そのフォルダのブックを渡す。既にあるブックは、ユーザーに頼まれない限りこの配置へ移さず、今の場所で作業する。そのブックのソースも、ブックの隣に置く。対象が特定できない場合は、作業ブックの場所を確認してから開く。
 
 ```text
-<ブックのフォルダ>/
-├── <ブック>.xlsm
-├── vba/
-│   ├── standard/
-│   ├── classes/
-│   ├── documents/
-│   ├── forms/
-│   └── references.json
-└── ribbon/
-    └── customUI14.xml
+<repo>/
+├── src/
+│   └── excel/
+│       └── <ツール名>/
+│           ├── workbook.xlsm
+│           ├── vba/
+│           │   ├── standard/
+│           │   ├── classes/
+│           │   ├── documents/
+│           │   ├── forms/
+│           │   └── references.json
+│           └── ribbon/
+│               └── customUI14.xml
+└── dist/
 ```
 
 | 作業 | 読むもの |
@@ -109,11 +113,11 @@ Excel は既定で、VBA とブックイベントを無効にし、外部ブッ�
 
 VBA とリボンを持つブックを一から作る時は、次の順に進める。各手順の詳細は上の表の reference にある。
 
-1. `Invoke-ExcelScript.ps1 -Create -Save` でブックを作り、シートの値・数式・書式を入れる。
+1. `Invoke-ExcelScript.ps1 -Create -Save` で `src/excel/<ツール名>/workbook.xlsm` を作り、シートの値・数式・書式を入れる。
 2. `vba/` に VBA のソースを書き、`Import-Vba.ps1` で取り込む。取り込んだら `Test-VbaCompile.ps1` でコンパイルを確かめる。直しては確かめる繰り返しでは、取り込み、コンパイル、マクロの試験、読み戻しを 1 回の呼び出しにまとめる（「検証」の「まとめて確かめる」）。
 3. ブックを閉じた状態で、`ribbon/customUI14.xml` を `Add-CustomUI.ps1` で埋め込む。
 4. `Invoke-ExcelScript.ps1` で開き直し、シートと VBA を読み戻す。リボンは `Test-RibbonLayout.ps1` で見え方を XML と照らし、`Invoke-RibbonButton.ps1` で押して確かめる。
-5. 配布する場合は、最後に `Publish-Workbook.ps1` で出力し、ロックを読み戻す。
+5. 配布する場合は、最後に `Publish-Workbook.ps1` で `dist/` に出力し、ロックを読み戻す。出力の名前は、フォルダ名に拡張子を付けたもの（`dist/<ツール名>.xlsm`）になる。
 
 ## COM 編集
 
